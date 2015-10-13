@@ -28,6 +28,7 @@ public:
 
         ros::service::waitForService("/gazebo/get_model_state");
         modelStateServ = nh.serviceClient<gazebo_msgs::GetModelState>("/gazebo/get_model_state", true /* persistent */);
+        
         publishFall(getHumanPosition());
 	}
 
