@@ -133,6 +133,12 @@ add_dependencies(simulated_fall_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${c
 target_link_libraries(simulated_fall_detector
    ${catkin_LIBRARIES}
 )
+
+add_executable(catching_controller src/catching_controller.cpp)
+add_dependencies(catching_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(catching_controller
+   ${catkin_LIBRARIES}
+)
 #############
 ## Install ##
 #############
