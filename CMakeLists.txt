@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(human_catching)
 
 ## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters)
+find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs)
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
@@ -51,16 +51,15 @@ add_message_files(
 # )
 
 ## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
+add_action_files(
+   FILES
+   MoveArmFast.action
+ )
 
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
    DEPENDENCIES
-   std_msgs geometry_msgs
+   std_msgs geometry_msgs actionlib_msgs
 )
 
 ################################################
@@ -137,6 +136,12 @@ target_link_libraries(simulated_fall_detector
 add_executable(catching_controller src/catching_controller.cpp)
 add_dependencies(catching_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(catching_controller
+   ${catkin_LIBRARIES}
+)
+
+add_executable(move_arm_fast_action_server src/move_arm_fast_action_server.cpp)
+add_dependencies(move_arm_fast_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(move_arm_fast_action_server
    ${catkin_LIBRARIES}
 )
 #############

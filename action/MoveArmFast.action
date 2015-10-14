@@ -1,0 +1,7 @@
+# Define the goal target
+string group
+geometry_msgs/PoseStamped target
+---
+geometry_msgs/PoseStamped reached
+---
+

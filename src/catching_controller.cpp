@@ -53,6 +53,10 @@ private:
         ROS_INFO("Human twist detected at @ %f", twistMsg->header.stamp.toSec());
         
         // TODO: Magic here
+        // TODO: Project catch position
+        // TODO: Move arms to catch position
+        // TODO: Wait for contact or reaching target
+        // TODO: Activate the force control action
     }
 };
 }
