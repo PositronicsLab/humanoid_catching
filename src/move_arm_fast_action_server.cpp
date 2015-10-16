@@ -28,22 +28,26 @@ private:
     ros::ServiceClient ikService;
     
     //! Joint trajectory action client.
-    JointTrajClient jointTrajClient;
+    auto_ptr<JointTrajClient> jointTrajClient;
+    
+    //! Arm name
+    string arm;
     
     //! Create messages that are used to published feedback/result
     human_catching::MoveArmFastFeedback feedback;
     human_catching::MoveArmFastResult result;  
 public:
-	MoveArmFastActionServer() :
+	MoveArmFastActionServer(const string& name) :
 		pnh("~"),
-       as(nh, "move_arm_fast_action", boost::bind(&MoveArmFastActionServer::execute, this, _1), false),
-       // TODO: Use right and left clients?
-       jointTrajClient("r_arm_controller/joint_trajectory_action", true) {
+       as(nh, name, boost::bind(&MoveArmFastActionServer::execute, this, _1), false) {
+         
+        nh.param<string>("arm", arm, "right"); 
+        jointTrajClient.reset(new JointTrajClient(arm[0] + "_arm_controller/joint_trajectory_action", true));
         
         ROS_INFO("Initializing move arm fast action");
         ros::service::waitForService("/kinematics_cache/ik");
         ikService = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
-        jointTrajClient.waitForServer();
+        jointTrajClient->waitForServer();
         as.registerPreemptCallback(boost::bind(&MoveArmFastActionServer::preempt, this));
         as.start();
         ROS_INFO("Move arm fast action initialized successfully");
@@ -85,7 +89,7 @@ public:
     }
 
     void preempt() {
-        jointTrajClient.cancelGoal();
+        jointTrajClient->cancelGoal();
         as.setPreempted();
     }
     
@@ -100,7 +104,7 @@ public:
         
         // Lookup the IK solution
         kinematics_cache::IKQuery ikQuery;
-        ikQuery.request.group = moveArmGoal->group;
+        ikQuery.request.group = arm + "_arm";
         ikQuery.request.pose = moveArmGoal->target;
         if (!ikService.call(ikQuery)) {
             ROS_WARN("Failed to find IK solution for fast arm movement");
@@ -113,13 +117,13 @@ public:
 
         // First, the joint names, which apply to all waypoints
         // TODO: Fetch this from the model
-        goal.trajectory.joint_names.push_back("r_shoulder_pan_joint");
-        goal.trajectory.joint_names.push_back("r_shoulder_lift_joint");
-        goal.trajectory.joint_names.push_back("r_upper_arm_roll_joint");
-        goal.trajectory.joint_names.push_back("r_elbow_flex_joint");
-        goal.trajectory.joint_names.push_back("r_forearm_roll_joint");
-        goal.trajectory.joint_names.push_back("r_wrist_flex_joint");
-        goal.trajectory.joint_names.push_back("r_wrist_roll_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_shoulder_pan_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_shoulder_lift_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_upper_arm_roll_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_elbow_flex_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_forearm_roll_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_wrist_flex_joint");
+        goal.trajectory.joint_names.push_back(arm[0] + "_wrist_roll_joint");
 
         // We will have one waypoints in this goal trajectory
         goal.trajectory.points.resize(1);
@@ -127,7 +131,7 @@ public:
         // TODO: Confirm this waypoint is correct
         goal.trajectory.points[0].time_from_start = ros::Duration(0.0);
         goal.trajectory.header.stamp = ros::Time::now();
-        sendGoal(&jointTrajClient, goal, nh);
+        sendGoal(jointTrajClient.get(), goal, nh);
         
         if(as.isPreemptRequested() || !ros::ok()){
             as.setPreempted();
@@ -141,6 +145,6 @@ public:
 int main(int argc, char** argv) {
 	ros::init(argc, argv, "move_arm_fast_action");
 
-	MoveArmFastActionServer maf;
+	MoveArmFastActionServer maf(ros::this_node::getName());
 	ros::spin();
 }

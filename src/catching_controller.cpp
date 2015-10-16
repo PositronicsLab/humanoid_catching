@@ -31,7 +31,7 @@ public:
         
         // Construct but don't initialize
         humanTwistSub.reset(
-                new message_filters::Subscriber<geometry_msgs::TwistStamped>(nh, "/human/twist", 1));
+                new message_filters::Subscriber<geometry_msgs::TwistStamped>(nh, "/human/imu", 1));
         ROS_INFO("Catching controller initialized successfully");
 	}
 
