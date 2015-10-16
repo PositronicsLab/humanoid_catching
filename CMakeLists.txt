@@ -41,6 +41,7 @@ find_package(Boost REQUIRED COMPONENTS system)
 add_message_files(
    FILES
    HumanFall.msg
+   IMU.msg
 )
 
 ## Generate services in the 'srv' folder

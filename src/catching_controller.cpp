@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 #include <human_catching/HumanFall.h>
 #include <message_filters/subscriber.h>
-#include <geometry_msgs/TwistStamped.h>
+#include <human_catching/IMU.h>
 
 namespace {
 using namespace std;
@@ -19,8 +19,8 @@ private:
     //! Human fall subscriber
     auto_ptr<message_filters::Subscriber<HumanFall> > humanFallSub;
     
-    //! Human twist subscriber
-    auto_ptr<message_filters::Subscriber<geometry_msgs::TwistStamped> > humanTwistSub;
+    //! Human IMU subscriber
+    auto_ptr<message_filters::Subscriber<human_catching::IMU> > humanIMUSub;
 public:
 	CatchingController() :
 		pnh("~") {
@@ -30,8 +30,8 @@ public:
         humanFallSub->registerCallback(boost::bind(&CatchingController::fallDetected, this, _1));
         
         // Construct but don't initialize
-        humanTwistSub.reset(
-                new message_filters::Subscriber<geometry_msgs::TwistStamped>(nh, "/human/imu", 1));
+        humanIMUSub.reset(
+                new message_filters::Subscriber<human_catching::IMU>(nh, "/human/imu", 1));
         ROS_INFO("Catching controller initialized successfully");
 	}
 
@@ -42,15 +42,15 @@ private:
         // Unsubscribe from further fall notifications
         humanFallSub->unsubscribe();
         
-        // Begin listening for twist notifications
-        humanTwistSub->registerCallback(boost::bind(&CatchingController::twistDetected, this, _1));
+        // Begin listening for IMU notifications
+        humanIMUSub->registerCallback(boost::bind(&CatchingController::imuDataDetected, this, _1));
         
-        // Wait to receive a twist notification to take action so we are
+        // Wait to receive a IMU notification to take action so we are
         // aware of any initial velocity
     }
     
-    void twistDetected(const geometry_msgs::TwistStampedConstPtr& twistMsg) {
-        ROS_INFO("Human twist detected at @ %f", twistMsg->header.stamp.toSec());
+    void imuDataDetected(const human_catching::IMUConstPtr& dataMsg) {
+        ROS_INFO("Human IMU data detected at @ %f", dataMsg->header.stamp.toSec());
         
         // TODO: Magic here
         // TODO: Project catch position
