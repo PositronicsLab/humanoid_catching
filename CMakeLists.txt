@@ -45,11 +45,10 @@ add_message_files(
 )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+   FILES
+   PredictFall.srv
+)
 
 ## Generate actions in the 'action' folder
 add_action_files(
@@ -102,6 +101,11 @@ catkin_package(
 ## Build ##
 ###########
 
+find_library(
+   ODE_LIBRARY
+   NAMES libode ode
+)
+
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 # include_directories(include)
@@ -145,6 +149,13 @@ add_dependencies(move_arm_fast_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS}
 target_link_libraries(move_arm_fast_action_server
    ${catkin_LIBRARIES}
 )
+
+add_executable(fall_predictor src/fall_predictor.cpp)
+add_dependencies(fall_predictor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(fall_predictor
+   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+)
+
 #############
 ## Install ##
 #############
