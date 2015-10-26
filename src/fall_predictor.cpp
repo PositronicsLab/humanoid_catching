@@ -8,9 +8,8 @@ namespace {
 using namespace std;
 
 //! Default weight in kg
-static const double WEIGHT_DEFAULT = 50;
+static const double MASS_DEFAULT = 50;
 static const double HEIGHT_DEFAULT = 1;
-static const double DENSITY_DEFAULT = 0.5;
 
 static const double STEP_SIZE = 0.05;
 static const double DURATION = 2.0;
@@ -23,9 +22,11 @@ static const unsigned int MAX_CONTACTS = 10;
 
 static dWorldID world;
 static dSpaceID space;
-static dGeomID  ground;
+static dBodyID ground;
 static dJointGroupID contactgroup;
+static dJointGroupID groundToBodyJG;
 static Humanoid object;
+static dJointID groundJoint;
 
 // TODO: Use boost bind and eliminate static variables
 static void nearCallback (void *data, dGeomID o1, dGeomID o2) {
@@ -63,21 +64,21 @@ private:
     //! Fall prediction Service
     ros::ServiceServer fallPredictionService;
 
-    //! Weight of the humanoid
-    double humanoidWeight;
-
     //! Height of the center of mass
     double humanoidHeight;
 
-    //! Density of the humanoid
-    double humanoidDensity;
+    //! Mass of the humanoid
+    double humanoidMass;
+
+    //! Base frame
+    string baseFrame;
 public:
    FallPredictor() :
      pnh("~") {
-       pnh.param("humanoid_weight", humanoidWeight, WEIGHT_DEFAULT);
        pnh.param("humanoid_height", humanoidHeight, HEIGHT_DEFAULT);
-       pnh.param("humanoid_density", humanoidDensity, DENSITY_DEFAULT);
-        cout << "HumanoidDensity" << humanoidDensity << endl;
+       pnh.param("humanoid_mass", humanoidMass, MASS_DEFAULT);
+       pnh.param<string>("base_frame", baseFrame, "odom_combined");
+
        fallVizPub = nh.advertise<visualization_msgs::Marker>(
          "/fall_predictor/projected_path", 1);
 
@@ -88,70 +89,138 @@ public:
 private:
     void initODE() {
         dInitODE();
+    }
+
+    void initWorld() {
         world = dWorldCreate();
         space = dSimpleSpaceCreate(0);
         contactgroup = dJointGroupCreate(0);
-        dCreatePlane(space, 0, 1, 0, 0);
-        dWorldSetGravity(world, 0, -1.0, 0);
+        dCreatePlane(space, 0, 0, 1, 0);
+        dWorldSetGravity(world, 0, 0, -9.81);
         dWorldSetERP(world, 0.2);
         dWorldSetCFM(world, 1e-5);
         dWorldSetContactMaxCorrectingVel(world, 0.9);
         dWorldSetContactSurfaceLayer(world, 0.001);
         dWorldSetAutoDisableFlag(world, 1);
-        object.body = dBodyCreate(world);
-        dBodySetPosition(object.body, 0, 10, -5);
-        dBodySetLinearVel(object.body, 0.0 /* x */, 0.0 /* y */, 0.0 /* z */);
-        dMatrix3 R;
-        dRFromAxisAndAngle(R, dRandReal() * 2.0 - 1.0,
-                          dRandReal() * 2.0 - 1.0,
-                          dRandReal() * 2.0 - 1.0,
-                          dRandReal() * 10.0 - 5.0);
-        dBodySetRotation(object.body, R);
-        dMass m;
-        dReal sides[3];
-        sides[0] = 2.0;
-        sides[1] = 2.0;
-        sides[2] = 2.0;
-        dMassSetBox(&m, humanoidDensity, sides[0], sides[1], sides[2]);
-        cout << "dMass: " << m.mass << endl;
+    }
 
+    void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& twist) {
+            // Create the object
+        object.body = dBodyCreate(world);
+
+        dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z);
+        dBodySetLinearVel(object.body, twist.linear.x, twist.linear.y, twist.linear.z);
+        dBodySetAngularVel(object.body, twist.angular.x, twist.angular.y, twist.angular.z);
+
+        const dReal q[] = {pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w};
+        dBodySetQuaternion(object.body, q);
+
+        dMass m;
+
+        // TODO: Use a true point mass here
+
+        // Use the inertia matrix for a point mass rotating about the ground.
+        dMassSetSphereTotal(&m, humanoidMass, 0.01);
         dBodySetMass(object.body, &m);
-        object.geom[0] = dCreateBox(space, sides[0], sides[1], sides[2]);
+        object.geom[0] = dCreateCylinder(space, 0.01 /* radius */, humanoidHeight);
         dGeomSetBody(object.geom[0], object.body);
     }
 
     void destroyODE() {
         dJointGroupDestroy(contactgroup);
+        dJointGroupDestroy(groundToBodyJG);
         dSpaceDestroy(space);
-        dWorldDestroy(world);
+        // dWorldDestroy(world);
         dCloseODE();
     }
 
-    void simLoop() {
+    void simLoop(double stepSize) {
         dSpaceCollide(space, 0, &nearCallback);
-        dWorldQuickStep(world, 0.05);
+        dWorldQuickStep(world, stepSize);
         dJointGroupEmpty(contactgroup);
+    }
+
+    void publishPathViz(const vector<geometry_msgs::Pose>& path) const {
+        visualization_msgs::Marker points;
+        points.header.frame_id = baseFrame;
+        points.header.stamp = ros::Time::now();
+        points.ns = "fall_prediction";
+        points.id = 0;
+        points.type = visualization_msgs::Marker::POINTS;
+        points.pose.orientation.w = 1.0;
+        points.scale.x = 0.01;
+        points.scale.y = 0.01;
+
+        // Points are green
+        points.color.g = 1.0f;
+        points.color.a = 1.0;
+
+        for (unsigned int i = 0; i < path.size(); ++i) {
+            points.points.push_back(path[i].position);
+        }
+        fallVizPub.publish(points);
+    }
+
+    void initGroundJoint(const geometry_msgs::Pose& humanPose) {
+      // Create the ground object
+      ground = dBodyCreate(world);
+      groundToBodyJG = dJointGroupCreate(0);
+      dBodySetPosition(ground, humanPose.position.x, humanPose.position.y, 0.0 /* No height in base frame */);
+      // Set it as unresponsive to forces
+      dBodySetKinematic(ground);
+
+      groundJoint = dJointCreateBall(world, groundToBodyJG);
+      dJointAttach(groundJoint, object.body, ground);
+      dJointSetBallAnchor(groundJoint, humanPose.position.x, humanPose.position.y, 0.0);
     }
 
     bool predict(human_catching::PredictFall::Request& req,
                human_catching::PredictFall::Response& res) {
+
+      // TODO: Check frame here
+
       // Initialize ODE
       initODE();
-      world = dWorldCreate();
-      space = dHashSpaceCreate(0);
-      contactgroup = dJointGroupCreate(0);
 
-      dWorldSetGravity(world,0,0,-9.8);
+      initWorld();
 
-      // Create a ground
-      ground = dCreatePlane(space, 0, 0, 1, 0);
+      initHumanoid(req.pose, req.twist);
 
-      // TODO: Create the humanoid
+      initGroundJoint(req.pose);
 
       // Execute the simulation loop for 2 seconds
       for (double t = 0; t <= DURATION; t += STEP_SIZE) {
-        simLoop();
+        // Step forward
+        simLoop(STEP_SIZE);
+
+        // Get the location of the body for the current iteration
+        const dReal* position = dBodyGetPosition(object.body);
+        const dReal* orientation = dBodyGetQuaternion(object.body);
+        geometry_msgs::Pose pose;
+        pose.position.x = position[0];
+        pose.position.y = position[1];
+        pose.position.z = position[2];
+        pose.orientation.x = orientation[0];
+        pose.orientation.y = orientation[1];
+        pose.orientation.z = orientation[2];
+        pose.orientation.w = orientation[3];
+        res.path.push_back(pose);
+
+        const dReal* linearVelocity = dBodyGetLinearVel(object.body);
+        const dReal* angularVelocity = dBodyGetAngularVel(object.body);
+        geometry_msgs::Twist twist;
+        twist.linear.x = linearVelocity[0];
+        twist.linear.y = linearVelocity[1];
+        twist.linear.z = linearVelocity[2];
+        twist.angular.x = angularVelocity[0];
+        twist.angular.y = angularVelocity[1];
+        twist.angular.z = angularVelocity[2];
+        res.velocityPath.push_back(twist);
+        res.times.push_back(t);
       }
+
+      // Publish the path
+      publishPathViz(res.path);
 
       // Clean up
       dWorldDestroy (world);

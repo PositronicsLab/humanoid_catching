@@ -105,6 +105,7 @@ find_library(
    ODE_LIBRARY
    NAMES libode ode
 )
+add_definitions(-DdDOUBLE)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
