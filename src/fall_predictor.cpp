@@ -11,9 +11,9 @@ using namespace std;
 static const double MASS_DEFAULT = 50;
 static const double HEIGHT_DEFAULT = 1;
 
-static const double STEP_SIZE = 0.05;
+static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
-static const unsigned int MAX_CONTACTS = 10;
+static const unsigned int MAX_CONTACTS = 3;
 
     struct Humanoid {
         dBodyID body;  // the dynamics body
@@ -22,7 +22,8 @@ static const unsigned int MAX_CONTACTS = 10;
 
 static dWorldID world;
 static dSpaceID space;
-static dBodyID ground;
+static dGeomID ground;
+static dBodyID groundLink;
 static dJointGroupID contactgroup;
 static dJointGroupID groundToBodyJG;
 static Humanoid object;
@@ -95,7 +96,7 @@ private:
         world = dWorldCreate();
         space = dSimpleSpaceCreate(0);
         contactgroup = dJointGroupCreate(0);
-        dCreatePlane(space, 0, 0, 1, 0);
+        ground = dCreatePlane(space, 0, 0, 1, 0);
         dWorldSetGravity(world, 0, 0, -9.81);
         dWorldSetERP(world, 0.2);
         dWorldSetCFM(world, 1e-5);
@@ -105,10 +106,12 @@ private:
     }
 
     void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& twist) {
-            // Create the object
+
+        // Create the object
         object.body = dBodyCreate(world);
 
-        dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z);
+        // TODO: Correct this to be the appropriate center of mass
+        dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z - humanoidHeight / 2.0);
         dBodySetLinearVel(object.body, twist.linear.x, twist.linear.y, twist.linear.z);
         dBodySetAngularVel(object.body, twist.angular.x, twist.angular.y, twist.angular.z);
 
@@ -136,7 +139,7 @@ private:
 
     void simLoop(double stepSize) {
         dSpaceCollide(space, 0, &nearCallback);
-        dWorldQuickStep(world, stepSize);
+        dWorldStep(world, stepSize);
         dJointGroupEmpty(contactgroup);
     }
 
@@ -163,14 +166,14 @@ private:
 
     void initGroundJoint(const geometry_msgs::Pose& humanPose) {
       // Create the ground object
-      ground = dBodyCreate(world);
+      groundLink = dBodyCreate(world);
       groundToBodyJG = dJointGroupCreate(0);
-      dBodySetPosition(ground, humanPose.position.x, humanPose.position.y, 0.0 /* No height in base frame */);
+      dBodySetPosition(groundLink, humanPose.position.x, humanPose.position.y, 0.0 /* No height in base frame */);
       // Set it as unresponsive to forces
-      dBodySetKinematic(ground);
+      dBodySetKinematic(groundLink);
 
       groundJoint = dJointCreateBall(world, groundToBodyJG);
-      dJointAttach(groundJoint, object.body, ground);
+      dJointAttach(groundJoint, object.body, groundLink);
       dJointSetBallAnchor(groundJoint, humanPose.position.x, humanPose.position.y, 0.0);
     }
 
