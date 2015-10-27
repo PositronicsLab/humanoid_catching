@@ -15,41 +15,10 @@ static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
 static const unsigned int MAX_CONTACTS = 3;
 
-    struct Humanoid {
-        dBodyID body;  // the dynamics body
-        dGeomID geom[1];  // geometries representing this body
-    };
-
-static dWorldID world;
-static dSpaceID space;
-static dGeomID ground;
-static dBodyID groundLink;
-static dJointGroupID contactgroup;
-static dJointGroupID groundToBodyJG;
-static Humanoid object;
-static dJointID groundJoint;
-
-// TODO: Use boost bind and eliminate static variables
-static void nearCallback (void *data, dGeomID o1, dGeomID o2) {
-    dBodyID b1 = dGeomGetBody(o1);
-    dBodyID b2 = dGeomGetBody(o2);
-    dContact contact[MAX_CONTACTS];
-    for (int i = 0; i < MAX_CONTACTS; i++){
-        contact[i].surface.mode = dContactBounce | dContactSoftCFM;
-        contact[i].surface.mu = dInfinity;
-        contact[i].surface.mu2 = 0;
-        contact[i].surface.bounce = 0.01;
-        contact[i].surface.bounce_vel = 0.1;
-        contact[i].surface.soft_cfm = 0.01;
-    }
-
-    if (int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
-        for (int i = 0; i < numc; i++) {
-            dJointID c = dJointCreateContact(world, contactgroup, contact + i);
-            dJointAttach(c, b1, b2);
-        }
-    }
-}
+struct Humanoid {
+    dBodyID body;  // the dynamics body
+    dGeomID geom[1];  // geometries representing this body
+};
 
 class FallPredictor {
 private:
@@ -73,6 +42,30 @@ private:
 
     //! Base frame
     string baseFrame;
+
+    //! Ground plane
+    dGeomID ground;
+
+    //! Simulation space
+    dSpaceID space;
+
+    //! Ground link for joint
+    dBodyID groundLink;
+
+    //! World
+    dWorldID world;
+
+    //! Joint group for collisions
+    dJointGroupID contactgroup;
+
+    //! Joint group for joint between ground and humanoid
+    dJointGroupID groundToBodyJG;
+
+    //! Joint between ground and humanoid
+    dJointID groundJoint;
+
+    //! Humanoid
+    Humanoid object;
 public:
    FallPredictor() :
      pnh("~") {
@@ -88,6 +81,27 @@ public:
 	}
 
 private:
+    void collisionCallback(dGeomID o1, dGeomID o2) {
+        dBodyID b1 = dGeomGetBody(o1);
+        dBodyID b2 = dGeomGetBody(o2);
+        dContact contact[MAX_CONTACTS];
+        for (int i = 0; i < MAX_CONTACTS; i++){
+            contact[i].surface.mode = dContactBounce | dContactSoftCFM;
+            contact[i].surface.mu = dInfinity;
+            contact[i].surface.mu2 = 0;
+            contact[i].surface.bounce = 0.01;
+            contact[i].surface.bounce_vel = 0.1;
+            contact[i].surface.soft_cfm = 0.01;
+        }
+
+        if (int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
+            for (int i = 0; i < numc; i++) {
+                dJointID c = dJointCreateContact(world, contactgroup, contact + i);
+                dJointAttach(c, b1, b2);
+            }
+        }
+    }
+
     void initODE() {
         dInitODE();
     }
@@ -129,6 +143,11 @@ private:
         dGeomSetBody(object.geom[0], object.body);
     }
 
+    static void staticNearCallback(void* data, dGeomID o1, dGeomID o2){
+      FallPredictor* self = static_cast<FallPredictor*>(data);
+      self->collisionCallback(o1, o2);
+    }
+
     void destroyODE() {
         dJointGroupDestroy(contactgroup);
         dJointGroupDestroy(groundToBodyJG);
@@ -138,7 +157,7 @@ private:
     }
 
     void simLoop(double stepSize) {
-        dSpaceCollide(space, 0, &nearCallback);
+        dSpaceCollide(space, this, &FallPredictor::staticNearCallback);
         dWorldStep(world, stepSize);
         dJointGroupEmpty(contactgroup);
     }
