@@ -63,7 +63,7 @@ public:
 
         // Initialize arm clients
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
-            ArmClient* arm = new ArmClient(ARMS[i] + "_arm_controller/move_arm_fast_action", true);
+            ArmClient* arm = new ArmClient(ARMS[i] + "_move_arm_fast_action_server", true);
             arms.push_back(boost::shared_ptr<ArmClient>(arm));
             arms[i]->waitForServer();
         }
@@ -108,14 +108,15 @@ private:
 
         vector<geometry_msgs::Pose> possiblePoses;
 
-        // TODO: What is the arm pose? I think IK cache ignores it.
+        // IK cache uses a standard pose, so only position is used.
+
         // TODO: Adjust offsets per arm
         for (unsigned int i = 0; i < predictFall.response.times.size(); ++i) {
             for (unsigned int j = 0; boost::size(arms); ++j) {
                 // Lookup the IK solution
                 kinematics_cache::IKQuery ikQuery;
                 ikQuery.request.group = ARMS[j] + "_arm";
-                // TODO: Setup header here
+                ikQuery.request.pose.header = predictFall.response.header;
                 ikQuery.request.pose.pose = predictFall.response.path[i];
                 if (!ik.call(ikQuery)) {
                     ROS_INFO("Failed to find IK solution for arm %s", ARMS[j].c_str());
@@ -154,7 +155,7 @@ private:
         // Now move both arms to the position
         for (unsigned int i = 0; i < arms.size(); ++i) {
             human_catching::MoveArmFastGoal goal;
-            // TODO: Set header here
+            goal.target.header = predictFall.response.header;
             goal.target.pose = bestPose;
             arms[i]->sendGoal(goal);
         }

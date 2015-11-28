@@ -200,6 +200,7 @@ private:
                human_catching::PredictFall::Response& res) {
 
       // TODO: Check frame here
+      res.header = req.header;
 
       // Initialize ODE
       initODE();
