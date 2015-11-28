@@ -14,40 +14,40 @@ typedef actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryActio
 
 class MoveArmFastActionServer {
 private:
-    
+
 	//! Node handle
 	ros::NodeHandle nh;
 
 	//! Private nh
 	ros::NodeHandle pnh;
-    
+
     //! Action Server
     Server as;
-    
+
     //! Cached service client.
     ros::ServiceClient ikService;
-    
+
     //! Joint trajectory action client.
     auto_ptr<JointTrajClient> jointTrajClient;
-    
+
     //! Arm name
     string arm;
-    
+
     //! Create messages that are used to published feedback/result
     human_catching::MoveArmFastFeedback feedback;
-    human_catching::MoveArmFastResult result;  
+    human_catching::MoveArmFastResult result;
 public:
 	MoveArmFastActionServer(const string& name) :
 		pnh("~"),
        as(nh, name, boost::bind(&MoveArmFastActionServer::execute, this, _1), false) {
-         
-        nh.param<string>("arm", arm, "right"); 
+
+        nh.param<string>("arm", arm, "right");
         jointTrajClient.reset(new JointTrajClient(arm[0] + "_arm_controller/joint_trajectory_action", true));
-        
+        jointTrajClient->waitForServer();
+
         ROS_INFO("Initializing move arm fast action");
         ros::service::waitForService("/kinematics_cache/ik");
         ikService = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
-        jointTrajClient->waitForServer();
         as.registerPreemptCallback(boost::bind(&MoveArmFastActionServer::preempt, this));
         as.start();
         ROS_INFO("Move arm fast action initialized successfully");
@@ -55,7 +55,7 @@ public:
 
     private:
     /*
-     * Send a goal to an action client, wait for a result, and 
+     * Send a goal to an action client, wait for a result, and
      * report success or failure.
      * @param client Action client to send the goal to
      * @param goal Goal to send
@@ -78,7 +78,7 @@ public:
             }
             else {
                 ROS_INFO("Action failed: %s",state.toString().c_str());
-            }   
+            }
         }
     }
     else {
@@ -92,16 +92,16 @@ public:
         jointTrajClient->cancelGoal();
         as.setPreempted();
     }
-    
+
     void execute(const human_catching::MoveArmFastGoalConstPtr& moveArmGoal){
-        
+
         ROS_INFO("Moving to position");
-    
+
         if(!as.isActive() || as.isPreemptRequested() || !ros::ok()){
             ROS_INFO("Move arm action cancelled before started");
             return;
         }
-        
+
         // Lookup the IK solution
         kinematics_cache::IKQuery ikQuery;
         ikQuery.request.group = arm + "_arm";
@@ -111,7 +111,7 @@ public:
             as.setAborted();
             return;
         }
-        
+
         // Now use the arm trajectory client to execute it.
         pr2_controllers_msgs::JointTrajectoryGoal goal;
 
@@ -132,7 +132,7 @@ public:
         goal.trajectory.points[0].time_from_start = ros::Duration(0.0);
         goal.trajectory.header.stamp = ros::Time::now();
         sendGoal(jointTrajClient.get(), goal, nh);
-        
+
         if(as.isPreemptRequested() || !ros::ok()){
             as.setPreempted();
         }
