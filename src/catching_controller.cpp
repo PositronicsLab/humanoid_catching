@@ -108,7 +108,7 @@ private:
 
         vector<geometry_msgs::Pose> possiblePoses;
 
-        // IK cache uses a standard pose, so only position is used.
+        // TODO: Set the pose to the one used to load the IK cache
 
         // TODO: Adjust offsets per arm
         for (unsigned int i = 0; i < predictFall.response.times.size(); ++i) {
