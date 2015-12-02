@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(human_catching)
 
 ## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs)
+find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf)
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)

@@ -8,6 +8,7 @@
 #include <actionlib/client/simple_action_client.h>
 #include <human_catching/MoveArmFastAction.h>
 #include <memory>
+#include <tf/transform_listener.h>
 
 namespace {
 using namespace std;
@@ -42,6 +43,8 @@ private:
     //! Arm clients
     vector<boost::shared_ptr<ArmClient> > arms;
 
+    //! TF listener
+    tf::TransformListener tf;
 public:
 	CatchingController() :
 		pnh("~") {
@@ -93,6 +96,9 @@ private:
         ROS_INFO("Human IMU data detected at @ %f", imuData->header.stamp.toSec());
 
         catchHuman(imuData);
+
+        // Stop listening for IMU data
+        humanIMUSub->unsubscribe();
     }
 
     // TODO: Move this to async action
@@ -107,6 +113,12 @@ private:
             return;
         }
 
+        // Transform to the base_frame for IK, which is torso_lift_link
+        if(!tf.waitForTransform(predictFall.response.header.frame_id, "/torso_lift_link", predictFall.response.header.stamp, ros::Duration(5))){
+            ROS_WARN("Failed to get transform");
+            return;
+        }
+
         // TODO: Need to redo the kinematic cache time predictions.
         // We now have a projected time/position path. Search the path for acceptable times.
 
@@ -116,12 +128,29 @@ private:
 
         // TODO: Adjust offsets per arm
         for (unsigned int i = 0; i < predictFall.response.times.size(); ++i) {
-            for (unsigned int j = 0; boost::size(arms); ++j) {
+            for (unsigned int j = 0; j < boost::size(arms); ++j) {
                 // Lookup the IK solution
                 kinematics_cache::IKQuery ikQuery;
                 ikQuery.request.group = ARMS[j] + "_arm";
-                ikQuery.request.pose.header = predictFall.response.header;
-                ikQuery.request.pose.pose = predictFall.response.path[i];
+
+                geometry_msgs::PoseStamped basePose;
+                basePose.header = predictFall.response.header;
+                basePose.pose = predictFall.response.path[i];
+
+                geometry_msgs::PoseStamped transformedPose;
+                transformedPose.header.frame_id = "/torso_lift_link";
+                transformedPose.header.stamp = predictFall.response.header.stamp;
+                try {
+                    tf.transformPose(transformedPose.header.frame_id, transformedPose.header.stamp, basePose,
+                                     predictFall.response.header.frame_id, transformedPose);
+                }
+                catch (tf::TransformException& ex) {
+                    ROS_ERROR("Failed to transform pose from %s to %s", predictFall.response.header.frame_id.c_str(),
+                        "/torso_lift_link");
+                    continue;
+                }
+
+                ikQuery.request.pose = transformedPose;
                 if (!ik.call(ikQuery)) {
                     ROS_INFO("Failed to find IK solution for arm %s", ARMS[j].c_str());
                     continue;
