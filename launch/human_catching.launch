@@ -1,23 +1,30 @@
 <launch>
+  <include file="$(find pr2_machine)/$(env ROBOT).machine" />
   <include file="$(find mongodb_store)/launch/mongodb_store.launch">
     <arg name="db_path" value="/home/jlurz/mongodb"/>
   </include>
   <include file="$(find pr2_moveit_config)/launch/move_group.launch" />
   <include file="$(find kinematics_cache)/launch/kinematics_cache.launch" />
-  
-  <node pkg="human_catching" type="catching_controller" name="catching_controller" />
+
+  <!-- Mapping -->
+  <include file="$(find pr2_navigation_global)/amcl_node.xml" />
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find human_catching)/maps/map.yaml" />
+
   <node pkg="human_catching" type="fake_human_imu" name="fake_human_imu" >
     <remap from="/out" to="/human/imu" />
   </node>
-  <node pkg="human_catching" type="move_arm_fast_action_server" name="right_move_arm_fast_action_server" >
+  <node pkg="human_catching" type="move_arm_fast_action_server" name="right_move_arm_fast_action_server">
     <param name="arm" value="right" />
   </node>
-  <node pkg="human_catching" type="move_arm_fast_action_server" name="left_move_arm_fast_action_server" >
+  <node pkg="human_catching" type="move_arm_fast_action_server" name="left_move_arm_fast_action_server">
     <param name="arm" value="left" />
   </node>
-  <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector" >
+  <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector">
     <remap from="/out" to="/human/fall" />
   </node>
-  
-  <!-- TODO: Add human -->
+
+  <node pkg="human_catching" type="fall_predictor" name="fall_predictor" />
+  <node pkg="human_catching" type="catching_controller" name="catching_controller" />
+
+  <include file="$(find human_catching)/launch/spawn_models.launch" />
 </launch>

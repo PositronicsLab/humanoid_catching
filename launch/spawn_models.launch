@@ -1,0 +1,7 @@
+<launch>
+ <!-- send urdf to param server -->
+ <param name="human" textfile="$(find human_catching)/models/human.model" />
+
+ <!-- push sdf to factory and spawn human in gazebo -->
+ <node name="spawn_human" pkg="gazebo_ros" type="spawn_model" args="-param human -sdf -model human -x 0.3 -z 0" respawn="false" output="screen" />
+</launch>

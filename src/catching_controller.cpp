@@ -55,13 +55,16 @@ public:
                 new message_filters::Subscriber<human_catching::IMU>(nh, "/human/imu", 1));
 
         // Configure the fall prediction service
+        ROS_INFO("Waiting for predict_fall service");
         ros::service::waitForService("/fall_predictor/predict_fall");
         fallPredictor = nh.serviceClient<human_catching::PredictFall>("/fall_predictor/predict_fall", true /* persistent */);
 
+        ROS_INFO("Waiting for kinematics_cache/ik service");
         ros::service::waitForService("/kinematics_cache/ik");
         ik = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
 
         // Initialize arm clients
+        ROS_INFO("Initializing move_arm_fast_action_servers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
             ArmClient* arm = new ArmClient(ARMS[i] + "_move_arm_fast_action_server", true);
             arms.push_back(boost::shared_ptr<ArmClient>(arm));
