@@ -13,10 +13,10 @@
   <node pkg="human_catching" type="fake_human_imu" name="fake_human_imu" >
     <remap from="/out" to="/human/imu" />
   </node>
-  <node pkg="human_catching" type="move_arm_fast_action_server" name="right_move_arm_fast_action_server">
+  <node pkg="human_catching" type="move_arm_fast_action_server" name="right_arm_move_arm_fast_action_server" output="screen">
     <param name="arm" value="right" />
   </node>
-  <node pkg="human_catching" type="move_arm_fast_action_server" name="left_move_arm_fast_action_server">
+  <node pkg="human_catching" type="move_arm_fast_action_server" name="left_arm_move_arm_fast_action_server" output="screen">
     <param name="arm" value="left" />
   </node>
   <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector">
@@ -24,7 +24,7 @@
   </node>
 
   <node pkg="human_catching" type="fall_predictor" name="fall_predictor" />
-  <node pkg="human_catching" type="catching_controller" name="catching_controller" />
+  <node pkg="human_catching" type="catching_controller" name="catching_controller" output="screen"/>
 
   <include file="$(find human_catching)/launch/spawn_models.launch" />
 </launch>

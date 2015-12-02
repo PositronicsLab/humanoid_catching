@@ -66,8 +66,9 @@ public:
         // Initialize arm clients
         ROS_INFO("Initializing move_arm_fast_action_servers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
-            ArmClient* arm = new ArmClient(ARMS[i] + "_move_arm_fast_action_server", true);
+            ArmClient* arm = new ArmClient(ARMS[i] + "_arm_move_arm_fast_action_server", true);
             arms.push_back(boost::shared_ptr<ArmClient>(arm));
+            ROS_INFO("Waiting for %s", (ARMS[i] + "_arm_move_arm_fast_action_server").c_str());
             arms[i]->waitForServer();
         }
 

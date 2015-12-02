@@ -40,14 +40,21 @@ public:
 	MoveArmFastActionServer(const string& name) :
 		pnh("~"),
        as(nh, name, boost::bind(&MoveArmFastActionServer::execute, this, _1), false) {
-
+        ROS_INFO("Initializing move arm fast action");
         nh.param<string>("arm", arm, "right");
-        jointTrajClient.reset(new JointTrajClient(arm[0] + "_arm_controller/joint_trajectory_action", true));
+
+        string armActionServer = arm == "right" ? "r_arm_controller/joint_trajectory_action" :
+            "l_arm_controller/joint_trajectory_action";
+
+        ROS_INFO("Waiting for %s", armActionServer.c_str());
+        jointTrajClient.reset(new JointTrajClient(armActionServer, true));
         jointTrajClient->waitForServer();
 
-        ROS_INFO("Initializing move arm fast action");
+        ROS_INFO("Waiting for kinematics_cache/ik");
         ros::service::waitForService("/kinematics_cache/ik");
         ikService = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
+
+        ROS_INFO("Starting the action server");
         as.registerPreemptCallback(boost::bind(&MoveArmFastActionServer::preempt, this));
         as.start();
         ROS_INFO("Move arm fast action initialized successfully");
