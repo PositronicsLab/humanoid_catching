@@ -1,6 +1,5 @@
 # Define the goal target
-geometry_msgs/PoseStamped target
+float64[] joint_positions
 ---
-geometry_msgs/PoseStamped reached
 ---
 

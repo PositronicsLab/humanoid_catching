@@ -16,6 +16,7 @@ using namespace human_catching;
 
 static const double EPSILON = 0.1;
 static const string ARMS[] = {"left", "right"};
+static const double SEARCH_RESOLUTION = 0.05;
 
 typedef actionlib::SimpleActionClient<human_catching::MoveArmFastAction> ArmClient;
 
@@ -124,10 +125,22 @@ private:
 
         vector<geometry_msgs::Pose> possiblePoses;
 
+        // TODO: Use a better data structure
+        vector<vector<vector<double> > > jointSolutions;
+
         // TODO: Set the pose to the one used to load the IK cache
 
         // TODO: Adjust offsets per arm
+        double lastTime = 0;
         for (unsigned int i = 0; i < predictFall.response.times.size(); ++i) {
+
+            // Determine if we should search this point.
+            if (i != 0 && predictFall.response.times[i] - lastTime < SEARCH_RESOLUTION) {
+                continue;
+            }
+            lastTime = predictFall.response.times[i];
+
+            vector<double> firstArmSolution;
             for (unsigned int j = 0; j < boost::size(arms); ++j) {
                 // Lookup the IK solution
                 kinematics_cache::IKQuery ikQuery;
@@ -152,7 +165,7 @@ private:
 
                 ikQuery.request.pose = transformedPose;
                 if (!ik.call(ikQuery)) {
-                    ROS_INFO("Failed to find IK solution for arm %s", ARMS[j].c_str());
+                    ROS_DEBUG("Failed to find IK solution for arm %s", ARMS[j].c_str());
                     continue;
                 }
 
@@ -162,10 +175,20 @@ private:
                              ikQuery.response.execution_time.toSec(), EPSILON, predictFall.response.times[i]);
                 }
 
+                if (j == 0) {
+                    firstArmSolution = ikQuery.response.positions;
+                }
+
                 // Check if this both arms meet criteria
                 if (j == 1) {
                     ROS_INFO("Found acceptable position");
                     possiblePoses.push_back(predictFall.response.path[i]);
+
+                    // Save the solution
+                    vector<vector<double> > armSolutions(2);
+                    armSolutions[0] = firstArmSolution;
+                    armSolutions[1] = ikQuery.response.positions;
+                    jointSolutions.push_back(armSolutions);
                 }
             }
         }
@@ -175,21 +198,25 @@ private:
             return;
         }
 
+        ROS_INFO("Selecting optimal position from %lu poses", possiblePoses.size());
+
         // Select the highest point as this maximizes possible energy dissipation
         double highestZ = 0;
         geometry_msgs::Pose bestPose;
+        vector<vector<double> > bestJointPositions;
         for (unsigned int i = 0; i < possiblePoses.size(); ++i) {
             if (possiblePoses[i].position.z > highestZ) {
+                ROS_INFO("Selected a pose with a higher Z value. Pose is %f %f %f", possiblePoses[i].position.x, possiblePoses[i].position.y, possiblePoses[i].position.z);
                 highestZ = possiblePoses[i].position.z;
                 bestPose = possiblePoses[i];
+                bestJointPositions = jointSolutions[i];
             }
         }
 
         // Now move both arms to the position
         for (unsigned int i = 0; i < arms.size(); ++i) {
             human_catching::MoveArmFastGoal goal;
-            goal.target.header = predictFall.response.header;
-            goal.target.pose = bestPose;
+            goal.joint_positions = bestJointPositions[i];
             arms[i]->sendGoal(goal);
         }
 

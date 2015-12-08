@@ -32,12 +32,27 @@
 			<Add option="-Wall" />
 			<Add option="-fexceptions" />
 		</Compiler>
-		<Unit filename="../src/announced_fall_detector.cpp" />
-		<Unit filename="../src/catching_controller.cpp" />
-		<Unit filename="../src/fake_human_imu.cpp" />
-		<Unit filename="../src/fall_predictor.cpp" />
-		<Unit filename="../src/move_arm_fast_action_server.cpp" />
-		<Unit filename="../src/simulated_fall_detector.cpp" />
+		<Unit filename="CMakeLists.txt" />
+		<Unit filename="TODO" />
+		<Unit filename="action/MoveArmFast.action" />
+		<Unit filename="human_catching.layout" />
+		<Unit filename="launch/human_catching.launch" />
+		<Unit filename="launch/spawn_models.launch" />
+		<Unit filename="load_models.sh" />
+		<Unit filename="maps/map.pgm" />
+		<Unit filename="maps/map.yaml" />
+		<Unit filename="models/human.model" />
+		<Unit filename="models/intertia_matrix.ods" />
+		<Unit filename="msg/HumanFall.msg" />
+		<Unit filename="msg/IMU.msg" />
+		<Unit filename="package.xml" />
+		<Unit filename="src/announced_fall_detector.cpp" />
+		<Unit filename="src/catching_controller.cpp" />
+		<Unit filename="src/fake_human_imu.cpp" />
+		<Unit filename="src/fall_predictor.cpp" />
+		<Unit filename="src/move_arm_fast_action_server.cpp" />
+		<Unit filename="src/simulated_fall_detector.cpp" />
+		<Unit filename="srv/PredictFall.srv" />
 		<Extensions>
 			<code_completion />
 			<debugger />

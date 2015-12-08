@@ -9,7 +9,7 @@ using namespace std;
 
 //! Default weight in kg
 static const double MASS_DEFAULT = 50;
-static const double HEIGHT_DEFAULT = 1;
+static const double HEIGHT_DEFAULT = 1.5;
 
 static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
@@ -40,9 +40,6 @@ private:
     //! Mass of the humanoid
     double humanoidMass;
 
-    //! Base frame
-    string baseFrame;
-
     //! Ground plane
     dGeomID ground;
 
@@ -71,7 +68,6 @@ public:
      pnh("~") {
        pnh.param("humanoid_height", humanoidHeight, HEIGHT_DEFAULT);
        pnh.param("humanoid_mass", humanoidMass, MASS_DEFAULT);
-       pnh.param<string>("base_frame", baseFrame, "odom_combined");
 
        fallVizPub = nh.advertise<visualization_msgs::Marker>(
          "/fall_predictor/projected_path", 1);
@@ -124,8 +120,7 @@ private:
         // Create the object
         object.body = dBodyCreate(world);
 
-        // TODO: Correct this to be the appropriate center of mass
-        dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z - humanoidHeight / 2.0);
+        dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z);
         dBodySetLinearVel(object.body, twist.linear.x, twist.linear.y, twist.linear.z);
         dBodySetAngularVel(object.body, twist.angular.x, twist.angular.y, twist.angular.z);
 
@@ -135,7 +130,7 @@ private:
         dMass m;
 
         // TODO: Use a true point mass here
-
+        // TODO: Determine if we need to adjust the COM.
         // Use the inertia matrix for a point mass rotating about the ground.
         dMassSetSphereTotal(&m, humanoidMass, 0.01);
         dBodySetMass(object.body, &m);
@@ -162,9 +157,9 @@ private:
         dJointGroupEmpty(contactgroup);
     }
 
-    void publishPathViz(const vector<geometry_msgs::Pose>& path) const {
+    void publishPathViz(const vector<geometry_msgs::Pose>& path, const string& frame) const {
         visualization_msgs::Marker points;
-        points.header.frame_id = baseFrame;
+        points.header.frame_id = frame;
         points.header.stamp = ros::Time::now();
         points.ns = "fall_prediction";
         points.id = 0;
@@ -187,19 +182,23 @@ private:
       // Create the ground object
       groundLink = dBodyCreate(world);
       groundToBodyJG = dJointGroupCreate(0);
+
+      // TODO: This is wrong if the human starts in a non-identity pose
       dBodySetPosition(groundLink, humanPose.position.x, humanPose.position.y, 0.0 /* No height in base frame */);
+
       // Set it as unresponsive to forces
       dBodySetKinematic(groundLink);
 
       groundJoint = dJointCreateBall(world, groundToBodyJG);
       dJointAttach(groundJoint, object.body, groundLink);
+
+      // TODO: This is wrong if the human starts in a non-identity pose
       dJointSetBallAnchor(groundJoint, humanPose.position.x, humanPose.position.y, 0.0);
     }
 
     bool predict(human_catching::PredictFall::Request& req,
                human_catching::PredictFall::Response& res) {
-
-      // TODO: Check frame here
+      ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
       res.header = req.header;
 
       // Initialize ODE
@@ -207,6 +206,7 @@ private:
 
       initWorld();
 
+      ROS_INFO("Initializing humanoid with pose: %f %f %f", req.pose.position.x, req.pose.position.y, req.pose.position.z);
       initHumanoid(req.pose, req.twist);
 
       initGroundJoint(req.pose);
@@ -243,12 +243,13 @@ private:
       }
 
       // Publish the path
-      publishPathViz(res.path);
+      ROS_INFO("Publishing estimated path");
+      publishPathViz(res.path, res.header.frame_id);
 
       // Clean up
       dWorldDestroy (world);
       destroyODE();
-
+      ROS_INFO("Completed fall prediction");
       return true;
     }
   };

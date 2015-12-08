@@ -5,14 +5,14 @@
   <static>false</static>
     <link name="link">
       <inertial>
-        <mass>10.0</mass> <!-- TODO Human mass -->
+        <mass>50.0</mass> <!-- TODO Human mass -->
         <inertia>
-          <ixx>1.8765625</ixx>
+          <ixx>9.3828125</ixx>
           <ixy>0.0</ixy>
           <ixz>0.0</ixz>
-          <iyy>1.8765625</iyy>
+          <iyy>9.3828125</iyy>
           <iyz>0.0</iyz>
-          <izz>0.003125</izz>
+          <izz>0.015625</izz>
         </inertia>
       </inertial>
       <collision name="collision">

@@ -24,14 +24,14 @@ private:
     //! Action Server
     Server as;
 
-    //! Cached service client.
-    ros::ServiceClient ikService;
-
     //! Joint trajectory action client.
     auto_ptr<JointTrajClient> jointTrajClient;
 
     //! Arm name
     string arm;
+
+    //! Joint names
+    vector<string> jointNames;
 
     //! Create messages that are used to published feedback/result
     human_catching::MoveArmFastFeedback feedback;
@@ -40,19 +40,17 @@ public:
 	MoveArmFastActionServer(const string& name) :
 		pnh("~"),
        as(nh, name, boost::bind(&MoveArmFastActionServer::execute, this, _1), false) {
-        ROS_INFO("Initializing move arm fast action");
-        nh.param<string>("arm", arm, "right");
+        pnh.param<string>("arm", arm, "right");
+        ROS_INFO("Initializing move arm fast action for arm %s", arm.c_str());
 
         string armActionServer = arm == "right" ? "r_arm_controller/joint_trajectory_action" :
             "l_arm_controller/joint_trajectory_action";
 
+        nh.getParam(arm == "right" ? "/r_arm_controller/joints" : "/l_arm_controller/joints", jointNames);
+
         ROS_INFO("Waiting for %s", armActionServer.c_str());
         jointTrajClient.reset(new JointTrajClient(armActionServer, true));
         jointTrajClient->waitForServer();
-
-        ROS_INFO("Waiting for kinematics_cache/ik");
-        ros::service::waitForService("/kinematics_cache/ik");
-        ikService = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
 
         ROS_INFO("Starting the action server");
         as.registerPreemptCallback(boost::bind(&MoveArmFastActionServer::preempt, this));
@@ -102,20 +100,10 @@ public:
 
     void execute(const human_catching::MoveArmFastGoalConstPtr& moveArmGoal){
 
-        ROS_INFO("Moving to position");
+        ROS_INFO("Moving arm %s to position", arm.c_str());
 
         if(!as.isActive() || as.isPreemptRequested() || !ros::ok()){
             ROS_INFO("Move arm action cancelled before started");
-            return;
-        }
-
-        // Lookup the IK solution
-        kinematics_cache::IKQuery ikQuery;
-        ikQuery.request.group = arm + "_arm";
-        ikQuery.request.pose = moveArmGoal->target;
-        if (!ikService.call(ikQuery)) {
-            ROS_WARN("Failed to find IK solution for fast arm movement");
-            as.setAborted();
             return;
         }
 
@@ -123,27 +111,28 @@ public:
         pr2_controllers_msgs::JointTrajectoryGoal goal;
 
         // First, the joint names, which apply to all waypoints
-        // TODO: Fetch this from the model
-        goal.trajectory.joint_names.push_back(arm[0] + "_shoulder_pan_joint");
-        goal.trajectory.joint_names.push_back(arm[0] + "_shoulder_lift_joint");
-        goal.trajectory.joint_names.push_back(arm[0] + "_upper_arm_roll_joint");
-        goal.trajectory.joint_names.push_back(arm[0] + "_elbow_flex_joint");
-        goal.trajectory.joint_names.push_back(arm[0] + "_forearm_roll_joint");
-        goal.trajectory.joint_names.push_back(arm[0] + "_wrist_flex_joint");
-        goal.trajectory.joint_names.push_back(arm[0] + "_wrist_roll_joint");
+        goal.trajectory.joint_names = jointNames;
+
+        if (goal.trajectory.joint_names.size() != moveArmGoal->joint_positions.size()) {
+            ROS_ERROR("Incorrect number of joint positions");
+            as.setAborted();
+            return;
+        }
 
         // We will have one waypoints in this goal trajectory
         goal.trajectory.points.resize(1);
-        goal.trajectory.points[0].positions = ikQuery.response.positions;
+        goal.trajectory.points[0].positions = moveArmGoal->joint_positions;
         // TODO: Confirm this waypoint is correct
         goal.trajectory.points[0].time_from_start = ros::Duration(0.0);
         goal.trajectory.header.stamp = ros::Time::now();
         sendGoal(jointTrajClient.get(), goal, nh);
 
         if(as.isPreemptRequested() || !ros::ok()){
+            ROS_INFO("Action was preempted");
             as.setPreempted();
         }
         else {
+            ROS_INFO("Move arm fast succeeded");
             as.setSucceeded(result);
         }
     }

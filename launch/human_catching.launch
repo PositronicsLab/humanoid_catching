@@ -1,8 +1,6 @@
 <launch>
   <include file="$(find pr2_machine)/$(env ROBOT).machine" />
-  <include file="$(find mongodb_store)/launch/mongodb_store.launch">
-    <arg name="db_path" value="/home/jlurz/mongodb"/>
-  </include>
+
   <include file="$(find pr2_moveit_config)/launch/move_group.launch" />
   <include file="$(find kinematics_cache)/launch/kinematics_cache.launch" />
 
