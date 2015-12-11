@@ -82,7 +82,7 @@ public:
                 ROS_DEBUG("Action finished: %s", state.toString().c_str());
             }
             else {
-                ROS_INFO("Action failed: %s",state.toString().c_str());
+                ROS_INFO("Action failed: %s", state.toString().c_str());
             }
         }
     }
@@ -123,17 +123,19 @@ public:
         goal.trajectory.points.resize(1);
         goal.trajectory.points[0].positions = moveArmGoal->joint_positions;
         // TODO: Confirm this waypoint is correct
-        goal.trajectory.points[0].time_from_start = ros::Duration(0.0);
+        goal.trajectory.points[0].time_from_start = ros::Duration(0.1);
         goal.trajectory.header.stamp = ros::Time::now();
-        sendGoal(jointTrajClient.get(), goal, nh);
+        bool success = sendGoal(jointTrajClient.get(), goal, nh);
 
         if(as.isPreemptRequested() || !ros::ok()){
-            ROS_INFO("Action was preempted");
+            ROS_INFO("Action was preempted for arm %s", arm.c_str());
             as.setPreempted();
-        }
-        else {
-            ROS_INFO("Move arm fast succeeded");
+        } else if (success) {
+            ROS_INFO("Move arm fast succeeded for arm %s", arm.c_str());
             as.setSucceeded(result);
+        } else {
+            ROS_INFO("Move arm fast failed for arm %s", arm.c_str());
+            as.setAborted(result);
         }
     }
 };

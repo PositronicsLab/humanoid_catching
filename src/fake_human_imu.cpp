@@ -6,20 +6,22 @@ namespace {
 using namespace std;
 using namespace geometry_msgs;
 
+static const double FREQUENCY = 0.01;
+
 class FakeHumanIMU {
 private:
     //! Publisher for the human pose
 	ros::Publisher humanPosePub;
-    
+
 	//! Node handle
 	ros::NodeHandle nh;
 
 	//! Private nh
 	ros::NodeHandle pnh;
-    
+
     //! Frequency at which to publish the humanoid state
     ros::Timer timer;
-    
+
     //! Cached service client.
     ros::ServiceClient modelStateServ;
 public:
@@ -27,13 +29,13 @@ public:
 		pnh("~") {
          humanPosePub = nh.advertise<human_catching::IMU>(
 				"out", 1);
-                
+
         ros::service::waitForService("/gazebo/get_model_state");
         modelStateServ = nh.serviceClient<gazebo_msgs::GetModelState>("/gazebo/get_model_state", true /* persistent */);
-        timer = nh.createTimer(ros::Duration(0.1), &FakeHumanIMU::callback, this);
+        timer = nh.createTimer(ros::Duration(FREQUENCY), &FakeHumanIMU::callback, this);
         timer.start();
 	}
-    
+
 private:
     human_catching::IMU getIMUData(){
         gazebo_msgs::GetModelState modelState;
@@ -45,13 +47,14 @@ private:
         data.twist = modelState.response.twist;
         // TODO: Null out data here for what an IMU can't detect
         // TODO: Determine how to get acceleration data
+        // TODO: DO THIS. IS IMPORTANT.
         // data.accel = modelState.response.accel;
         data.pose = modelState.response.pose;
         return data;
     }
-        
+
     void callback(const ros::TimerEvent& event){
-        
+
         // Lookup the current IMU data for the human
         human_catching::IMU data = getIMUData();
 

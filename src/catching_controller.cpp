@@ -15,10 +15,16 @@ using namespace std;
 using namespace human_catching;
 
 static const double EPSILON = 0.1;
+static const double PLANNING_TIME = 0.25;
 static const string ARMS[] = {"left", "right"};
-static const double SEARCH_RESOLUTION = 0.05;
+static const double SEARCH_RESOLUTION = 0.1;
 
 typedef actionlib::SimpleActionClient<human_catching::MoveArmFastAction> ArmClient;
+
+enum ARM {
+    LEFT = 0,
+    RIGHT = 1,
+};
 
 class CatchingController {
 private:
@@ -130,7 +136,8 @@ private:
 
         // TODO: Set the pose to the one used to load the IK cache
 
-        // TODO: Adjust offsets per arm
+        // Epsilon causes us to always select a position in front of the fall.
+        // TODO: Orient hands towards each other?
         double lastTime = 0;
         for (unsigned int i = 0; i < predictFall.response.times.size(); ++i) {
 
@@ -149,6 +156,13 @@ private:
                 geometry_msgs::PoseStamped basePose;
                 basePose.header = predictFall.response.header;
                 basePose.pose = predictFall.response.path[i];
+
+                // Offset so end effectors are not in same space. This is in cartesian coordinates.
+                if (j == LEFT) {
+                    basePose.pose.position.z += 0.05;
+                } else {
+                    basePose.pose.position.z -= 0.05;
+                }
 
                 geometry_msgs::PoseStamped transformedPose;
                 transformedPose.header.frame_id = "/torso_lift_link";
@@ -170,8 +184,11 @@ private:
                 }
 
                 // Now check if the time is feasible
-                if ((1 + EPSILON) * ikQuery.response.execution_time.toSec() > predictFall.response.times[i]) {
+                if ((1 + EPSILON) * ikQuery.response.execution_time.toSec() + PLANNING_TIME > predictFall.response.times[i]) {
                     ROS_INFO("Position could not be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
+                             ikQuery.response.execution_time.toSec(), EPSILON, predictFall.response.times[i]);
+                } else {
+                    ROS_INFO("Position could be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
                              ikQuery.response.execution_time.toSec(), EPSILON, predictFall.response.times[i]);
                 }
 
@@ -199,8 +216,10 @@ private:
         }
 
         ROS_INFO("Selecting optimal position from %lu poses", possiblePoses.size());
+        assert(possiblePoses.size() == jointSolutions.size());
 
         // Select the highest point as this maximizes possible energy dissipation
+        // TODO: Could also select maximum time delta
         double highestZ = 0;
         geometry_msgs::Pose bestPose;
         vector<vector<double> > bestJointPositions;

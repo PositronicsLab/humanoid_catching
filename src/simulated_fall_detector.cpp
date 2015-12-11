@@ -47,7 +47,7 @@ private:
         modelStateServ.call(modelState);
 
         // Check for a z velocity
-        if (modelState.response.twist.linear.z < -EPSILON) {
+        if (modelState.response.twist.linear.z < -EPSILON || fabs(modelState.response.twist.linear.x) > EPSILON || fabs(modelState.response.twist.linear.y) > EPSILON) {
             ROS_DEBUG("Detected negative Z velocity");
             publishFall(modelState.response.pose.position);
         }
