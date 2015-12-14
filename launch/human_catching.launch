@@ -2,6 +2,11 @@
   <include file="$(find pr2_machine)/$(env ROBOT).machine" />
 
   <include file="$(find pr2_moveit_config)/launch/move_group.launch" />
+
+  <!-- Gazebo does not read these live
+  <param name="/r_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />
+  <param name="/l_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />
+  -->
   <include file="$(find kinematics_cache)/launch/kinematics_cache.launch" />
 
   <!-- Mapping -->

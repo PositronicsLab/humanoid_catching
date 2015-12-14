@@ -47,8 +47,6 @@ private:
         data.twist = modelState.response.twist;
         // TODO: Null out data here for what an IMU can't detect
         // TODO: Determine how to get acceleration data
-        // TODO: DO THIS. IS IMPORTANT.
-        // data.accel = modelState.response.accel;
         data.pose = modelState.response.pose;
         return data;
     }

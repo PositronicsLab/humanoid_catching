@@ -122,7 +122,8 @@ public:
         // We will have one waypoints in this goal trajectory
         goal.trajectory.points.resize(1);
         goal.trajectory.points[0].positions = moveArmGoal->joint_positions;
-        // TODO: Confirm this waypoint is correct
+
+        // Move as quickly as possible.
         goal.trajectory.points[0].time_from_start = ros::Duration(0.1);
         goal.trajectory.header.stamp = ros::Time::now();
         bool success = sendGoal(jointTrajClient.get(), goal, nh);
