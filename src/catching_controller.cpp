@@ -184,7 +184,12 @@ private:
                 }
                 if (!ik.call(ikQuery)) {
                     ROS_DEBUG("Failed to find IK solution for arm %s", ARMS[j].c_str());
-                    continue;
+                    break;
+                }
+
+                if (ikQuery.response.positions.size() == 0) {
+                    ROS_ERROR("Response from IK cache was invalid");
+                    break;
                 }
 
                 // Now check if the time is feasible
@@ -192,7 +197,7 @@ private:
                 // if ((1 + EPSILON) * ikQuery.response.execution_time.toSec() + PLANNING_TIME > predictFall.response.times[i]) {
                 //    ROS_INFO("Position could not be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
                 //             ikQuery.response.execution_time.toSec(), EPSILON, predictFall.response.times[i]);
-                //             continue;
+                //             break;
                 // }
 
                 ROS_INFO("Position could be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",

@@ -114,7 +114,7 @@ public:
         goal.trajectory.joint_names = jointNames;
 
         if (goal.trajectory.joint_names.size() != moveArmGoal->joint_positions.size()) {
-            ROS_ERROR("Incorrect number of joint positions");
+            ROS_ERROR("Incorrect number of joint positions: %lu", moveArmGoal->joint_positions.size());
             as.setAborted();
             return;
         }

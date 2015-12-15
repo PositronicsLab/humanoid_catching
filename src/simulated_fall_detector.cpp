@@ -5,7 +5,7 @@
 
 namespace {
 
-static const double EPSILON = 0.1;
+static const double EPSILON = 0.075;
 static const double TIMER_FREQ = 0.01;
 
 using namespace std;
