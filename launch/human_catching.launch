@@ -22,6 +22,9 @@
   <node pkg="human_catching" type="move_arm_fast_action_server" name="left_arm_move_arm_fast_action_server" output="screen">
     <param name="arm" value="left" />
   </node>
+  <node pkg="human_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
+  </node>
+
   <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector">
     <remap from="/out" to="/human/fall" />
   </node>

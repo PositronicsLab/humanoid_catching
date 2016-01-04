@@ -54,6 +54,7 @@ add_service_files(
 add_action_files(
    FILES
    MoveArmFast.action
+   CatchHuman.action
  )
 
 ## Generate added messages and services with any dependencies listed here
@@ -148,6 +149,12 @@ target_link_libraries(catching_controller
 add_executable(move_arm_fast_action_server src/move_arm_fast_action_server.cpp)
 add_dependencies(move_arm_fast_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(move_arm_fast_action_server
+   ${catkin_LIBRARIES}
+)
+
+add_executable(catch_human_action_server src/catch_human_action_server.cpp)
+add_dependencies(catch_human_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(catch_human_action_server
    ${catkin_LIBRARIES}
 )
 
