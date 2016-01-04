@@ -218,18 +218,18 @@ private:
                 }
 
                 // Now check if the time is feasible
-                if ((1 + EPSILON) * ikQuery.response.execution_time.toSec() + PLANNING_TIME > predictFall.response.times[i]) {
+                if (ros::Duration((1 + EPSILON) * ikQuery.response.simulated_execution_time.toSec()) + ros::Duration(PLANNING_TIME) > predictFall.response.times[i]) {
                     ROS_INFO("Position could not be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
-                             ikQuery.response.execution_time.toSec(), EPSILON, predictFall.response.times[i]);
+                             ikQuery.response.simulated_execution_time.toSec(), EPSILON, predictFall.response.times[i].toSec());
                              // TODO: All times are currently reporting as infeasible.
                              // break;
                 }
 
                 ROS_INFO("Position could be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
-                         ikQuery.response.execution_time.toSec(), EPSILON, predictFall.response.times[i].toSec());
+                         ikQuery.response.simulated_execution_time.toSec(), EPSILON, predictFall.response.times[i].toSec());
 
                 possibleSolution.armsSolved++;
-                possibleSolution.delta = min(possibleSolution.delta, ros::Duration(predictFall.response.times[i]) - ikQuery.response.execution_time);
+                possibleSolution.delta = min(possibleSolution.delta, ros::Duration(predictFall.response.times[i]) - ikQuery.response.simulated_execution_time);
                 possibleSolution.jointPositions.push_back(ikQuery.response.positions);
             }
             solutions.push_back(possibleSolution);
