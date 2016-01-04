@@ -26,7 +26,7 @@
     <remap from="/out" to="/human/fall" />
   </node>
 
-  <node pkg="human_catching" type="fall_predictor" name="fall_predictor" />
+  <node pkg="human_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="human_catching" type="catching_controller" name="catching_controller" output="screen"/>
 
   <include file="$(find human_catching)/launch/spawn_models.launch" />

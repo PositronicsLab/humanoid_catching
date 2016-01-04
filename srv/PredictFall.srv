@@ -5,4 +5,4 @@ geometry_msgs/Twist twist
 Header header
 geometry_msgs/Pose[] path
 geometry_msgs/Twist[] velocityPath
-float64[] times
+duration[] times

@@ -3,6 +3,8 @@
 #include <visualization_msgs/Marker.h>
 #include <ode/ode.h>
 #include <iostream>
+#include <bullet/LinearMath/btVector3.h>
+#include <tf/transform_listener.h>
 
 namespace {
 using namespace std;
@@ -129,9 +131,8 @@ private:
 
         dMass m;
 
-        // TODO: Use a true point mass here
-        // TODO: Determine if we need to adjust the COM.
         // Use the inertia matrix for a point mass rotating about the ground.
+        // Use a very small sphere to mimic a point mass, which was not working properly.
         dMassSetSphereTotal(&m, humanoidMass, 0.01);
         dBodySetMass(object.body, &m);
         object.geom[0] = dCreateCylinder(space, 0.01 /* radius */, humanoidHeight);
@@ -147,7 +148,7 @@ private:
         dJointGroupDestroy(contactgroup);
         dJointGroupDestroy(groundToBodyJG);
         dSpaceDestroy(space);
-        // dWorldDestroy(world);
+        dWorldDestroy(world);
         dCloseODE();
     }
 
@@ -183,8 +184,24 @@ private:
       groundLink = dBodyCreate(world);
       groundToBodyJG = dJointGroupCreate(0);
 
-      // TODO: This is wrong if the human starts in a non-identity pose
-      dBodySetPosition(groundLink, humanPose.position.x, humanPose.position.y, 0.0 /* No height in base frame */);
+      // Determine the intersection between the human pose and the ground plane.
+      btVector3 groundNormal(0, 0, 1);
+      btVector3 groundOrigin(0, 0, 0);
+
+      tf::Quaternion tfHumanOrientation;
+      tf::quaternionMsgToTF(humanPose.orientation, tfHumanOrientation);
+      tf::Vector3 tfHumanVector = tf::quatRotate(tfHumanOrientation, tf::Vector3(0, 0, 1));
+
+      btVector3 humanVector(tfHumanVector.x(), tfHumanVector.y(), tfHumanVector.z());
+      btVector3 humanOrigin(humanPose.position.x, humanPose.position.y, humanPose.position.z);
+
+      btScalar d = ((groundOrigin - humanOrigin).dot(groundNormal)) / (humanVector.dot(groundNormal));
+      btVector3 intersection = d * humanVector + humanOrigin;
+
+      // Assert intersection is at ground plane.
+      assert(abs(intersection.z()) < 0.001);
+
+      dBodySetPosition(groundLink, intersection.x(), intersection.y(), intersection.z());
 
       // Set it as unresponsive to forces
       dBodySetKinematic(groundLink);
@@ -192,8 +209,7 @@ private:
       groundJoint = dJointCreateBall(world, groundToBodyJG);
       dJointAttach(groundJoint, object.body, groundLink);
 
-      // TODO: This is wrong if the human starts in a non-identity pose
-      dJointSetBallAnchor(groundJoint, humanPose.position.x, humanPose.position.y, 0.0);
+      dJointSetBallAnchor(groundJoint, intersection.x(), intersection.y(), intersection.z());
     }
 
     bool predict(human_catching::PredictFall::Request& req,
@@ -239,7 +255,7 @@ private:
         twist.angular.y = angularVelocity[1];
         twist.angular.z = angularVelocity[2];
         res.velocityPath.push_back(twist);
-        res.times.push_back(t);
+        res.times.push_back(ros::Duration(t));
       }
 
       // Publish the path
@@ -247,7 +263,6 @@ private:
       publishPathViz(res.path, res.header.frame_id);
 
       // Clean up
-      dWorldDestroy (world);
       destroyODE();
       ROS_INFO("Completed fall prediction");
       return true;

@@ -45,8 +45,6 @@ private:
         data.header.stamp = ros::Time::now();
         data.header.frame_id = "/map";
         data.twist = modelState.response.twist;
-        // TODO: Null out data here for what an IMU can't detect
-        // TODO: Determine how to get acceleration data
         data.pose = modelState.response.pose;
         return data;
     }
