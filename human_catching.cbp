@@ -34,6 +34,7 @@
 		</Compiler>
 		<Unit filename="CMakeLists.txt" />
 		<Unit filename="TODO" />
+		<Unit filename="action/CatchHuman.action" />
 		<Unit filename="action/MoveArmFast.action" />
 		<Unit filename="human_catching.layout" />
 		<Unit filename="launch/human_catching.launch" />
@@ -47,6 +48,7 @@
 		<Unit filename="msg/IMU.msg" />
 		<Unit filename="package.xml" />
 		<Unit filename="src/announced_fall_detector.cpp" />
+		<Unit filename="src/catch_human_action_server.cpp" />
 		<Unit filename="src/catching_controller.cpp" />
 		<Unit filename="src/fake_human_imu.cpp" />
 		<Unit filename="src/fall_predictor.cpp" />
