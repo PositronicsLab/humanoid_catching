@@ -9,6 +9,9 @@ namespace {
 using namespace std;
 using namespace human_catching;
 
+static const double MAX_CATCH_TIME = 5.0;
+static const double MAX_PREEMPT_TIME = 0.5;
+
 typedef actionlib::SimpleActionClient<human_catching::CatchHumanAction> CatchHumanClient;
 
 class CatchingController {
@@ -76,7 +79,14 @@ private:
         goal.header = imuData->header;
         goal.twist = imuData->twist;
         goal.pose = imuData->pose;
-        catchHumanClient->sendGoal(goal);
+        actionlib::SimpleClientGoalState gs = catchHumanClient->sendGoalAndWait(goal, ros::Duration(MAX_CATCH_TIME), ros::Duration(MAX_PREEMPT_TIME));
+        if (gs.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
+            ROS_INFO("Human was caught successsfully. Resetting for next fall.");
+            humanFallSub->subscribe();
+        } else {
+            ROS_INFO("Human was not caught successfully. Failure state was %s", gs.getText().c_str());
+            humanIMUSub->subscribe();
+        }
     }
 };
 }

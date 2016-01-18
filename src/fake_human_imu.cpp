@@ -55,7 +55,7 @@ private:
         human_catching::IMU data = getIMUData();
 
         // Publish the event
-        ROS_DEBUG("Publishing a human IMU event");
+        ROS_DEBUG_STREAM("Publishing a human IMU event: " << data);
         humanPosePub.publish(data);
       }
 };

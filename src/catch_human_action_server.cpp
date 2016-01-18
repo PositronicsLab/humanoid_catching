@@ -121,6 +121,7 @@ private:
         ROS_INFO("Predicting fall");
         if (!fallPredictor.call(predictFall)) {
             ROS_WARN("Fall prediction failed");
+            as.setAborted();
             return;
         }
 
@@ -130,6 +131,7 @@ private:
         // Transform to the base_frame for IK, which is torso_lift_link
         if(!tf.waitForTransform(predictFall.response.header.frame_id, "/torso_lift_link", predictFall.response.header.stamp, ros::Duration(15))){
             ROS_WARN("Failed to get transform");
+            as.setAborted();
             return;
         }
 
@@ -227,6 +229,7 @@ private:
 
         if (solutions.empty()) {
             ROS_WARN("No possible catch positions");
+            as.setAborted();
             return;
         }
 
@@ -234,7 +237,7 @@ private:
 
         // Select the point which is reachable most quicly
         ros::Duration highestDeltaTime = ros::Duration(-10);
-        vector<Solution>::iterator bestSolution;
+        vector<Solution>::iterator bestSolution = solutions.end();
         for (vector<Solution>::iterator solution = solutions.begin(); solution != solutions.end(); ++solution) {
             if (solution->armsSolved != 2) {
                 ROS_INFO("Skipping solution without 2 arms solved");
@@ -252,6 +255,11 @@ private:
         ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
                  ros::Time::now().toSec() - startRosTime.toSec());
 
+        if (bestSolution == solutions.end()) {
+            ROS_WARN("No two arm solutions");
+            as.setAborted();
+            return;
+        }
         // Now move both arms to the position
         for (unsigned int i = 0; i < arms.size(); ++i) {
             human_catching::MoveArmFastGoal goal;
