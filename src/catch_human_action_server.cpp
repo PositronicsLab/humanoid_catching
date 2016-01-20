@@ -9,6 +9,7 @@
 #include <tf/transform_listener.h>
 #include <boost/timer.hpp>
 #include <boost/math/constants/constants.hpp>
+#include <map>
 
 namespace {
 using namespace std;
@@ -16,22 +17,18 @@ using namespace human_catching;
 
 typedef actionlib::SimpleActionServer<human_catching::CatchHumanAction> Server;
 typedef actionlib::SimpleActionClient<human_catching::MoveArmFastAction> ArmClient;
+typedef vector<kinematics_cache::IK> IKList;
 
 static const double EPSILON = 0.1;
 static const double PLANNING_TIME = 0.25;
-static const string ARMS[] = {"left", "right"};
+static const string ARMS[] = {"left_arm", "right_arm"};
 static const ros::Duration SEARCH_RESOLUTION(0.1);
 static const double pi = boost::math::constants::pi<double>();
-
-enum ARM {
-    LEFT = 0,
-    RIGHT = 1,
-};
 
 struct Solution {
     unsigned int armsSolved;
     geometry_msgs::Pose pose;
-    vector<vector<double> > jointPositions;
+    map<string, vector<double> > jointPositions;
     ros::Duration goalTime;
     ros::Duration delta;
 };
@@ -81,9 +78,9 @@ public:
         // Initialize arm clients
         ROS_INFO("Initializing move_arm_fast_action_servers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
-            ArmClient* arm = new ArmClient(ARMS[i] + "_arm_move_arm_fast_action_server", true);
+            ArmClient* arm = new ArmClient(ARMS[i] + "_move_arm_fast_action_server", true);
             arms.push_back(boost::shared_ptr<ArmClient>(arm));
-            ROS_INFO("Waiting for %s", (ARMS[i] + "_arm_move_arm_fast_action_server").c_str());
+            ROS_INFO("Waiting for %s", (ARMS[i] + "_move_arm_fast_action_server").c_str());
             arms[i]->waitForServer();
         }
 
@@ -95,6 +92,7 @@ public:
 
 private:
     void preempt() {
+        ROS_INFO("Preempting the catching controller");
         for (unsigned int i = 0; i < arms.size(); ++i) {
             arms[i]->cancelGoal();
         }
@@ -145,24 +143,24 @@ private:
         unsigned int ops = 0;
         double timePerOp = 0;
 
-        for (unsigned int i = 0; i < predictFall.response.times.size(); ++i) {
+        for (vector<FallPoint>::const_iterator i = predictFall.response.points.begin(); i != predictFall.response.points.end(); ++i) {
 
             // Determine if we should search this point.
-            if (i != 0 && predictFall.response.times[i] - lastTime < SEARCH_RESOLUTION) {
+            if (lastTime != ros::Duration(0) && i->time - lastTime < SEARCH_RESOLUTION) {
                 continue;
             }
 
-            lastTime = predictFall.response.times[i];
+            lastTime = i->time;
 
             Solution possibleSolution;
             possibleSolution.delta = ros::Duration(1000); // Initialize max delta to large number
             possibleSolution.armsSolved = 0;
-            possibleSolution.pose = predictFall.response.path[i];
-            possibleSolution.goalTime = ros::Duration(predictFall.response.times[i]);
+            possibleSolution.pose = i->pose;
+            possibleSolution.goalTime = ros::Duration(i->time);
 
             geometry_msgs::PoseStamped basePose;
             basePose.header = predictFall.response.header;
-            basePose.pose = predictFall.response.path[i];
+            basePose.pose = i->pose;
 
             geometry_msgs::PoseStamped transformedPose;
             transformedPose.header.frame_id = "/torso_lift_link";
@@ -172,55 +170,43 @@ private:
                                      predictFall.response.header.frame_id, transformedPose);
             }
             catch (tf::TransformException& ex) {
-                ROS_ERROR("Failed to transform pose from %s to %s", predictFall.response.header.frame_id.c_str(),
-                        "/torso_lift_link");
+                ROS_ERROR("Failed to transform pose from %s to %s due to %s", predictFall.response.header.frame_id.c_str(),
+                        "/torso_lift_link", ex.what());
                 continue;
             }
 
-            for (unsigned int j = 0; j < boost::size(arms); ++j) {
-                // Lookup the IK solution
-                kinematics_cache::IKQuery ikQuery;
-                ikQuery.request.group = ARMS[j] + "_arm";
-                ikQuery.request.pose = transformedPose;
+            // Lookup the IK solution
+            kinematics_cache::IKQuery ikQuery;
+            ikQuery.request.pose = transformedPose;
 
-                // Offset so end effectors are not in same space. This is in torso lift link coordinates, which is a plane
-                // parallel to the cartesian plane.
-                if (j == LEFT) {
-                    ikQuery.request.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(-pi / 2.0, 0, pi / 2.0);
-                    ikQuery.request.pose.pose.position.z += 0.05;
-                } else {
-                    ikQuery.request.pose.pose.position.z -= 0.05;
-                    ikQuery.request.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(pi / 2.0, 0, -pi / 2.0);
-                }
-
-                boost::timer opTimer;
-                ops++;
-                if (!ik.call(ikQuery)) {
-                    ROS_DEBUG("Failed to find IK solution for arm %s", ARMS[j].c_str());
-                    timePerOp += opTimer.elapsed() / float(ops);
-                    break;
-                }
+            boost::timer opTimer;
+            ops++;
+            if (!ik.call(ikQuery)) {
+                ROS_DEBUG("Failed to find IK solution for arms");
                 timePerOp += opTimer.elapsed() / float(ops);
+                break;
+            }
+            timePerOp += opTimer.elapsed() / float(ops);
 
-                if (ikQuery.response.positions.size() == 0) {
-                    ROS_ERROR("Response from IK cache was invalid");
-                    break;
-                }
+            if (ikQuery.response.results.size() > 2) {
+                ROS_WARN("Response includes unexpected number of results");
+            }
 
-                // Now check if the time is feasible
-                if (ros::Duration((1 + EPSILON) * ikQuery.response.simulated_execution_time.toSec()) + ros::Duration(PLANNING_TIME) > predictFall.response.times[i]) {
+            // Now check if the time is feasible
+            for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
+                if (ros::Duration((1 + EPSILON) * j->simulated_execution_time.toSec()) + ros::Duration(PLANNING_TIME) > i->time) {
                     ROS_INFO("Position could not be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
-                             ikQuery.response.simulated_execution_time.toSec(), EPSILON, predictFall.response.times[i].toSec());
-                             // TODO: All times are currently reporting as infeasible.
-                             // break;
+                            j->simulated_execution_time.toSec(), EPSILON, i->time.toSec());
+                            // TODO: All times are currently reporting as infeasible.
+                            // break;
                 }
+            }
 
-                ROS_INFO("Position could be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
-                         ikQuery.response.simulated_execution_time.toSec(), EPSILON, predictFall.response.times[i].toSec());
+            possibleSolution.armsSolved = ikQuery.response.results.size();
 
-                possibleSolution.armsSolved++;
-                possibleSolution.delta = min(possibleSolution.delta, ros::Duration(predictFall.response.times[i]) - ikQuery.response.simulated_execution_time);
-                possibleSolution.jointPositions.push_back(ikQuery.response.positions);
+            for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
+                possibleSolution.delta = min(possibleSolution.delta, ros::Duration(i->time) - j->simulated_execution_time);
+                possibleSolution.jointPositions[j->group] = j->positions;
             }
             solutions.push_back(possibleSolution);
         }
@@ -237,16 +223,16 @@ private:
 
         // Select the point which is reachable most quicly
         ros::Duration highestDeltaTime = ros::Duration(-10);
+        unsigned int highestArmsSolved = 0;
+
         vector<Solution>::iterator bestSolution = solutions.end();
         for (vector<Solution>::iterator solution = solutions.begin(); solution != solutions.end(); ++solution) {
-            if (solution->armsSolved != 2) {
-                ROS_INFO("Skipping solution without 2 arms solved");
-                continue;
-            }
 
-            if (solution->delta > highestDeltaTime) {
+            // Always prefer higher armed solutions
+            if (solution->armsSolved > highestArmsSolved || solution->armsSolved == highestArmsSolved && solution->delta > highestDeltaTime) {
+                highestArmsSolved = solution->armsSolved;
                 highestDeltaTime = solution->delta;
-                ROS_DEBUG("Selected a pose with a higher delta time. Pose is %f %f %f and delta is %f", solution->pose.position.x,
+                ROS_DEBUG("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f and delta is %f", solution->pose.position.x,
                          solution->pose.position.y, solution->pose.position.z, highestDeltaTime.toSec());
                 bestSolution = solution;
             }
@@ -256,17 +242,23 @@ private:
                  ros::Time::now().toSec() - startRosTime.toSec());
 
         if (bestSolution == solutions.end()) {
-            ROS_WARN("No two arm solutions");
+            ROS_WARN("No solutions found");
             as.setAborted();
             return;
         }
+
         // Now move both arms to the position
         for (unsigned int i = 0; i < arms.size(); ++i) {
-            human_catching::MoveArmFastGoal goal;
-            goal.joint_positions = bestSolution->jointPositions[i];
-            goal.goal_time = bestSolution->goalTime;
-            arms[i]->sendGoal(goal);
+            if (bestSolution->jointPositions.find(ARMS[i]) != bestSolution->jointPositions.end()) {
+                human_catching::MoveArmFastGoal goal;
+                goal.joint_positions = bestSolution->jointPositions[ARMS[i]];
+                goal.goal_time = bestSolution->goalTime;
+                arms[i]->sendGoal(goal);
+            } else {
+                ROS_INFO("Skipping arm %s due to no solution.", ARMS[i].c_str());
+            }
         }
+        as.setSucceeded();
     }
 };
 }

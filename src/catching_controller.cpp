@@ -31,6 +31,7 @@ private:
 
     //! Catch human action client.
     auto_ptr<CatchHumanClient> catchHumanClient;
+
 public:
 	CatchingController() :
 		pnh("~") {

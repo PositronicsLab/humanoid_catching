@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <human_catching/PredictFall.h>
+#include <human_catching/FallPoint.h>
 #include <visualization_msgs/Marker.h>
 #include <ode/ode.h>
 #include <iostream>
@@ -8,6 +9,7 @@
 
 namespace {
 using namespace std;
+using namespace human_catching;
 
 //! Default weight in kg
 static const double MASS_DEFAULT = 50;
@@ -232,6 +234,8 @@ private:
         // Step forward
         simLoop(STEP_SIZE);
 
+        FallPoint curr;
+
         // Get the location of the body for the current iteration
         const dReal* position = dBodyGetPosition(object.body);
         const dReal* orientation = dBodyGetQuaternion(object.body);
@@ -243,7 +247,7 @@ private:
         pose.orientation.y = orientation[1];
         pose.orientation.z = orientation[2];
         pose.orientation.w = orientation[3];
-        res.path.push_back(pose);
+        curr.pose = pose;
 
         const dReal* linearVelocity = dBodyGetLinearVel(object.body);
         const dReal* angularVelocity = dBodyGetAngularVel(object.body);
@@ -254,13 +258,21 @@ private:
         twist.angular.x = angularVelocity[0];
         twist.angular.y = angularVelocity[1];
         twist.angular.z = angularVelocity[2];
-        res.velocityPath.push_back(twist);
-        res.times.push_back(ros::Duration(t));
+
+        curr.velocity = twist;
+        curr.time = ros::Duration(t);
+        res.points.push_back(curr);
       }
 
       // Publish the path
-      ROS_INFO("Publishing estimated path");
-      publishPathViz(res.path, res.header.frame_id);
+      if (fallVizPub.getNumSubscribers() > 0) {
+        ROS_INFO("Publishing estimated path");
+        vector<geometry_msgs::Pose> points;
+        for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i) {
+            points.push_back(i->pose);
+        }
+        publishPathViz(points, res.header.frame_id);
+      }
 
       // Clean up
       destroyODE();

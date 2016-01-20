@@ -25,9 +25,10 @@
   <node pkg="human_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
   </node>
 
-  <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector">
+  <!-- Disabled due to spurious detections -->
+  <!-- <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector">
     <remap from="/out" to="/human/fall" />
-  </node>
+  </node> -->
 
   <node pkg="human_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="human_catching" type="catching_controller" name="catching_controller" output="screen"/>
