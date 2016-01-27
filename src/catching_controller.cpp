@@ -78,8 +78,8 @@ private:
         ROS_INFO("Beginning procedure to catch human");
         human_catching::CatchHumanGoal goal;
         goal.header = imuData->header;
-        goal.velocity.linear = imuData->linear_velocity;
-        goal.accel.angular = imuData->angular_accel;
+        goal.velocity.angular = imuData->angular_velocity;
+        goal.accel.linear = imuData->linear_acceleration;
         goal.pose = imuData->pose;
         actionlib::SimpleClientGoalState gs = catchHumanClient->sendGoalAndWait(goal, ros::Duration(MAX_CATCH_TIME), ros::Duration(MAX_PREEMPT_TIME));
         if (gs.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {

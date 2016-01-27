@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(human_catching)
 
 ## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf)
+find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf sensor_msgs)
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
@@ -162,6 +162,12 @@ target_link_libraries(catch_human_action_server
 add_executable(fall_predictor src/fall_predictor.cpp)
 add_dependencies(fall_predictor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_predictor
+   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+)
+
+add_executable(imu_integrator src/imu_integrator.cpp)
+add_dependencies(imu_integrator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(imu_integrator
    ${catkin_LIBRARIES} ${ODE_LIBRARY}
 )
 
