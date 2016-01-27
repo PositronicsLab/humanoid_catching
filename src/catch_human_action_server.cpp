@@ -114,7 +114,8 @@ private:
         human_catching::PredictFall predictFall;
         predictFall.request.header = goal->header;
         predictFall.request.pose = goal->pose;
-        predictFall.request.twist = goal->twist;
+        predictFall.request.velocity = goal->velocity;
+        predictFall.request.accel = goal->accel;
 
         ROS_INFO("Predicting fall");
         if (!fallPredictor.call(predictFall)) {

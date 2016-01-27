@@ -119,14 +119,14 @@ private:
         dWorldSetAutoDisableFlag(world, 1);
     }
 
-    void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& twist) {
+    void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& velocity) {
 
         // Create the object
         object.body = dBodyCreate(world);
 
         dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z);
-        dBodySetLinearVel(object.body, twist.linear.x, twist.linear.y, twist.linear.z);
-        dBodySetAngularVel(object.body, twist.angular.x, twist.angular.y, twist.angular.z);
+        dBodySetLinearVel(object.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
+        dBodySetAngularVel(object.body, velocity.angular.x, velocity.angular.y,velocity.angular.z);
 
         const dReal q[] = {pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w};
         dBodySetQuaternion(object.body, q);
@@ -225,7 +225,7 @@ private:
       initWorld();
 
       ROS_INFO("Initializing humanoid with pose: %f %f %f", req.pose.position.x, req.pose.position.y, req.pose.position.z);
-      initHumanoid(req.pose, req.twist);
+      initHumanoid(req.pose, req.velocity);
 
       initGroundJoint(req.pose);
 

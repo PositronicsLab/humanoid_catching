@@ -44,7 +44,7 @@ private:
         human_catching::IMU data;
         data.header.stamp = ros::Time::now();
         data.header.frame_id = "/map";
-        data.twist = modelState.response.twist;
+        data.linear_velocity = modelState.response.twist.linear;
         data.pose = modelState.response.pose;
         return data;
     }
