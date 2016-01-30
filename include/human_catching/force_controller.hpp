@@ -36,7 +36,7 @@ namespace human_catching {
     KDL::Chain kdl_chain;
 
     //! KDL Solver performing the joint angles to Cartesian pose calculation
-    boost::scoped_ptr<KDL::ChainFkSolverPos>    jnt_to_pose_solver_;
+    boost::scoped_ptr<KDL::ChainFkSolverPos>    jnt_to_pose_solver;
 
     //! KDL Solver performing the joint angles to Jacobian calculation
     boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver;
@@ -48,7 +48,9 @@ namespace human_catching {
     KDL::JntArrayVel  qdot;
 
     //! Joint torques
-    KDL::JntArray  tau_, tau_act_;
+    KDL::JntArray  tau;
+
+    KDL::JntArray tau_act;
 
     //! Tip pose
     KDL::Frame     x;
