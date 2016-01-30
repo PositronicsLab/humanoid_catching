@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(human_catching)
 
 ## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf sensor_msgs)
+find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf sensor_msgs eigen orocos_kdl pluginlib)
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
@@ -111,7 +111,7 @@ add_definitions(-DdDOUBLE)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-# include_directories(include)
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(human_catching
@@ -168,6 +168,12 @@ target_link_libraries(fall_predictor
 add_executable(imu_integrator src/imu_integrator.cpp)
 add_dependencies(imu_integrator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(imu_integrator
+   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+)
+
+add_library(force_controller src/force_controller.cpp)
+add_dependencies(force_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(force_controller
    ${catkin_LIBRARIES} ${ODE_LIBRARY}
 )
 

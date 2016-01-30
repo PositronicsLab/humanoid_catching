@@ -1,0 +1,5 @@
+<library path="lib/human_catching">
+    <class name="human_catching/ForceControlPlugin"
+           type="human_catching::ForceControlClass"
+           base_class_type="pr2_controller_interface::Controller" />
+</library>
