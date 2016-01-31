@@ -16,12 +16,16 @@
 #include <realtime_tools/realtime_publisher.h>
 #include <realtime_tools/realtime_box.h>
 
+#include <geometry_msgs/PoseStamped.h>
 #include <ros/ros.h>
 // Code inspired by ee_imped_controller
 namespace human_catching {
 
   class ForceController : public pr2_controller_interface::Controller {
   private:
+
+    //! Subscriber for command updates
+    ros::Subscriber subscriber;
 
     //! The current robot state
     pr2_mechanism_model::RobotState* robot_state;
@@ -36,7 +40,7 @@ namespace human_catching {
     KDL::Chain kdl_chain;
 
     //! KDL Solver performing the joint angles to Cartesian pose calculation
-    boost::scoped_ptr<KDL::ChainFkSolverPos>    jnt_to_pose_solver;
+    boost::scoped_ptr<KDL::ChainFkSolverPos> jnt_to_pose_solver;
 
     //! KDL Solver performing the joint angles to Jacobian calculation
     boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver;
@@ -73,17 +77,17 @@ namespace human_catching {
     //! Jacobian
     KDL::Jacobian  J;
 
-    // Note the gains are incorrectly typed as a twist,
-    // as there is no appropriate type!
     //! Proportional gains
     KDL::Twist     Kp;
 
     //! Derivative gains
     KDL::Twist     Kd;
 
-    //! Time of the last servo cycle
-    ros::Time last_time;
+    //! Goal
+    geometry_msgs::PoseStampedConstPtr pose_des;
 
+    //! Callback when a new goal is received
+    void commandCB(const geometry_msgs::PoseStampedConstPtr &command);
   public:
     /**
      * \brief Controller initialization in non-realtime

@@ -38,7 +38,10 @@
 		<Unit filename="action/MoveArmFast.action" />
 		<Unit filename="controller_plugins.xml" />
 		<Unit filename="human_catching.layout" />
+		<Unit filename="include/human_catching/force_controller.hpp" />
 		<Unit filename="launch/human_catching.launch" />
+		<Unit filename="launch/l_arm_force_controller.launch" />
+		<Unit filename="launch/r_arm_force_controller.launch" />
 		<Unit filename="launch/spawn_human.launch" />
 		<Unit filename="launch/spawn_models.launch" />
 		<Unit filename="load_models.sh" />
@@ -56,6 +59,7 @@
 		<Unit filename="src/catching_controller.cpp" />
 		<Unit filename="src/fake_human_imu.cpp" />
 		<Unit filename="src/fall_predictor.cpp" />
+		<Unit filename="src/force_controller.cpp" />
 		<Unit filename="src/imu_integrator.cpp" />
 		<Unit filename="src/move_arm_fast_action_server.cpp" />
 		<Unit filename="src/simulated_fall_detector.cpp" />
