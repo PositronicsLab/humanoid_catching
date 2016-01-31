@@ -1,6 +1,6 @@
 #include <ros/ros.h>
-#include <human_catching/PredictFall.h>
-#include <human_catching/FallPoint.h>
+#include <humanoid_catching/PredictFall.h>
+#include <humanoid_catching/FallPoint.h>
 #include <visualization_msgs/Marker.h>
 #include <ode/ode.h>
 #include <iostream>
@@ -9,7 +9,7 @@
 
 namespace {
 using namespace std;
-using namespace human_catching;
+using namespace humanoid_catching;
 
 //! Default weight in kg
 static const double MASS_DEFAULT = 50;
@@ -214,8 +214,8 @@ private:
       dJointSetBallAnchor(groundJoint, intersection.x(), intersection.y(), intersection.z());
     }
 
-    bool predict(human_catching::PredictFall::Request& req,
-               human_catching::PredictFall::Response& res) {
+    bool predict(humanoid_catching::PredictFall::Request& req,
+               humanoid_catching::PredictFall::Response& res) {
       ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
       res.header = req.header;
 

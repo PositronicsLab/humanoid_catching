@@ -1,13 +1,13 @@
-#include <human_catching/force_controller.hpp>
+#include <humanoid_catching/force_controller.hpp>
 #include <pluginlib/class_list_macros.h>
 #include <string>
 
-using namespace human_catching;
+using namespace humanoid_catching;
 using namespace std;
 
 /// Register controller to pluginlib
 PLUGINLIB_DECLARE_CLASS(force_controller, ForceControllerPlugin,
-			human_catching::ForceController,
+			humanoid_catching::ForceController,
 			pr2_controller_interface::Controller)
 
 
@@ -71,10 +71,16 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
 }
 
 void ForceController::starting() {
+    ROS_INFO("Starting the ForceController");
 }
 
 void ForceController::update()
 {
+    if (pose_des.get() == NULL) {
+        ROS_INFO("No goal position set");
+        return;
+    }
+
     // Get the current joint positions and velocities
     chain.getPositions(q);
     chain.getVelocities(qdot);
@@ -86,7 +92,7 @@ void ForceController::update()
     for (unsigned int i = 0; i < 6; i++){
         xdot(i) = 0;
         for (unsigned int j = 0 ; j < kdl_chain.getNrOfJoints(); j++){
-            xdot(i) += J(i,j) * qdot.qdot(j);
+            xdot(i) += J(i, j) * qdot.qdot(j);
         }
     }
 
@@ -101,7 +107,7 @@ void ForceController::update()
     xd.p(1) = pose_des->pose.position.y;
     xd.p(2) = pose_des->pose.position.z;
     xd.M = KDL::Rotation::Quaternion(pose_des->pose.orientation.x,
-				      pose_des->pose.orientation.y,
+                    pose_des->pose.orientation.y,
 				      pose_des->pose.orientation.z,
 				      pose_des->pose.orientation.w);
 
@@ -129,7 +135,7 @@ void ForceController::update()
         // position control on that dof
         tau(i) = 0;
         for (unsigned int j = 0 ; j < 6 ; j++) {
-            tau(i) += J(j,i) * F(j);
+            tau(i) += J(j, i) * F(j);
         }
     }
 
@@ -138,5 +144,5 @@ void ForceController::update()
 }
 
 void ForceController::stopping() {
-    starting();
+    ROS_INFO("Stopping the ForceController");
 }

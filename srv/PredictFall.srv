@@ -4,4 +4,4 @@ geometry_msgs/Twist velocity
 geometry_msgs/Twist accel
 ---
 Header header
-human_catching/FallPoint[] points
+humanoid_catching/FallPoint[] points

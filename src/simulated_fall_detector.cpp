@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <gazebo_msgs/GetModelState.h>
-#include <human_catching/HumanFall.h>
+#include <humanoid_catching/HumanFall.h>
 
 namespace {
 
@@ -30,7 +30,7 @@ private:
 public:
 	SimulatedFallDetector() :
 		pnh("~") {
-         fallPub = nh.advertise<human_catching::HumanFall>(
+         fallPub = nh.advertise<humanoid_catching::HumanFall>(
 				"out", 1);
 
         ros::service::waitForService("/gazebo/get_model_state");
@@ -54,7 +54,7 @@ private:
       }
 
       void publishFall(const geometry_msgs::Point torsoLocation) {
-        human_catching::HumanFall fall;
+        humanoid_catching::HumanFall fall;
         fall.position = torsoLocation;
         fall.header.frame_id = "/map";
         fall.header.stamp = ros::Time::now();

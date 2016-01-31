@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include <human_catching/IMU.h>
+#include <humanoid_catching/IMU.h>
 #include <sensor_msgs/Imu.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -32,7 +32,7 @@ private:
 public:
 	ImuIntegrator() :
 		pnh("~") {
-         humanPosePub = nh.advertise<human_catching::IMU>(
+         humanPosePub = nh.advertise<humanoid_catching::IMU>(
 				"out", 1);
          poseSub.reset(new message_filters::Subscriber<geometry_msgs::PoseStamped>(nh, "imu/pose", 1));
          imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "imu/data", 1));
@@ -44,7 +44,7 @@ private:
 
     void imuCallback(sensor_msgs::ImuConstPtr data, geometry_msgs::PoseStampedConstPtr pose){
 
-        human_catching::IMU imu;
+        humanoid_catching::IMU imu;
         imu.header = pose->header;
         imu.pose = pose->pose;
         imu.linear_acceleration = data->linear_acceleration;

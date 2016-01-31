@@ -1,18 +1,18 @@
 #include <ros/ros.h>
-#include <human_catching/HumanFall.h>
-#include <human_catching/CatchHumanAction.h>
+#include <humanoid_catching/HumanFall.h>
+#include <humanoid_catching/CatchHumanAction.h>
 #include <actionlib/client/simple_action_client.h>
 #include <message_filters/subscriber.h>
-#include <human_catching/IMU.h>
+#include <humanoid_catching/IMU.h>
 
 namespace {
 using namespace std;
-using namespace human_catching;
+using namespace humanoid_catching;
 
 static const double MAX_CATCH_TIME = 5.0;
 static const double MAX_PREEMPT_TIME = 0.5;
 
-typedef actionlib::SimpleActionClient<human_catching::CatchHumanAction> CatchHumanClient;
+typedef actionlib::SimpleActionClient<humanoid_catching::CatchHumanAction> CatchHumanClient;
 
 class CatchingController {
 private:
@@ -27,7 +27,7 @@ private:
     auto_ptr<message_filters::Subscriber<HumanFall> > humanFallSub;
 
     //! Human IMU subscriber
-    auto_ptr<message_filters::Subscriber<human_catching::IMU> > humanIMUSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::IMU> > humanIMUSub;
 
     //! Catch human action client.
     auto_ptr<CatchHumanClient> catchHumanClient;
@@ -42,7 +42,7 @@ public:
 
         // Construct but don't initialize
         humanIMUSub.reset(
-                new message_filters::Subscriber<human_catching::IMU>(nh, "/human/imu", 1));
+                new message_filters::Subscriber<humanoid_catching::IMU>(nh, "/human/imu", 1));
 
         ROS_INFO("Waiting for catch human server");
         catchHumanClient.reset(new CatchHumanClient("catch_human_action", true));
@@ -65,7 +65,7 @@ private:
         // aware of any initial velocity
     }
 
-    void imuDataDetected(const human_catching::IMUConstPtr& imuData) {
+    void imuDataDetected(const humanoid_catching::IMUConstPtr& imuData) {
         ROS_INFO("Human IMU data detected at @ %f", imuData->header.stamp.toSec());
 
         // Stop listening for IMU data
@@ -74,9 +74,9 @@ private:
         catchHuman(imuData);
     }
 
-    void catchHuman(const human_catching::IMUConstPtr& imuData) {
+    void catchHuman(const humanoid_catching::IMUConstPtr& imuData) {
         ROS_INFO("Beginning procedure to catch human");
-        human_catching::CatchHumanGoal goal;
+        humanoid_catching::CatchHumanGoal goal;
         goal.header = imuData->header;
         goal.velocity.angular = imuData->angular_velocity;
         goal.accel.linear = imuData->linear_acceleration;

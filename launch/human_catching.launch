@@ -11,27 +11,27 @@
 
   <!-- Mapping -->
   <include file="$(find pr2_navigation_global)/amcl_node.xml" />
-  <node name="map_server" pkg="map_server" type="map_server" args="$(find human_catching)/maps/map.yaml" />
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find humanoid_catching)/maps/map.yaml" />
 
-  <node pkg="human_catching" type="fake_human_imu" name="fake_human_imu" >
+  <node pkg="humanoid_catching" type="fake_human_imu" name="fake_human_imu" >
     <remap from="/out" to="/human/imu" />
   </node>
-  <node pkg="human_catching" type="move_arm_fast_action_server" name="right_arm_move_arm_fast_action_server" output="screen">
+  <node pkg="humanoid_catching" type="move_arm_fast_action_server" name="right_arm_move_arm_fast_action_server" output="screen">
     <param name="arm" value="right" />
   </node>
-  <node pkg="human_catching" type="move_arm_fast_action_server" name="left_arm_move_arm_fast_action_server" output="screen">
+  <node pkg="humanoid_catching" type="move_arm_fast_action_server" name="left_arm_move_arm_fast_action_server" output="screen">
     <param name="arm" value="left" />
   </node>
-  <node pkg="human_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
+  <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
   </node>
 
   <!-- Disabled due to spurious detections -->
-  <!-- <node pkg="human_catching" type="simulated_fall_detector" name="fall_detector">
+  <!-- <node pkg="humanoid_catching" type="simulated_fall_detector" name="fall_detector">
     <remap from="/out" to="/human/fall" />
   </node> -->
 
-  <node pkg="human_catching" type="fall_predictor" name="fall_predictor"/>
-  <node pkg="human_catching" type="catching_controller" name="catching_controller" output="screen"/>
+  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
+  <node pkg="humanoid_catching" type="catching_controller" name="catching_controller" output="screen"/>
 
-  <include file="$(find human_catching)/launch/spawn_human.launch" />
+  <include file="$(find humanoid_catching)/launch/spawn_human.launch" />
 </launch>

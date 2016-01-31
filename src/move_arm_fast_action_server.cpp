@@ -1,15 +1,15 @@
 #include <ros/ros.h>
 #include <actionlib/server/simple_action_server.h>
 #include <actionlib/client/simple_action_client.h>
-#include <human_catching/MoveArmFastAction.h>
+#include <humanoid_catching/MoveArmFastAction.h>
 #include <kinematics_cache/IKQuery.h>
 #include <pr2_controllers_msgs/JointTrajectoryAction.h>
 
 namespace {
 using namespace std;
-using namespace human_catching;
+using namespace humanoid_catching;
 
-typedef actionlib::SimpleActionServer<human_catching::MoveArmFastAction> Server;
+typedef actionlib::SimpleActionServer<humanoid_catching::MoveArmFastAction> Server;
 typedef actionlib::SimpleActionClient<pr2_controllers_msgs::JointTrajectoryAction> JointTrajClient;
 
 class MoveArmFastActionServer {
@@ -34,8 +34,8 @@ private:
     vector<string> jointNames;
 
     //! Create messages that are used to published feedback/result
-    human_catching::MoveArmFastFeedback feedback;
-    human_catching::MoveArmFastResult result;
+    humanoid_catching::MoveArmFastFeedback feedback;
+    humanoid_catching::MoveArmFastResult result;
 public:
 	MoveArmFastActionServer(const string& name) :
 		pnh("~"),
@@ -98,7 +98,7 @@ public:
         as.setPreempted();
     }
 
-    void execute(const human_catching::MoveArmFastGoalConstPtr& moveArmGoal){
+    void execute(const humanoid_catching::MoveArmFastGoalConstPtr& moveArmGoal){
 
         ROS_INFO("Moving arm %s to position", arm.c_str());
 

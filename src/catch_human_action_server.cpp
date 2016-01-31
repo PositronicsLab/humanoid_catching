@@ -1,11 +1,11 @@
 #include <ros/ros.h>
 #include <actionlib/server/simple_action_server.h>
 #include <actionlib/client/simple_action_client.h>
-#include <human_catching/CatchHumanAction.h>
+#include <humanoid_catching/CatchHumanAction.h>
 #include <kinematics_cache/IKQuery.h>
-#include <human_catching/PredictFall.h>
+#include <humanoid_catching/PredictFall.h>
 #include <actionlib/client/simple_action_client.h>
-#include <human_catching/MoveArmFastAction.h>
+#include <humanoid_catching/MoveArmFastAction.h>
 #include <tf/transform_listener.h>
 #include <boost/timer.hpp>
 #include <boost/math/constants/constants.hpp>
@@ -13,10 +13,10 @@
 
 namespace {
 using namespace std;
-using namespace human_catching;
+using namespace humanoid_catching;
 
-typedef actionlib::SimpleActionServer<human_catching::CatchHumanAction> Server;
-typedef actionlib::SimpleActionClient<human_catching::MoveArmFastAction> ArmClient;
+typedef actionlib::SimpleActionServer<humanoid_catching::CatchHumanAction> Server;
+typedef actionlib::SimpleActionClient<humanoid_catching::MoveArmFastAction> ArmClient;
 typedef vector<kinematics_cache::IK> IKList;
 
 static const double EPSILON = 0.1;
@@ -58,8 +58,8 @@ private:
     tf::TransformListener tf;
 
     //! Create messages that are used to published feedback/result
-    human_catching::CatchHumanFeedback feedback;
-    human_catching::CatchHumanResult result;
+    humanoid_catching::CatchHumanFeedback feedback;
+    humanoid_catching::CatchHumanResult result;
 public:
 	CatchHumanActionServer(const string& name) :
 		pnh("~"),
@@ -69,7 +69,7 @@ public:
         // Configure the fall prediction service
         ROS_INFO("Waiting for predict_fall service");
         ros::service::waitForService("/fall_predictor/predict_fall");
-        fallPredictor = nh.serviceClient<human_catching::PredictFall>("/fall_predictor/predict_fall", true /* persistent */);
+        fallPredictor = nh.serviceClient<humanoid_catching::PredictFall>("/fall_predictor/predict_fall", true /* persistent */);
 
         ROS_INFO("Waiting for kinematics_cache/ik service");
         ros::service::waitForService("/kinematics_cache/ik");
@@ -99,7 +99,7 @@ private:
         as.setPreempted();
     }
 
-    void execute(const human_catching::CatchHumanGoalConstPtr& goal){
+    void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal){
 
         ROS_INFO("Catching human");
 
@@ -111,7 +111,7 @@ private:
         ros::WallTime startWallTime = ros::WallTime::now();
         ros::Time startRosTime = ros::Time::now();
 
-        human_catching::PredictFall predictFall;
+        humanoid_catching::PredictFall predictFall;
         predictFall.request.header = goal->header;
         predictFall.request.pose = goal->pose;
         predictFall.request.velocity = goal->velocity;
@@ -251,7 +251,7 @@ private:
         // Now move both arms to the position
         for (unsigned int i = 0; i < arms.size(); ++i) {
             if (bestSolution->jointPositions.find(ARMS[i]) != bestSolution->jointPositions.end()) {
-                human_catching::MoveArmFastGoal goal;
+                humanoid_catching::MoveArmFastGoal goal;
                 goal.joint_positions = bestSolution->jointPositions[ARMS[i]];
                 goal.goal_time = bestSolution->goalTime;
                 arms[i]->sendGoal(goal);

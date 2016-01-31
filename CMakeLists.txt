@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(human_catching)
+project(humanoid_catching)
 
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf sensor_msgs eigen orocos_kdl pluginlib)
@@ -95,7 +95,7 @@ generate_messages(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES human_catching
+  LIBRARIES humanoid_catching
   DEPENDS system_lib
 )
 
@@ -114,14 +114,14 @@ add_definitions(-DdDOUBLE)
 include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 ## Declare a C++ library
-# add_library(human_catching
-#   src/${PROJECT_NAME}/human_catching.cpp
+# add_library(humanoid_catching
+#   src/${PROJECT_NAME}/humanoid_catching.cpp
 # )
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(human_catching ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(humanoid_catching ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(fake_human_imu src/fake_human_imu.cpp)
 add_dependencies(fake_human_imu ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -216,7 +216,7 @@ install(TARGETS fake_human_imu
 #############
 
 ## Add gtest based cpp test target and link libraries
-# catkin_add_gtest(${PROJECT_NAME}-test test/test_human_catching.cpp)
+# catkin_add_gtest(${PROJECT_NAME}-test test/test_humanoid_catching.cpp)
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
 # endif()

@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include <human_catching/IMU.h>
+#include <humanoid_catching/IMU.h>
 #include <gazebo_msgs/GetModelState.h>
 
 namespace {
@@ -27,7 +27,7 @@ private:
 public:
 	FakeHumanIMU() :
 		pnh("~") {
-         humanPosePub = nh.advertise<human_catching::IMU>(
+         humanPosePub = nh.advertise<humanoid_catching::IMU>(
 				"out", 1);
 
         ros::service::waitForService("/gazebo/get_model_state");
@@ -37,11 +37,11 @@ public:
 	}
 
 private:
-    human_catching::IMU getIMUData(){
+    humanoid_catching::IMU getIMUData(){
         gazebo_msgs::GetModelState modelState;
         modelState.request.model_name = "human";
         modelStateServ.call(modelState);
-        human_catching::IMU data;
+        humanoid_catching::IMU data;
         data.header.stamp = ros::Time::now();
         data.header.frame_id = "/map";
         data.angular_velocity = modelState.response.twist.angular;
@@ -52,7 +52,7 @@ private:
     void callback(const ros::TimerEvent& event){
 
         // Lookup the current IMU data for the human
-        human_catching::IMU data = getIMUData();
+        humanoid_catching::IMU data = getIMUData();
 
         // Publish the event
         ROS_DEBUG_STREAM("Publishing a human IMU event: " << data);
