@@ -1,5 +1,5 @@
-<library path="lib/humanoid_catching">
-    <class name="humanoid_catching/ForceControlPlugin"
-           type="humanoid_catching::ForceControlClass"
+<library path="lib/libforce_controller">
+    <class name="humanoid_catching/ForceControllerPlugin"
+           type="humanoid_catching::ForceController"
            base_class_type="pr2_controller_interface::Controller" />
 </library>
