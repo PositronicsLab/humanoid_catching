@@ -40,6 +40,11 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
         return false;
     }
 
+    if (!chain.allCalibrated()) {
+        ROS_ERROR("Kinematics chain is not calibrated");
+        return false;
+    }
+
     if (!read_only_chain.init(robot, root_name, tip_name)) {
         ROS_ERROR("ForceController could not use the chain from '%s' to '%s'", root_name.c_str(), tip_name.c_str());
         return false;
@@ -51,7 +56,10 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     // Construct the kdl solvers in non-realtime
     chain.toKDL(kdl_chain);
     jnt_to_pose_solver.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain));
-    jnt_to_jac_solver.reset(new KDL::ChainJntToJacSolver(kdl_chain));
+
+    // KDL::Vector gravity(-9.81, 0.0, 0.0);
+    KDL::Vector gravity(0.0, 0.0, 0.0);
+    torque_solver.reset(new KDL::ChainIdSolver_RNE(kdl_chain, gravity));
 
     // Resize (pre-allocate) the variables in non-realtime
     q.resize(kdl_chain.getNrOfJoints());
@@ -59,6 +67,8 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     tau.resize(kdl_chain.getNrOfJoints());
     tau_act.resize(kdl_chain.getNrOfJoints());
     J.resize(kdl_chain.getNrOfJoints());
+    qdotdot.resize(kdl_chain.getNrOfJoints());
+    wrenches.resize(kdl_chain.getNrOfSegments());
 
     Kd.vel(0) = 0.1;        // Translation x
     Kd.vel(1) = 0.1;        // Translation y
@@ -66,6 +76,13 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     Kd.rot(0) = 0.1;        // Rotation x
     Kd.rot(1) = 0.1;        // Rotation y
     Kd.rot(2) = 0.1;        // Rotation z
+
+    Kp.vel(0) = 0.1;
+    Kp.vel(1) = 0.1;
+    Kp.vel(2) = 0.1;
+    Kp.rot(0) = 0.1;
+    Kp.rot(1) = 0.1;
+    Kp.rot(2) = 0.1;
 
     subscriber = n.subscribe("command", 1, &ForceController::commandCB, this);
 
@@ -89,21 +106,12 @@ void ForceController::update()
 
     // Compute the forward kinematics and Jacobian (at this location)
     jnt_to_pose_solver->JntToCart(q, x);
-    jnt_to_jac_solver->JntToJac(q, J);
-
     for (unsigned int i = 0; i < 6; i++){
         xdot(i) = 0;
         for (unsigned int j = 0 ; j < kdl_chain.getNrOfJoints(); j++){
             xdot(i) += J(i, j) * qdot.qdot(j);
         }
     }
-
-    Kp.vel(0) = 0.1;
-    Kp.vel(1) = 0.1;
-    Kp.vel(2) = 0.1;
-    Kp.rot(0) = 0.1;
-    Kp.rot(1) = 0.1;
-    Kp.rot(2) = 0.1;
 
     xd.p(0) = pose_des->pose.position.x;
     xd.p(1) = pose_des->pose.position.y;
@@ -122,16 +130,12 @@ void ForceController::update()
         F(i) = -Kp(i) * xerr(i) - Kd(i) * xdot(i);
     }
 
-    // Convert the force into a set of joint torques
-    // tau is a vector of joint torques q1...qn
-    for (unsigned int i = 0 ; i < kdl_chain.getNrOfJoints() ; i++) {
-        // Iterate through the vector. Every joint torque is contributed to
-        // by the Jacobian Transpose (note the index switching in J access) times
-        // the desired force
-        tau(i) = 0;
-        for (unsigned int j = 0; j < 6; j++) {
-            tau(i) += J(j, i) * F(j);
-        }
+    // Convert the force into a set ofjoint torques. Apply the force to the last link.
+    wrenches[kdl_chain.getNrOfSegments() - 1] = F;
+    int error = torque_solver->CartToJnt(q, qdot.qdot, qdotdot, wrenches, tau);
+    if (error != KDL::SolverI::E_NOERROR) {
+        ROS_ERROR("Failed to compute inverse dynamics %i", error);
+        return;
     }
 
     // And finally send these torques out
