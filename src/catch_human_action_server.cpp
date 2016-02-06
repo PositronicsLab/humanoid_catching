@@ -22,6 +22,8 @@ typedef vector<kinematics_cache::IK> IKList;
 static const double EPSILON = 0.1;
 static const double PLANNING_TIME = 0.25;
 static const string ARMS[] = {"left_arm", "right_arm"};
+static const string ARM_TOPICS[] = {"l_arm_force_controller", "r_arm_force_controller"};
+
 static const ros::Duration SEARCH_RESOLUTION(0.1);
 static const double pi = boost::math::constants::pi<double>();
 
@@ -52,7 +54,7 @@ private:
     ros::ServiceClient ik;
 
     //! Arm clients
-    vector<boost::shared_ptr<ArmClient> > arms;
+    vector<ros::Publisher> armCommandPubs;
 
     //! TF listener
     tf::TransformListener tf;
@@ -76,12 +78,9 @@ public:
         ik = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
 
         // Initialize arm clients
-        ROS_INFO("Initializing move_arm_fast_action_servers");
+        ROS_INFO("Initializing arm command publishers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
-            ArmClient* arm = new ArmClient(ARMS[i] + "_move_arm_fast_action_server", true);
-            arms.push_back(boost::shared_ptr<ArmClient>(arm));
-            ROS_INFO("Waiting for %s", (ARMS[i] + "_move_arm_fast_action_server").c_str());
-            arms[i]->waitForServer();
+            armCommandPubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_TOPICS[i], 1));
         }
 
         ROS_INFO("Starting the action server");
@@ -92,10 +91,7 @@ public:
 
 private:
     void preempt() {
-        ROS_INFO("Preempting the catching controller");
-        for (unsigned int i = 0; i < arms.size(); ++i) {
-            arms[i]->cancelGoal();
-        }
+        // Currently no way to cancel force controllers.
         as.setPreempted();
     }
 
@@ -249,12 +245,9 @@ private:
         }
 
         // Now move both arms to the position
-        for (unsigned int i = 0; i < arms.size(); ++i) {
+        for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
             if (bestSolution->jointPositions.find(ARMS[i]) != bestSolution->jointPositions.end()) {
-                humanoid_catching::MoveArmFastGoal goal;
-                goal.joint_positions = bestSolution->jointPositions[ARMS[i]];
-                goal.goal_time = bestSolution->goalTime;
-                arms[i]->sendGoal(goal);
+                armCommandPubs[i].publish(bestSolution->pose);
             } else {
                 ROS_INFO("Skipping arm %s due to no solution.", ARMS[i].c_str());
             }
