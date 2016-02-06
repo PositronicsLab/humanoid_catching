@@ -55,8 +55,9 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     // Construct the kdl solvers in non-realtime
     chain.toKDL(kdl_chain);
     jnt_to_pose_solver.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain));
+    jnt_to_jac_solver.reset(new KDL::ChainJntToJacSolver(kdl_chain));
 
-    // KDL::Vector gravity(-9.81, 0.0, 0.0);
+    // Gravity zeroed out as PR2 mechanically compensates for gravity in the arms
     KDL::Vector gravity(0.0, 0.0, 0.0);
     torque_solver.reset(new KDL::ChainIdSolver_RNE(kdl_chain, gravity));
 
@@ -119,6 +120,7 @@ void ForceController::update()
 
     // Compute the forward kinematics and Jacobian (at this location)
     jnt_to_pose_solver->JntToCart(q, x);
+    jnt_to_jac_solver->JntToJac(q, J);
     for (unsigned int i = 0; i < 6; i++){
         xdot(i) = 0;
         for (unsigned int j = 0 ; j < kdl_chain.getNrOfJoints(); j++){
@@ -162,8 +164,15 @@ void ForceController::update()
             controller_state_publisher->msg_.requested_joint_efforts[i] = tau(i);
             controller_state_publisher->msg_.actual_joint_efforts[i] = tau_act(i);
         }
+
+        double pose_sq_err = 0;
+        for (unsigned int i = 0; i < 6; ++i) {
+            pose_sq_err += xerr[i] * xerr[i];
+        }
+
         controller_state_publisher->msg_.header.stamp = robot_state->getTime();
         controller_state_publisher->msg_.effort_sq_error = eff_err;
+        controller_state_publisher->msg_.pose_sq_error = pose_sq_err;
         controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
         controller_state_publisher->msg_.goal.pose = pose_des_ptr->pose;
         controller_state_publisher->unlockAndPublish();

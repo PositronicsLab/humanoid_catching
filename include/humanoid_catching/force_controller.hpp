@@ -51,6 +51,9 @@ namespace humanoid_catching {
     //! KDL Solver performing the force to torque solver
     boost::scoped_ptr<KDL::ChainIdSolver_RNE> torque_solver;
 
+    /// KDL Solver performing the joint angles to Jacobian calculation
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver;
+
     //! Joint positions
     KDL::JntArray  q;
 
