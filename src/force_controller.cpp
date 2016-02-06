@@ -13,14 +13,16 @@ PLUGINLIB_DECLARE_CLASS(force_controller, ForceControllerPlugin,
 
 void ForceController::commandCB(const geometry_msgs::PoseStampedConstPtr &command) {
     ROS_INFO("Received a new pose command");
+    if (command->header.frame_id != root_name) {
+        ROS_ERROR("Pose commands must be in the %s frame. Command was in the %s frame.",
+                  root_name.c_str(), command->header.frame_id.c_str());
+        return;
+    }
     pose_des.set(command);
 }
 
 bool ForceController::init(pr2_mechanism_model::RobotState *robot,
         ros::NodeHandle &n) {
-
-    string root_name;
-    string tip_name;
 
     if (!n.getParam("root_name", root_name)) {
         ROS_ERROR("No root name given in namespace: %s)", n.getNamespace().c_str());
@@ -90,12 +92,7 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     controller_state_publisher.reset(new realtime_tools::RealtimePublisher<humanoid_catching::ForceControllerFeedback>(n, "state", 1));
     controller_state_publisher->msg_.requested_joint_efforts.resize(kdl_chain.getNrOfJoints());
     controller_state_publisher->msg_.actual_joint_efforts.resize(kdl_chain.getNrOfJoints());
-
-    // Initialize the update object avoid real time allocs
-    // boost::shared_ptr<ForceControllerFeedback> feedbackMsg(new ForceControllerFeedback());
-    // feedbackMsg->requested_joint_efforts.resize(kdl_chain.getNrOfJoints());
-    // feedbackMsg->actual_joint_efforts.resize(kdl_chain.getNrOfJoints());
-    // feedback.set(feedbackMsg);
+    controller_state_publisher->msg_.pose.header.frame_id = root_name;
     return true;
 }
 
@@ -108,10 +105,6 @@ void ForceController::update()
     // Check if there is a current goal
     boost::shared_ptr<const geometry_msgs::PoseStamped> pose_des_ptr;
     pose_des.get(pose_des_ptr);
-    if (pose_des_ptr.get() == NULL) {
-        return;
-    }
-
     updates++;
 
     // Get the current joint positions and velocities
@@ -120,41 +113,45 @@ void ForceController::update()
 
     // Compute the forward kinematics and Jacobian (at this location)
     jnt_to_pose_solver->JntToCart(q, x);
-    jnt_to_jac_solver->JntToJac(q, J);
-    for (unsigned int i = 0; i < 6; i++){
-        xdot(i) = 0;
-        for (unsigned int j = 0 ; j < kdl_chain.getNrOfJoints(); j++){
-            xdot(i) += J(i, j) * qdot.qdot(j);
-        }
-    }
 
-    xd.p(0) = pose_des_ptr->pose.position.x;
-    xd.p(1) = pose_des_ptr->pose.position.y;
-    xd.p(2) = pose_des_ptr->pose.position.z;
-    xd.M = KDL::Rotation::Quaternion(pose_des_ptr->pose.orientation.x,
+    if (pose_des_ptr.get() != NULL) {
+
+        jnt_to_jac_solver->JntToJac(q, J);
+        for (unsigned int i = 0; i < 6; i++){
+            xdot(i) = 0;
+            for (unsigned int j = 0 ; j < kdl_chain.getNrOfJoints(); j++){
+                xdot(i) += J(i, j) * qdot.qdot(j);
+            }
+        }
+
+        xd.p(0) = pose_des_ptr->pose.position.x;
+        xd.p(1) = pose_des_ptr->pose.position.y;
+        xd.p(2) = pose_des_ptr->pose.position.z;
+        xd.M = KDL::Rotation::Quaternion(pose_des_ptr->pose.orientation.x,
                     pose_des_ptr->pose.orientation.y,
                     pose_des_ptr->pose.orientation.z,
                     pose_des_ptr->pose.orientation.w);
 
-    // Calculate a Cartesian restoring force.
-    xerr.vel = x.p - xd.p;
-    xerr.rot = 0.5 * (xd.M.UnitX() * x.M.UnitX() + xd.M.UnitY() * x.M.UnitY() + xd.M.UnitZ() * x.M.UnitZ());
+        // Calculate a Cartesian restoring force.
+        xerr.vel = x.p - xd.p;
+        xerr.rot = 0.5 * (xd.M.UnitX() * x.M.UnitX() + xd.M.UnitY() * x.M.UnitY() + xd.M.UnitZ() * x.M.UnitZ());
 
-    // F is a vector of forces/wrenches corresponding to x, y, z, tx,ty,tz,tw
-    for(unsigned int i = 0; i < 6; ++i) {
-        F(i) = -Kp(i) * xerr(i) - Kd(i) * xdot(i);
+        // F is a vector of forces/wrenches corresponding to x, y, z, tx,ty,tz,tw
+        for(unsigned int i = 0; i < 6; ++i) {
+            F(i) = -Kp(i) * xerr(i) - Kd(i) * xdot(i);
+        }
+
+        // Convert the force into a set ofjoint torques. Apply the force to the last link.
+        wrenches[kdl_chain.getNrOfSegments() - 1] = F;
+        int error = torque_solver->CartToJnt(q, qdot.qdot, qdotdot, wrenches, tau);
+        if (error != KDL::SolverI::E_NOERROR) {
+            ROS_ERROR("Failed to compute inverse dynamics %i", error);
+            return;
+        }
+
+        // And finally send these torques out
+        chain.setEfforts(tau);
     }
-
-    // Convert the force into a set ofjoint torques. Apply the force to the last link.
-    wrenches[kdl_chain.getNrOfSegments() - 1] = F;
-    int error = torque_solver->CartToJnt(q, qdot.qdot, qdotdot, wrenches, tau);
-    if (error != KDL::SolverI::E_NOERROR) {
-        ROS_ERROR("Failed to compute inverse dynamics %i", error);
-        return;
-    }
-
-    // And finally send these torques out
-    chain.setEfforts(tau);
 
     if (updates % 10 == 0 && controller_state_publisher && controller_state_publisher->trylock()) {
         chain.getEfforts(tau_act);
@@ -173,8 +170,13 @@ void ForceController::update()
         controller_state_publisher->msg_.header.stamp = robot_state->getTime();
         controller_state_publisher->msg_.effort_sq_error = eff_err;
         controller_state_publisher->msg_.pose_sq_error = pose_sq_err;
-        controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
-        controller_state_publisher->msg_.goal.pose = pose_des_ptr->pose;
+
+        if(pose_des_ptr != NULL) {
+            controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
+            controller_state_publisher->msg_.goal.pose = pose_des_ptr->pose;
+        }
+
+        controller_state_publisher->msg_.header.stamp = robot_state->getTime();
         controller_state_publisher->msg_.pose.pose.position.x = x.p(0);
         controller_state_publisher->msg_.pose.pose.position.y = x.p(1);
         controller_state_publisher->msg_.pose.pose.position.z = x.p(2);

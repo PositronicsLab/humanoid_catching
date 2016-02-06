@@ -104,6 +104,12 @@ namespace humanoid_catching {
     //! Current update count
     int updates;
 
+    //! Name of the root of the kinematics chain. This is the frame for all commands.
+    std::string root_name;
+
+    //! Name of the tip in the kinematics chain.
+    std::string tip_name;
+
     //! Callback when a new goal is received
     void commandCB(const geometry_msgs::PoseStampedConstPtr &command);
 
