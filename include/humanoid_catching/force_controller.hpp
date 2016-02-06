@@ -18,6 +18,11 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <ros/ros.h>
 #include <vector>
+#include <boost/thread/mutex.hpp>
+#include <realtime_tools/realtime_publisher.h>
+#include <realtime_tools/realtime_box.h>
+
+#include <humanoid_catching/ForceControllerFeedback.h>
 
 // Code inspired by and based on ee_imped_controller
 namespace humanoid_catching {
@@ -87,11 +92,18 @@ namespace humanoid_catching {
     //! Derivative gains
     KDL::Twist     Kd;
 
+    //! State publisher, published every 10 updates
+    boost::scoped_ptr<realtime_tools::RealtimePublisher<humanoid_catching::ForceControllerFeedback> > controller_state_publisher;
+
     //! Goal
-    geometry_msgs::PoseStampedConstPtr pose_des;
+    realtime_tools::RealtimeBox<boost::shared_ptr<const geometry_msgs::PoseStamped> > pose_des;
+
+    //! Current update count
+    int updates;
 
     //! Callback when a new goal is received
     void commandCB(const geometry_msgs::PoseStampedConstPtr &command);
+
   public:
     /**
      * \brief Controller initialization in non-realtime

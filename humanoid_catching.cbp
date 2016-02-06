@@ -33,12 +33,14 @@
 			<Add option="-fexceptions" />
 		</Compiler>
 		<Unit filename="CMakeLists.txt" />
+		<Unit filename="README.md" />
 		<Unit filename="TODO" />
 		<Unit filename="action/CatchHuman.action" />
 		<Unit filename="action/MoveArmFast.action" />
 		<Unit filename="controller_plugins.xml" />
 		<Unit filename="human_catching.layout" />
-		<Unit filename="include/human_catching/force_controller.hpp" />
+		<Unit filename="humanoid_catching.layout" />
+		<Unit filename="include/humanoid_catching/force_controller.hpp" />
 		<Unit filename="launch/human_catching.launch" />
 		<Unit filename="launch/l_arm_force_controller.launch" />
 		<Unit filename="launch/r_arm_force_controller.launch" />
@@ -54,6 +56,7 @@
 		<Unit filename="msg/IMU.msg" />
 		<Unit filename="package.xml" />
 		<Unit filename="pr2_arms_cart_imped_controller.yaml" />
+		<Unit filename="pr2_arms_force_controller.yaml" />
 		<Unit filename="src/announced_fall_detector.cpp" />
 		<Unit filename="src/catch_human_action_server.cpp" />
 		<Unit filename="src/catching_controller.cpp" />

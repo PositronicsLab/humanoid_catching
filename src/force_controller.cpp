@@ -13,8 +13,7 @@ PLUGINLIB_DECLARE_CLASS(force_controller, ForceControllerPlugin,
 
 void ForceController::commandCB(const geometry_msgs::PoseStampedConstPtr &command) {
     ROS_INFO("Received a new pose command");
-    // TODO: Add a mutex around pose_des.
-    pose_des = command;
+    pose_des.set(command);
 }
 
 bool ForceController::init(pr2_mechanism_model::RobotState *robot,
@@ -77,15 +76,25 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     Kd.rot(1) = 0.1;        // Rotation y
     Kd.rot(2) = 0.1;        // Rotation z
 
-    Kp.vel(0) = 0.1;
-    Kp.vel(1) = 0.1;
-    Kp.vel(2) = 0.1;
-    Kp.rot(0) = 0.1;
-    Kp.rot(1) = 0.1;
-    Kp.rot(2) = 0.1;
+    Kp.vel(0) = 0.3;
+    Kp.vel(1) = 0.3;
+    Kp.vel(2) = 0.3;
+    Kp.rot(0) = 0.3;
+    Kp.rot(1) = 0.3;
+    Kp.rot(2) = 0.3;
 
     subscriber = n.subscribe("command", 1, &ForceController::commandCB, this);
+    updates = 0;
 
+    controller_state_publisher.reset(new realtime_tools::RealtimePublisher<humanoid_catching::ForceControllerFeedback>(n, "state", 1));
+    controller_state_publisher->msg_.requested_joint_efforts.resize(kdl_chain.getNrOfJoints());
+    controller_state_publisher->msg_.actual_joint_efforts.resize(kdl_chain.getNrOfJoints());
+
+    // Initialize the update object avoid real time allocs
+    // boost::shared_ptr<ForceControllerFeedback> feedbackMsg(new ForceControllerFeedback());
+    // feedbackMsg->requested_joint_efforts.resize(kdl_chain.getNrOfJoints());
+    // feedbackMsg->actual_joint_efforts.resize(kdl_chain.getNrOfJoints());
+    // feedback.set(feedbackMsg);
     return true;
 }
 
@@ -96,9 +105,13 @@ void ForceController::starting() {
 void ForceController::update()
 {
     // Check if there is a current goal
-    if (pose_des.get() == NULL) {
+    boost::shared_ptr<const geometry_msgs::PoseStamped> pose_des_ptr;
+    pose_des.get(pose_des_ptr);
+    if (pose_des_ptr.get() == NULL) {
         return;
     }
+
+    updates++;
 
     // Get the current joint positions and velocities
     chain.getPositions(q);
@@ -113,13 +126,13 @@ void ForceController::update()
         }
     }
 
-    xd.p(0) = pose_des->pose.position.x;
-    xd.p(1) = pose_des->pose.position.y;
-    xd.p(2) = pose_des->pose.position.z;
-    xd.M = KDL::Rotation::Quaternion(pose_des->pose.orientation.x,
-                    pose_des->pose.orientation.y,
-				      pose_des->pose.orientation.z,
-				      pose_des->pose.orientation.w);
+    xd.p(0) = pose_des_ptr->pose.position.x;
+    xd.p(1) = pose_des_ptr->pose.position.y;
+    xd.p(2) = pose_des_ptr->pose.position.z;
+    xd.M = KDL::Rotation::Quaternion(pose_des_ptr->pose.orientation.x,
+                    pose_des_ptr->pose.orientation.y,
+                    pose_des_ptr->pose.orientation.z,
+                    pose_des_ptr->pose.orientation.w);
 
     // Calculate a Cartesian restoring force.
     xerr.vel = x.p - xd.p;
@@ -140,6 +153,21 @@ void ForceController::update()
 
     // And finally send these torques out
     chain.setEfforts(tau);
+
+    if (updates % 10 == 0 && controller_state_publisher && controller_state_publisher->trylock()) {
+        chain.getEfforts(tau_act);
+        double eff_err = 0;
+        for (unsigned int i = 0; i < kdl_chain.getNrOfJoints(); i++) {
+            eff_err += (tau(i) - tau_act(i))*(tau(i) - tau_act(i));
+            controller_state_publisher->msg_.requested_joint_efforts[i] = tau(i);
+            controller_state_publisher->msg_.actual_joint_efforts[i] = tau_act(i);
+        }
+        controller_state_publisher->msg_.header.stamp = robot_state->getTime();
+        controller_state_publisher->msg_.effort_sq_error = eff_err;
+        controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
+        controller_state_publisher->msg_.goal.pose = pose_des_ptr->pose;
+        controller_state_publisher->unlockAndPublish();
+    }
 }
 
 void ForceController::stopping() {

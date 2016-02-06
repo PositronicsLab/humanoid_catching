@@ -43,6 +43,7 @@ add_message_files(
    HumanFall.msg
    FallPoint.msg
    IMU.msg
+   ForceControllerFeedback.msg
 )
 
 ## Generate services in the 'srv' folder
