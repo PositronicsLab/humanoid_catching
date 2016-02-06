@@ -70,19 +70,19 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     qdotdot.resize(kdl_chain.getNrOfJoints());
     wrenches.resize(kdl_chain.getNrOfSegments());
 
-    Kd.vel(0) = 0.1;        // Translation x
-    Kd.vel(1) = 0.1;        // Translation y
-    Kd.vel(2) = 0.1;        // Translation z
-    Kd.rot(0) = 0.1;        // Rotation x
-    Kd.rot(1) = 0.1;        // Rotation y
-    Kd.rot(2) = 0.1;        // Rotation z
+    Kd.vel(0) = 0.2;        // Translation x
+    Kd.vel(1) = 0.2;        // Translation y
+    Kd.vel(2) = 0.2;        // Translation z
+    Kd.rot(0) = 0.2;        // Rotation x
+    Kd.rot(1) = 0.2;        // Rotation y
+    Kd.rot(2) = 0.2;        // Rotation z
 
-    Kp.vel(0) = 0.3;
-    Kp.vel(1) = 0.3;
-    Kp.vel(2) = 0.3;
-    Kp.rot(0) = 0.3;
-    Kp.rot(1) = 0.3;
-    Kp.rot(2) = 0.3;
+    Kp.vel(0) = 0.6;
+    Kp.vel(1) = 0.6;
+    Kp.vel(2) = 0.6;
+    Kp.rot(0) = 0.6;
+    Kp.rot(1) = 0.6;
+    Kp.rot(2) = 0.6;
 
     subscriber = n.subscribe("command", 1, &ForceController::commandCB, this);
     updates = 0;
@@ -175,6 +175,16 @@ void ForceController::update()
         controller_state_publisher->msg_.pose_sq_error = pose_sq_err;
         controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
         controller_state_publisher->msg_.goal.pose = pose_des_ptr->pose;
+        controller_state_publisher->msg_.pose.pose.position.x = x.p(0);
+        controller_state_publisher->msg_.pose.pose.position.y = x.p(1);
+        controller_state_publisher->msg_.pose.pose.position.z = x.p(2);
+
+        double qx, qy, qz, qw;
+        x.M.GetQuaternion(qx, qy, qz, qw);
+        controller_state_publisher->msg_.pose.pose.orientation.x = qx;
+        controller_state_publisher->msg_.pose.pose.orientation.y = qy;
+        controller_state_publisher->msg_.pose.pose.orientation.z = qz;
+        controller_state_publisher->msg_.pose.pose.orientation.w = qw;
         controller_state_publisher->unlockAndPublish();
     }
 }
