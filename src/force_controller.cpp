@@ -88,6 +88,7 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     controller_state_publisher->msg_.requested_joint_efforts.resize(kdl_chain.getNrOfJoints());
     controller_state_publisher->msg_.actual_joint_efforts.resize(kdl_chain.getNrOfJoints());
     controller_state_publisher->msg_.x_error.resize(6);
+    controller_state_publisher->msg_.force_desired.resize(6);
     controller_state_publisher->msg_.pose.header.frame_id = root_name;
     return true;
 }
@@ -166,13 +167,19 @@ void ForceController::update()
         }
 
         double pose_sq_err = 0;
-        for (unsigned int i = 0; i < 6; ++i) {
+        for (unsigned int i = 0; i < 3; ++i) { // Temporarily disable rotational control
             pose_sq_err += xerr[i] * xerr[i];
+        }
+
+        double force_desired_sq = 0;
+        for (unsigned int i = 0; i < 6; ++i) {
+            force_desired_sq += F[i] * F[i];
         }
 
         controller_state_publisher->msg_.header.stamp = robot_state->getTime();
         controller_state_publisher->msg_.effort_sq_error = eff_err;
         controller_state_publisher->msg_.pose_sq_error = pose_sq_err;
+        controller_state_publisher->msg_.force_desired_sq = force_desired_sq;
 
         if(pose_des_ptr != NULL) {
             controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
@@ -192,6 +199,9 @@ void ForceController::update()
         controller_state_publisher->msg_.pose.pose.orientation.w = qw;
         for (int i = 0; i < 6; ++i) {
             controller_state_publisher->msg_.x_error[i] = xerr(i);
+        }
+        for (int i = 0; i < 6; ++i) {
+            controller_state_publisher->msg_.force_desired[i] = F(i);
         }
         controller_state_publisher->unlockAndPublish();
     }
