@@ -39,9 +39,6 @@ namespace humanoid_catching {
     //! The chain of links and joints in PR2 language for reference and commanding
     pr2_mechanism_model::Chain chain;
 
-    //! The chain of links and joints in PR2 language for reference only
-    pr2_mechanism_model::Chain read_only_chain;
-
     //! The chain of links and joints in KDL language
     KDL::Chain kdl_chain;
 

@@ -52,6 +52,7 @@
 		<Unit filename="models/human.model" />
 		<Unit filename="models/intertia_matrix.ods" />
 		<Unit filename="msg/FallPoint.msg" />
+		<Unit filename="msg/ForceControllerFeedback.msg" />
 		<Unit filename="msg/HumanFall.msg" />
 		<Unit filename="msg/IMU.msg" />
 		<Unit filename="package.xml" />

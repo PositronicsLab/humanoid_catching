@@ -46,11 +46,6 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
         return false;
     }
 
-    if (!read_only_chain.init(robot, root_name, tip_name)) {
-        ROS_ERROR("ForceController could not use the chain from '%s' to '%s'", root_name.c_str(), tip_name.c_str());
-        return false;
-    }
-
     // Store the robot handle for later use (to get time)
     robot_state = robot;
 
@@ -72,19 +67,19 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     qdotdot.resize(kdl_chain.getNrOfJoints());
     wrenches.resize(kdl_chain.getNrOfSegments());
 
-    Kd.vel(0) = 0.2;        // Translation x
-    Kd.vel(1) = 0.2;        // Translation y
-    Kd.vel(2) = 0.2;        // Translation z
-    Kd.rot(0) = 0.2;        // Rotation x
-    Kd.rot(1) = 0.2;        // Rotation y
-    Kd.rot(2) = 0.2;        // Rotation z
+    Kp.vel(0) = 0.75;
+    Kp.vel(1) = 0.75;
+    Kp.vel(2) = 0.75;
+    Kp.rot(0) = 0.0;
+    Kp.rot(1) = 0.0;
+    Kp.rot(2) = 0.0;
 
-    Kp.vel(0) = 0.6;
-    Kp.vel(1) = 0.6;
-    Kp.vel(2) = 0.6;
-    Kp.rot(0) = 0.6;
-    Kp.rot(1) = 0.6;
-    Kp.rot(2) = 0.6;
+    Kd.vel(0) = 0.1;
+    Kd.vel(1) = 0.1;
+    Kd.vel(2) = 0.1;
+    Kd.rot(0) = 0.0;
+    Kd.rot(1) = 0.0;
+    Kd.rot(2) = 0.0;
 
     subscriber = n.subscribe("command", 1, &ForceController::commandCB, this);
     updates = 0;
@@ -92,6 +87,7 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     controller_state_publisher.reset(new realtime_tools::RealtimePublisher<humanoid_catching::ForceControllerFeedback>(n, "state", 1));
     controller_state_publisher->msg_.requested_joint_efforts.resize(kdl_chain.getNrOfJoints());
     controller_state_publisher->msg_.actual_joint_efforts.resize(kdl_chain.getNrOfJoints());
+    controller_state_publisher->msg_.x_error.resize(6);
     controller_state_publisher->msg_.pose.header.frame_id = root_name;
     return true;
 }
@@ -116,6 +112,7 @@ void ForceController::update()
 
     if (pose_des_ptr.get() != NULL) {
 
+        // Calculate velocity in operational space from joint space.
         jnt_to_jac_solver->JntToJac(q, J);
         for (unsigned int i = 0; i < 6; i++){
             xdot(i) = 0;
@@ -124,6 +121,7 @@ void ForceController::update()
             }
         }
 
+        // Convert the desired pose from ROS to KDL
         xd.p(0) = pose_des_ptr->pose.position.x;
         xd.p(1) = pose_des_ptr->pose.position.y;
         xd.p(2) = pose_des_ptr->pose.position.z;
@@ -137,27 +135,32 @@ void ForceController::update()
         xerr.rot = 0.5 * (xd.M.UnitX() * x.M.UnitX() + xd.M.UnitY() * x.M.UnitY() + xd.M.UnitZ() * x.M.UnitZ());
 
         // F is a vector of forces/wrenches corresponding to x, y, z, tx,ty,tz,tw
+        // Reduce velocity as the position approaches the desired position.
         for(unsigned int i = 0; i < 6; ++i) {
             F(i) = -Kp(i) * xerr(i) - Kd(i) * xdot(i);
         }
 
         // Convert the force into a set ofjoint torques. Apply the force to the last link.
         wrenches[kdl_chain.getNrOfSegments() - 1] = F;
+
+        // qdotdot is zero because ROS does not provide access to accelerations. This causes
+        // inertia not be compensated.
         int error = torque_solver->CartToJnt(q, qdot.qdot, qdotdot, wrenches, tau);
         if (error != KDL::SolverI::E_NOERROR) {
             ROS_ERROR("Failed to compute inverse dynamics %i", error);
             return;
         }
 
-        // And finally send these torques out
+        // Send the torques to the robot
         chain.setEfforts(tau);
     }
 
+    // Send controller feedback
     if (updates % 10 == 0 && controller_state_publisher && controller_state_publisher->trylock()) {
         chain.getEfforts(tau_act);
         double eff_err = 0;
         for (unsigned int i = 0; i < kdl_chain.getNrOfJoints(); i++) {
-            eff_err += (tau(i) - tau_act(i))*(tau(i) - tau_act(i));
+            eff_err += (tau(i) - tau_act(i)) * (tau(i) - tau_act(i));
             controller_state_publisher->msg_.requested_joint_efforts[i] = tau(i);
             controller_state_publisher->msg_.actual_joint_efforts[i] = tau_act(i);
         }
@@ -187,6 +190,9 @@ void ForceController::update()
         controller_state_publisher->msg_.pose.pose.orientation.y = qy;
         controller_state_publisher->msg_.pose.pose.orientation.z = qz;
         controller_state_publisher->msg_.pose.pose.orientation.w = qw;
+        for (int i = 0; i < 6; ++i) {
+            controller_state_publisher->msg_.x_error[i] = xerr(i);
+        }
         controller_state_publisher->unlockAndPublish();
     }
 }
