@@ -54,10 +54,6 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     jnt_to_pose_solver.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain));
     jnt_to_jac_solver.reset(new KDL::ChainJntToJacSolver(kdl_chain));
 
-    // Gravity zeroed out as PR2 mechanically compensates for gravity in the arms
-    KDL::Vector gravity(0.0, 0.0, 0.0);
-    torque_solver.reset(new KDL::ChainIdSolver_RNE(kdl_chain, gravity));
-
     // Resize (pre-allocate) the variables in non-realtime
     q.resize(kdl_chain.getNrOfJoints());
     qdot.resize(kdl_chain.getNrOfJoints());
@@ -65,21 +61,20 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     tau_act.resize(kdl_chain.getNrOfJoints());
     J.resize(kdl_chain.getNrOfJoints());
     qdotdot.resize(kdl_chain.getNrOfJoints());
-    wrenches.resize(kdl_chain.getNrOfSegments());
 
-    Kp.vel(0) = 0.75;
-    Kp.vel(1) = 0.75;
-    Kp.vel(2) = 0.75;
-    Kp.rot(0) = 0.0;
-    Kp.rot(1) = 0.0;
-    Kp.rot(2) = 0.0;
+    Kp.vel(0) = 8.0;
+    Kp.vel(1) = 8.0;
+    Kp.vel(2) = 8.0;
+    Kp.rot(0) = 1.0;
+    Kp.rot(1) = 1.0;
+    Kp.rot(2) = 1.0;
 
-    Kd.vel(0) = 0.1;
-    Kd.vel(1) = 0.1;
-    Kd.vel(2) = 0.1;
-    Kd.rot(0) = 0.0;
-    Kd.rot(1) = 0.0;
-    Kd.rot(2) = 0.0;
+    Kd.vel(0) = 0.05;
+    Kd.vel(1) = 0.05;
+    Kd.vel(2) = 0.05;
+    Kd.rot(0) = 0.01;
+    Kd.rot(1) = 0.01;
+    Kd.rot(2) = 0.01;
 
     subscriber = n.subscribe("command", 1, &ForceController::commandCB, this);
     updates = 0;
@@ -141,15 +136,16 @@ void ForceController::update()
             F(i) = -Kp(i) * xerr(i) - Kd(i) * xdot(i);
         }
 
-        // Convert the force into a set ofjoint torques. Apply the force to the last link.
-        wrenches[kdl_chain.getNrOfSegments() - 1] = F;
-
-        // qdotdot is zero because ROS does not provide access to accelerations. This causes
-        // inertia not be compensated.
-        int error = torque_solver->CartToJnt(q, qdot.qdot, qdotdot, wrenches, tau);
-        if (error != KDL::SolverI::E_NOERROR) {
-            ROS_ERROR("Failed to compute inverse dynamics %i", error);
-            return;
+        // Convert the force into a set of joint torques
+        // tau_ is a vector of joint torques q1...qn
+        for (unsigned int i = 0 ; i < kdl_chain.getNrOfJoints(); i++) {
+            // Iterate through the vector. Every joint torque is contributed to
+            // by the Jacobian Transpose (note the index switching in J access) times
+            // the desired force (from impedance OR explicit force)
+            tau(i) = 0;
+            for (unsigned int j = 0 ; j < 6 ; j++) {
+                tau(i) += J(j, i) * F(j);
+            }
         }
 
         // Send the torques to the robot
@@ -167,7 +163,7 @@ void ForceController::update()
         }
 
         double pose_sq_err = 0;
-        for (unsigned int i = 0; i < 3; ++i) { // Temporarily disable rotational control
+        for (unsigned int i = 0; i < 6; ++i) {
             pose_sq_err += xerr[i] * xerr[i];
         }
 

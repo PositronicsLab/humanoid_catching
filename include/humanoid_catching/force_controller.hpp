@@ -45,9 +45,6 @@ namespace humanoid_catching {
     //! KDL Solver performing the joint angles to Cartesian pose calculation
     boost::scoped_ptr<KDL::ChainFkSolverPos> jnt_to_pose_solver;
 
-    //! KDL Solver performing the force to torque solver
-    boost::scoped_ptr<KDL::ChainIdSolver_RNE> torque_solver;
-
     /// KDL Solver performing the joint angles to Jacobian calculation
     boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver;
 
@@ -79,9 +76,6 @@ namespace humanoid_catching {
 
     //! Cartesian effort
     KDL::Wrench    F;
-
-    //! Wrenches supplied to inverse dynamics solver
-    KDL::Wrenches wrenches;
 
     //! Jacobian
     KDL::Jacobian  J;
