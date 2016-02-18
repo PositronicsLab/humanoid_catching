@@ -21,7 +21,7 @@
 #include <boost/thread/mutex.hpp>
 #include <realtime_tools/realtime_publisher.h>
 #include <realtime_tools/realtime_box.h>
-
+#include <humanoid_catching/Move.h>
 #include <humanoid_catching/ForceControllerFeedback.h>
 
 // Code inspired by and based on ee_imped_controller
@@ -68,6 +68,9 @@ namespace humanoid_catching {
     //! Tip desired pose
     KDL::Frame     xd;
 
+    //! Obstacle
+    KDL::Frame obstacle;
+
     //! Cartesian error
     KDL::Twist     xerr;
 
@@ -90,7 +93,7 @@ namespace humanoid_catching {
     boost::scoped_ptr<realtime_tools::RealtimePublisher<humanoid_catching::ForceControllerFeedback> > controller_state_publisher;
 
     //! Goal
-    realtime_tools::RealtimeBox<boost::shared_ptr<const geometry_msgs::PoseStamped> > pose_des;
+    realtime_tools::RealtimeBox<boost::shared_ptr<const humanoid_catching::Move> > move_command;
 
     //! Current update count
     int updates;
@@ -102,7 +105,7 @@ namespace humanoid_catching {
     std::string tip_name;
 
     //! Callback when a new goal is received
-    void commandCB(const geometry_msgs::PoseStampedConstPtr &command);
+    void commandCB(const humanoid_catching::MoveConstPtr &command);
 
   public:
     /**

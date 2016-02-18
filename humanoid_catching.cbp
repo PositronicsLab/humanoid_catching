@@ -55,6 +55,7 @@
 		<Unit filename="msg/ForceControllerFeedback.msg" />
 		<Unit filename="msg/HumanFall.msg" />
 		<Unit filename="msg/IMU.msg" />
+		<Unit filename="msg/Move.msg" />
 		<Unit filename="package.xml" />
 		<Unit filename="pr2_arms_cart_imped_controller.yaml" />
 		<Unit filename="pr2_arms_force_controller.yaml" />

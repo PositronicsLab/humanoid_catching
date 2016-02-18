@@ -6,6 +6,7 @@
 #include <humanoid_catching/PredictFall.h>
 #include <actionlib/client/simple_action_client.h>
 #include <humanoid_catching/MoveArmFastAction.h>
+#include <humanoid_catching/Move.h>
 #include <tf/transform_listener.h>
 #include <boost/timer.hpp>
 #include <boost/math/constants/constants.hpp>
@@ -80,7 +81,7 @@ public:
         // Initialize arm clients
         ROS_INFO("Initializing arm command publishers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
-            armCommandPubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_TOPICS[i], 1));
+            armCommandPubs.push_back(nh.advertise<humanoid_catching::Move>(ARM_TOPICS[i], 1));
         }
 
         ROS_INFO("Starting the action server");
@@ -130,7 +131,14 @@ private:
             return;
         }
 
-        ROS_INFO("Transform aquired");
+        // Transform the goal to the base frame, as it becomes the obstacle
+        if(!tf.waitForTransform(goal->header.frame_id, "/torso_lift_link", goal->header.stamp, ros::Duration(15))){
+            ROS_WARN("Failed to get transform");
+            as.setAborted();
+            return;
+        }
+
+        ROS_INFO("Transforms aquired");
 
         // We now have a projected time/position path. Search the path for acceptable times.
         vector<Solution> solutions;
@@ -244,9 +252,29 @@ private:
             return;
         }
 
+        // Convert the obstacle to the movement frame
+        geometry_msgs::PoseStamped obstacle;
+        obstacle.header.frame_id = "/torso_lift_link";
+        obstacle.header.stamp = goal->header.stamp;
+        geometry_msgs::PoseStamped goalStamped;
+        goalStamped.header = goal->header;
+        goalStamped.pose = goal->pose;
+        try {
+            tf.transformPose(obstacle.header.frame_id, obstacle.header.stamp, goalStamped,
+                             goal->header.frame_id, obstacle);
+        }
+        catch (tf::TransformException& ex) {
+            ROS_ERROR("Failed to transform pose from %s to %s due to %s", goal->header.frame_id.c_str(),
+                      "/torso_lift_link", ex.what());
+            return;
+        }
+
         // Now move both arms to the position
         for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
             if (bestSolution->jointPositions.find(ARMS[i]) != bestSolution->jointPositions.end()) {
+                humanoid_catching::Move command;
+                command.target = bestSolution->pose;
+                command.obstacle = obstacle.pose;
                 armCommandPubs[i].publish(bestSolution->pose);
             } else {
                 ROS_INFO("Skipping arm %s due to no solution.", ARMS[i].c_str());

@@ -1,6 +1,8 @@
 #include <humanoid_catching/force_controller.hpp>
 #include <pluginlib/class_list_macros.h>
 #include <string>
+#include <humanoid_catching/Move.h>
+#include <boost/math/constants/constants.hpp>
 
 using namespace humanoid_catching;
 using namespace std;
@@ -9,16 +11,18 @@ using namespace std;
 PLUGINLIB_DECLARE_CLASS(force_controller, ForceControllerPlugin,
 			humanoid_catching::ForceController,
 			pr2_controller_interface::Controller)
+static const double PI = boost::math::constants::pi<double>();
+static const double BETA = 20.0 / PI;
+static const double GAMMA = 1e4;
 
-
-void ForceController::commandCB(const geometry_msgs::PoseStampedConstPtr &command) {
-    ROS_INFO("Received a new pose command");
+void ForceController::commandCB(const humanoid_catching::MoveConstPtr &command) {
+    ROS_INFO("Received a new move command");
     if (command->header.frame_id != root_name) {
-        ROS_ERROR("Pose commands must be in the %s frame. Command was in the %s frame.",
+        ROS_ERROR("Move commands must be in the %s frame. Command was in the %s frame.",
                   root_name.c_str(), command->header.frame_id.c_str());
         return;
     }
-    pose_des.set(command);
+    move_command.set(command);
 }
 
 bool ForceController::init(pr2_mechanism_model::RobotState *robot,
@@ -92,11 +96,29 @@ void ForceController::starting() {
     ROS_INFO("Starting the ForceController");
 }
 
+static KDL::Vector acos_vector(const KDL::Vector& v) {
+    KDL::Vector r;
+    for (unsigned int i = 0; i < 3; ++i) {
+        r(i) = acos(v(i));
+    }
+    return r;
+}
+
+static KDL::Vector dot(const KDL::Rotation& R, const KDL::Vector& V) {
+    KDL::Vector r = KDL::Vector::Zero();
+    for (unsigned int i = 0; i < 3; ++i) {
+        for (unsigned int j = 0; j < 3; ++j) {
+            r(i) += R(i, j) * V(j);
+        }
+    }
+    return r;
+}
+
 void ForceController::update()
 {
     // Check if there is a current goal
-    boost::shared_ptr<const geometry_msgs::PoseStamped> pose_des_ptr;
-    pose_des.get(pose_des_ptr);
+    boost::shared_ptr<const humanoid_catching::Move> move_command_ptr;
+    move_command.get(move_command_ptr);
     updates++;
 
     // Get the current joint positions and velocities
@@ -106,7 +128,7 @@ void ForceController::update()
     // Compute the forward kinematics and Jacobian (at this location)
     jnt_to_pose_solver->JntToCart(q, x);
 
-    if (pose_des_ptr.get() != NULL) {
+    if (move_command_ptr.get() != NULL) {
 
         // Calculate velocity in operational space from joint space.
         jnt_to_jac_solver->JntToJac(q, J);
@@ -118,13 +140,13 @@ void ForceController::update()
         }
 
         // Convert the desired pose from ROS to KDL
-        xd.p(0) = pose_des_ptr->pose.position.x;
-        xd.p(1) = pose_des_ptr->pose.position.y;
-        xd.p(2) = pose_des_ptr->pose.position.z;
-        xd.M = KDL::Rotation::Quaternion(pose_des_ptr->pose.orientation.x,
-                    pose_des_ptr->pose.orientation.y,
-                    pose_des_ptr->pose.orientation.z,
-                    pose_des_ptr->pose.orientation.w);
+        xd.p(0) = move_command_ptr->target.position.x;
+        xd.p(1) = move_command_ptr->target.position.y;
+        xd.p(2) = move_command_ptr->target.position.z;
+        xd.M = KDL::Rotation::Quaternion(move_command_ptr->target.orientation.x,
+                    move_command_ptr->target.orientation.y,
+                    move_command_ptr->target.orientation.z,
+                    move_command_ptr->target.orientation.w);
 
         // Calculate a Cartesian restoring force.
         xerr.vel = x.p - xd.p;
@@ -134,6 +156,24 @@ void ForceController::update()
         // Reduce velocity as the position approaches the desired position.
         for(unsigned int i = 0; i < 6; ++i) {
             F(i) = -Kp(i) * xerr(i) - Kd(i) * xdot(i);
+        }
+
+        // Factor in obstacle avoidance
+        if (move_command_ptr->has_obstacle) {
+            obstacle.p(0) = move_command_ptr->obstacle.position.x;
+            obstacle.p(1) = move_command_ptr->obstacle.position.y;
+            obstacle.p(2) = move_command_ptr->obstacle.position.z;
+
+            // Based on (Hoffmann, 2009)
+            KDL::Rotation R = KDL::Rotation::Rot((obstacle.p - x.p) * xdot.vel, PI / 2.0);
+
+            double phi = acos(KDL::dot(obstacle.p - x.p, xdot.vel) / ((obstacle.p - x.p).Norm() * xdot.vel.Norm()));
+
+            KDL::Vector P = GAMMA * dot(R, xdot.vel) * phi * exp(-BETA * phi);
+
+            for (unsigned int i = 0; i < 3; ++i) {
+                F(i) += P(i);
+            }
         }
 
         // Convert the force into a set of joint torques
@@ -177,9 +217,9 @@ void ForceController::update()
         controller_state_publisher->msg_.pose_sq_error = pose_sq_err;
         controller_state_publisher->msg_.force_desired_sq = force_desired_sq;
 
-        if(pose_des_ptr != NULL) {
-            controller_state_publisher->msg_.goal.header = pose_des_ptr->header;
-            controller_state_publisher->msg_.goal.pose = pose_des_ptr->pose;
+        if(move_command_ptr != NULL) {
+            controller_state_publisher->msg_.goal.header = move_command_ptr->header;
+            controller_state_publisher->msg_.goal.pose = move_command_ptr->target;
         }
 
         controller_state_publisher->msg_.header.stamp = robot_state->getTime();
