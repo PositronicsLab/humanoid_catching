@@ -1,13 +1,14 @@
 <launch>
   <include file="$(find pr2_machine)/$(env ROBOT).machine" />
 
-  <include file="$(find pr2_moveit_config)/launch/move_group.launch" />
-
   <!-- Gazebo does not read these live
   <param name="/r_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />
   <param name="/l_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />
   -->
   <include file="$(find kinematics_cache)/launch/kinematics_cache.launch" />
+
+  <include file="$(find humanoid_catching)/launch/l_arm_force_controller.launch" />
+  <include file="$(find humanoid_catching)/launch/r_arm_force_controller.launch" />
 
   <!-- Mapping -->
   <include file="$(find pr2_navigation_global)/amcl_node.xml" />
@@ -16,12 +17,7 @@
   <node pkg="humanoid_catching" type="fake_human_imu" name="fake_human_imu" >
     <remap from="/out" to="/human/imu" />
   </node>
-  <node pkg="humanoid_catching" type="move_arm_fast_action_server" name="right_arm_move_arm_fast_action_server" output="screen">
-    <param name="arm" value="right" />
-  </node>
-  <node pkg="humanoid_catching" type="move_arm_fast_action_server" name="left_arm_move_arm_fast_action_server" output="screen">
-    <param name="arm" value="left" />
-  </node>
+
   <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
   </node>
 
@@ -33,5 +29,5 @@
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="humanoid_catching" type="catching_controller" name="catching_controller" output="screen"/>
 
-  <include file="$(find humanoid_catching)/launch/spawn_human.launch" />
+  <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
 </launch>
