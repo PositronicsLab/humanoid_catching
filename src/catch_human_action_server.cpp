@@ -180,8 +180,7 @@ private:
             // Lookup the IK solution
             kinematics_cache::IKQuery ikQuery;
             ikQuery.request.pose = transformedPose;
-            // TODO: Determine appropriate value
-            ikQuery.request.error = 0.025;
+            ikQuery.request.error = 0.01;
 
             boost::timer opTimer;
             ops++;
