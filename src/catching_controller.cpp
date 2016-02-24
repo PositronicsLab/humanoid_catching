@@ -43,6 +43,7 @@ public:
         // Construct but don't initialize
         humanIMUSub.reset(
                 new message_filters::Subscriber<humanoid_catching::IMU>(nh, "/human/imu", 1));
+        humanIMUSub->unsubscribe();
 
         ROS_INFO("Waiting for catch human server");
         catchHumanClient.reset(new CatchHumanClient("catch_human_action", true));
@@ -59,6 +60,7 @@ private:
         humanFallSub->unsubscribe();
 
         // Begin listening for IMU notifications
+        humanIMUSub->subscribe();
         humanIMUSub->registerCallback(boost::bind(&CatchingController::imuDataDetected, this, _1));
 
         // Wait to receive a IMU notification to take action so we are
@@ -66,7 +68,7 @@ private:
     }
 
     void imuDataDetected(const humanoid_catching::IMUConstPtr& imuData) {
-        ROS_INFO("Human IMU data detected at @ %f", imuData->header.stamp.toSec());
+        ROS_INFO("Human IMU data received at @ %f", imuData->header.stamp.toSec());
 
         // Stop listening for IMU data
         humanIMUSub->unsubscribe();

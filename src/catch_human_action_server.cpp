@@ -33,6 +33,15 @@ struct Solution {
     ros::Duration delta;
 };
 
+static geometry_msgs::Pose applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform){
+    tf::Stamped<tf::Pose> tfPose;
+    tf::poseStampedMsgToTF(pose, tfPose);
+    tf::Pose tfGoal = transform * tfPose;
+    geometry_msgs::Pose msgGoal;
+    tf::poseTFToMsg(tfGoal, msgGoal);
+    return msgGoal;
+}
+
 class CatchHumanActionServer {
 private:
 
@@ -117,23 +126,18 @@ private:
             as.setAborted();
             return;
         }
-
         ROS_INFO("Fall predicted successfully");
-        ROS_INFO("Waiting for transform");
 
-        // Transform to the base_frame for IK, which is torso_lift_link
+        // Transform to the base_frame of the human (and therefore the obstacle) for IK, which is torso_lift_link
+        ROS_INFO("Waiting for transform");
         if(!tf.waitForTransform(predictFall.response.header.frame_id, "/torso_lift_link", predictFall.response.header.stamp, ros::Duration(15))){
             ROS_WARN("Failed to get transform");
             as.setAborted();
             return;
         }
 
-        // Transform the goal to the base frame, as it becomes the obstacle
-        if(!tf.waitForTransform(goal->header.frame_id, "/torso_lift_link", goal->header.stamp, ros::Duration(15))){
-            ROS_WARN("Failed to get transform");
-            as.setAborted();
-            return;
-        }
+        tf::StampedTransform goalToTorsoTransform;
+        tf.lookupTransform("/torso_lift_link", predictFall.response.header.frame_id, predictFall.response.header.stamp, goalToTorsoTransform);
 
         ROS_INFO("Transforms aquired");
 
@@ -155,7 +159,8 @@ private:
             lastTime = i->time;
 
             Solution possibleSolution;
-            possibleSolution.delta = ros::Duration(1000); // Initialize max delta to large number
+            // Initialize to a large negative number.
+            possibleSolution.delta = ros::Duration(-1000);
             possibleSolution.armsSolved = 0;
             possibleSolution.pose = i->pose;
             possibleSolution.goalTime = ros::Duration(i->time);
@@ -167,15 +172,7 @@ private:
             geometry_msgs::PoseStamped transformedPose;
             transformedPose.header.frame_id = "/torso_lift_link";
             transformedPose.header.stamp = predictFall.response.header.stamp;
-            try {
-                tf.transformPose(transformedPose.header.frame_id, transformedPose.header.stamp, basePose,
-                                     predictFall.response.header.frame_id, transformedPose);
-            }
-            catch (tf::TransformException& ex) {
-                ROS_ERROR("Failed to transform pose from %s to %s due to %s", predictFall.response.header.frame_id.c_str(),
-                        "/torso_lift_link", ex.what());
-                continue;
-            }
+            transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
 
             // Lookup the IK solution
             kinematics_cache::IKQuery ikQuery;
@@ -207,7 +204,9 @@ private:
 
             bool armsSolved[2] = {false, false};
             for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
-                possibleSolution.delta = min(possibleSolution.delta, ros::Duration(i->time) - j->simulated_execution_time);
+                // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
+                // down and give the second arm time to arrive.
+                possibleSolution.delta = max(possibleSolution.delta, ros::Duration(i->time) - j->simulated_execution_time);
                 possibleSolution.jointPositions[j->group] = j->positions;
 
                 for (unsigned int k = 0; k < boost::size(ARMS); ++k) {
@@ -236,7 +235,7 @@ private:
         ROS_INFO("Selecting optimal position from %lu poses", solutions.size());
 
         // Select the point which is reachable most quicly
-        ros::Duration highestDeltaTime = ros::Duration(-10);
+        ros::Duration highestDeltaTime = ros::Duration(-1000);
         unsigned int highestArmsSolved = 0;
 
         vector<Solution>::iterator bestSolution = solutions.end();
@@ -262,22 +261,14 @@ private:
         }
 
         // Convert the obstacle to the movement frame
-        geometry_msgs::PoseStamped obstacle;
-        obstacle.header.frame_id = "/torso_lift_link";
-        obstacle.header.stamp = goal->header.stamp;
-
         geometry_msgs::PoseStamped obstacleStamped;
         obstacleStamped.header = goal->header;
         obstacleStamped.pose = goal->pose;
-        try {
-            tf.transformPose(obstacle.header.frame_id, obstacle.header.stamp, obstacleStamped,
-                             goal->header.frame_id, obstacle);
-        }
-        catch (tf::TransformException& ex) {
-            ROS_ERROR("Failed to transform pose from %s to %s due to %s", obstacleStamped.header.frame_id.c_str(),
-                      "/torso_lift_link", ex.what());
-            return;
-        }
+
+        geometry_msgs::PoseStamped obstacle;
+        obstacle.pose = applyTransform(obstacleStamped, goalToTorsoTransform);
+        obstacle.header.frame_id = "/torso_lift_link";
+        obstacle.header.stamp = goal->header.stamp;
 
         // Now move both arms to the position
         for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
