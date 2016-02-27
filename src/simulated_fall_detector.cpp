@@ -1,5 +1,4 @@
 #include <ros/ros.h>
-#include <geometry_msgs/TwistStamped.h>
 #include <gazebo_msgs/GetModelState.h>
 #include <humanoid_catching/HumanFall.h>
 
@@ -9,7 +8,6 @@ static const double EPSILON = 0.075;
 static const double TIMER_FREQ = 0.01;
 
 using namespace std;
-using namespace geometry_msgs;
 
 class SimulatedFallDetector {
 private:
@@ -49,13 +47,12 @@ private:
         // Check for a z velocity
         if (modelState.response.twist.linear.z < -EPSILON || fabs(modelState.response.twist.linear.x) > EPSILON || fabs(modelState.response.twist.linear.y) > EPSILON) {
             ROS_DEBUG("Detected negative Z velocity");
-            publishFall(modelState.response.pose.position);
+            publishFall();
         }
       }
 
-      void publishFall(const geometry_msgs::Point torsoLocation) {
+      void publishFall() {
         humanoid_catching::HumanFall fall;
-        fall.position = torsoLocation;
         fall.header.frame_id = "/map";
         fall.header.stamp = ros::Time::now();
 
