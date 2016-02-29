@@ -179,6 +179,12 @@ target_link_libraries(force_controller
    ${catkin_LIBRARIES} ${ODE_LIBRARY}
 )
 
+add_executable(fall_starter src/fall_starter.cpp)
+add_dependencies(fall_starter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(fall_starter
+   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+)
+
 #############
 ## Install ##
 #############

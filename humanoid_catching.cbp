@@ -59,11 +59,13 @@
 		<Unit filename="package.xml" />
 		<Unit filename="pr2_arms_cart_imped_controller.yaml" />
 		<Unit filename="pr2_arms_force_controller.yaml" />
+		<Unit filename="rviz/display.rviz" />
 		<Unit filename="src/announced_fall_detector.cpp" />
 		<Unit filename="src/catch_human_action_server.cpp" />
 		<Unit filename="src/catching_controller.cpp" />
 		<Unit filename="src/fake_human_imu.cpp" />
 		<Unit filename="src/fall_predictor.cpp" />
+		<Unit filename="src/fall_starter.cpp" />
 		<Unit filename="src/force_controller.cpp" />
 		<Unit filename="src/imu_integrator.cpp" />
 		<Unit filename="src/move_arm_fast_action_server.cpp" />
@@ -72,6 +74,7 @@
 		<Extensions>
 			<code_completion />
 			<debugger />
+			<envvars />
 		</Extensions>
 	</Project>
 </CodeBlocks_project_file>
