@@ -17,17 +17,15 @@ using namespace humanoid_catching;
 typedef actionlib::SimpleActionServer<humanoid_catching::CatchHumanAction> Server;
 typedef vector<kinematics_cache::IK> IKList;
 
-static const double EPSILON = 0.1;
-static const double PLANNING_TIME = 0.25;
 static const string ARMS[] = {"left_arm", "right_arm"};
 static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_force_controller/command"};
 
-static const ros::Duration SEARCH_RESOLUTION(0.1);
+static const ros::Duration SEARCH_RESOLUTION(0.05);
 static const double pi = boost::math::constants::pi<double>();
 
 struct Solution {
     unsigned int armsSolved;
-    geometry_msgs::Pose pose;
+    geometry_msgs::PoseStamped pose;
     map<string, vector<double> > jointPositions;
     ros::Duration goalTime;
     ros::Duration delta;
@@ -66,6 +64,12 @@ private:
     //! TF listener
     tf::TransformListener tf;
 
+    //! Visualization of goal
+    ros::Publisher goalPub;
+
+    //! Visualization of trials
+    ros::Publisher trialGoalPub;
+
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
     humanoid_catching::CatchHumanResult result;
@@ -90,6 +94,9 @@ public:
             armCommandPubs.push_back(nh.advertise<humanoid_catching::Move>(ARM_TOPICS[i], 1));
         }
 
+        goalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal", 1);
+        trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
+
         ROS_INFO("Starting the action server");
         as.registerPreemptCallback(boost::bind(&CatchHumanActionServer::preempt, this));
         as.start();
@@ -100,6 +107,22 @@ private:
     void preempt() {
         // Currently no way to cancel force controllers.
         as.setPreempted();
+    }
+
+    void visualizeGoal(const geometry_msgs::PoseStamped& goal) const {
+        if (goalPub.getNumSubscribers() > 0) {
+            geometry_msgs::PointStamped point;
+            point.header = goal.header;
+            point.point = goal.pose.position;
+            goalPub.publish(point);
+        }
+    }
+
+    static geometry_msgs::PointStamped poseToPoint(const geometry_msgs::PoseStamped pose) {
+        geometry_msgs::PointStamped point;
+        point.point = pose.pose.position;
+        point.header = pose.header;
+        return point;
     }
 
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal){
@@ -162,7 +185,6 @@ private:
             // Initialize to a large negative number.
             possibleSolution.delta = ros::Duration(-1000);
             possibleSolution.armsSolved = 0;
-            possibleSolution.pose = i->pose;
             possibleSolution.goalTime = ros::Duration(i->time);
 
             geometry_msgs::PoseStamped basePose;
@@ -172,7 +194,13 @@ private:
             geometry_msgs::PoseStamped transformedPose;
             transformedPose.header.frame_id = "/torso_lift_link";
             transformedPose.header.stamp = predictFall.response.header.stamp;
+
             transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
+            possibleSolution.pose = transformedPose;
+
+            if (trialGoalPub.getNumSubscribers() > 0) {
+                trialGoalPub.publish(poseToPoint(transformedPose));
+            }
 
             // Lookup the IK solution
             kinematics_cache::IKQuery ikQuery;
@@ -189,18 +217,6 @@ private:
                 ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
             }
             timePerOp += opTimer.elapsed() / float(ops);
-
-            // Now check if the time is feasible
-            // TODO: All times are currently reporting as infeasible.
-            /*
-            for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
-                if (ros::Duration((1 + EPSILON) * j->simulated_execution_time.toSec()) + ros::Duration(PLANNING_TIME) > i->time) {
-                    ROS_INFO("Position could not be reached in time. Execution time is %f, epsilon is %f, and fall time is %f",
-                            j->simulated_execution_time.toSec(), EPSILON, i->time.toSec());
-                            break;
-                }
-            }
-            */
 
             bool armsSolved[2] = {false, false};
             for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
@@ -245,8 +261,8 @@ private:
             if (solution->armsSolved > highestArmsSolved || solution->armsSolved == highestArmsSolved && solution->delta > highestDeltaTime) {
                 highestArmsSolved = solution->armsSolved;
                 highestDeltaTime = solution->delta;
-                ROS_INFO("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.position.x,
-                         solution->pose.position.y, solution->pose.position.z, highestArmsSolved, highestDeltaTime.toSec());
+                ROS_INFO("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.pose.position.x,
+                         solution->pose.pose.position.y, solution->pose.pose.position.z, highestArmsSolved, highestDeltaTime.toSec());
                 bestSolution = solution;
             }
         }
@@ -270,13 +286,15 @@ private:
         obstacle.header.frame_id = "/torso_lift_link";
         obstacle.header.stamp = goal->header.stamp;
 
+
+        visualizeGoal(bestSolution->pose);
+
         // Now move both arms to the position
         for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
             if (bestSolution->jointPositions.find(ARMS[i]) != bestSolution->jointPositions.end()) {
                 humanoid_catching::Move command;
-                command.header.stamp = goal->header.stamp;
-                command.header.frame_id = "torso_lift_link";
-                command.target = bestSolution->pose;
+                command.header = bestSolution->pose.header;
+                command.target = bestSolution->pose.pose;
                 command.obstacle = obstacle.pose;
                 command.has_obstacle = true;
                 armCommandPubs[i].publish(command);

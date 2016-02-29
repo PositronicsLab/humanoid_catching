@@ -4,6 +4,8 @@
 #include <actionlib/client/simple_action_client.h>
 #include <message_filters/subscriber.h>
 #include <humanoid_catching/IMU.h>
+#include <visualization_msgs/Marker.h>
+#include <geometry_msgs/PoseStamped.h>
 
 namespace {
 using namespace std;
@@ -22,6 +24,9 @@ private:
 
 	//! Private nh
 	ros::NodeHandle pnh;
+
+    //! Visualization of imu data
+    ros::Publisher imuVizPub;
 
     //! Human fall subscriber
     auto_ptr<message_filters::Subscriber<HumanFall> > humanFallSub;
@@ -49,6 +54,8 @@ public:
         catchHumanClient.reset(new CatchHumanClient("catch_human_action", true));
         catchHumanClient->waitForServer();
 
+        imuVizPub = nh.advertise<geometry_msgs::PoseStamped>("/catching_controller/imu_data", 1);
+
         ROS_INFO("Catching controller initialized successfully");
 	}
 
@@ -67,12 +74,23 @@ private:
         // aware of any initial velocity
     }
 
+    void visualizeImuMsg(const humanoid_catching::IMUConstPtr data) const {
+        if (imuVizPub.getNumSubscribers() > 0) {
+            geometry_msgs::PoseStamped poseStamped;
+            poseStamped.header = data->header;
+            poseStamped.pose = data->pose;
+            imuVizPub.publish(poseStamped);
+        }
+    }
+
     void imuDataDetected(const humanoid_catching::IMUConstPtr& imuData) {
         ROS_INFO("Human IMU data received at @ %f", imuData->header.stamp.toSec());
 
         // Stop listening for IMU data
         humanIMUSub->unsubscribe();
 
+        // Publish the viz message
+        visualizeImuMsg(imuData);
         catchHuman(imuData);
     }
 
