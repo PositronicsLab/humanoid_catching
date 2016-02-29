@@ -12,10 +12,10 @@ using namespace std;
 using namespace humanoid_catching;
 
 //! Default weight in kg
-static const double MASS_DEFAULT = 50;
+static const double MASS_DEFAULT = 5;
 static const double HEIGHT_DEFAULT = 1.5;
 
-static const double STEP_SIZE = 0.005;
+static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
 static const unsigned int MAX_CONTACTS = 3;
 

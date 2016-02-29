@@ -19,8 +19,9 @@ typedef vector<kinematics_cache::IK> IKList;
 
 static const string ARMS[] = {"left_arm", "right_arm"};
 static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_force_controller/command"};
+static const string ARM_GOAL_VIZ_TOPICS[] = {"/catch_human_action_server/movement_goal/left_arm", "/catch_human_action_server/movement_goal/right_arm"};
 
-static const ros::Duration SEARCH_RESOLUTION(0.05);
+static const ros::Duration SEARCH_RESOLUTION(0.10);
 static const double pi = boost::math::constants::pi<double>();
 
 struct Solution {
@@ -64,8 +65,8 @@ private:
     //! TF listener
     tf::TransformListener tf;
 
-    //! Visualization of goal
-    ros::Publisher goalPub;
+    //! Visualization of goals
+    vector<ros::Publisher> goalPubs;
 
     //! Visualization of trials
     ros::Publisher trialGoalPub;
@@ -92,9 +93,9 @@ public:
         ROS_INFO("Initializing arm command publishers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
             armCommandPubs.push_back(nh.advertise<humanoid_catching::Move>(ARM_TOPICS[i], 1));
+            goalPubs.push_back(nh.advertise<geometry_msgs::PointStamped>(ARM_GOAL_VIZ_TOPICS[i], 1));
         }
 
-        goalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal", 1);
         trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
 
         ROS_INFO("Starting the action server");
@@ -109,12 +110,12 @@ private:
         as.setPreempted();
     }
 
-    void visualizeGoal(const geometry_msgs::PoseStamped& goal) const {
-        if (goalPub.getNumSubscribers() > 0) {
+    void visualizeGoal(const geometry_msgs::PoseStamped& goal, unsigned int armIndex) const {
+        if (goalPubs[armIndex].getNumSubscribers() > 0) {
             geometry_msgs::PointStamped point;
             point.header = goal.header;
             point.point = goal.pose.position;
-            goalPub.publish(point);
+            goalPubs[armIndex].publish(point);
         }
     }
 
@@ -169,8 +170,6 @@ private:
 
         // Epsilon causes us to always select a position in front of the fall.
         ros::Duration lastTime;
-        unsigned int ops = 0;
-        double timePerOp = 0;
 
         for (vector<FallPoint>::const_iterator i = predictFall.response.points.begin(); i != predictFall.response.points.end(); ++i) {
 
@@ -205,18 +204,13 @@ private:
             // Lookup the IK solution
             kinematics_cache::IKQuery ikQuery;
             ikQuery.request.pose = transformedPose;
-            ikQuery.request.error = 0.01;
 
-            boost::timer opTimer;
-            ops++;
             if (!ik.call(ikQuery)) {
                 ROS_DEBUG("Failed to find IK solution for arms");
-                timePerOp += opTimer.elapsed() / float(ops);
-                break;
-            } else {
-                ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
+                continue;
             }
-            timePerOp += opTimer.elapsed() / float(ops);
+
+            ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
 
             bool armsSolved[2] = {false, false};
             for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
@@ -239,8 +233,6 @@ private:
              }
              solutions.push_back(possibleSolution);
         }
-
-        ROS_INFO("Average time per query was %f(s). n = %u", timePerOp, ops);
 
         if (solutions.empty()) {
             ROS_WARN("No possible catch positions");
@@ -287,12 +279,12 @@ private:
         obstacle.header.stamp = goal->header.stamp;
 
 
-        visualizeGoal(bestSolution->pose);
 
         // Now move both arms to the position
         for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
             if (bestSolution->jointPositions.find(ARMS[i]) != bestSolution->jointPositions.end()) {
                 humanoid_catching::Move command;
+                visualizeGoal(bestSolution->pose, i);
                 command.header = bestSolution->pose.header;
                 command.target = bestSolution->pose.pose;
                 command.obstacle = obstacle.pose;
