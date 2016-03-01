@@ -69,9 +69,9 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     Kp.vel(0) = 50.0;
     Kp.vel(1) = 50.0;
     Kp.vel(2) = 50.0;
-    Kp.rot(0) = 10.0;
-    Kp.rot(1) = 10.0;
-    Kp.rot(2) = 10.0;
+    Kp.rot(0) = 25.0;
+    Kp.rot(1) = 25.0;
+    Kp.rot(2) = 25.0;
 
     Kd.vel(0) = 0.05;
     Kd.vel(1) = 0.05;
@@ -143,10 +143,22 @@ void ForceController::update()
         xd.p(0) = move_command_ptr->target.position.x;
         xd.p(1) = move_command_ptr->target.position.y;
         xd.p(2) = move_command_ptr->target.position.z;
-        xd.M = KDL::Rotation::Quaternion(move_command_ptr->target.orientation.x,
+
+        if (move_command_ptr->point_at_target) {
+            double w = KDL::dot(x.p, xd.p);
+            KDL::Vector d = x.p * xd.p;
+            double q = sqrt(1.0 - w * w);
+            xd.M = KDL::Rotation::Quaternion(
+              d.x() * q,
+              d.y() * q,
+              d.z() * q,
+              w);
+        } else {
+          xd.M = KDL::Rotation::Quaternion(move_command_ptr->target.orientation.x,
                     move_command_ptr->target.orientation.y,
                     move_command_ptr->target.orientation.z,
                     move_command_ptr->target.orientation.w);
+        }
 
         // Calculate a Cartesian restoring force.
         xerr.vel = x.p - xd.p;

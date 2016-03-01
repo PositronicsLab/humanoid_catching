@@ -289,6 +289,7 @@ private:
                 command.target = bestSolution->pose.pose;
                 command.obstacle = obstacle.pose;
                 command.has_obstacle = true;
+                command.point_at_target = true;
                 armCommandPubs[i].publish(command);
             } else {
                 ROS_INFO("Skipping arm %s due to no solution.", ARMS[i].c_str());
