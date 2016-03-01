@@ -8,8 +8,8 @@ namespace {
 using namespace std;
 using namespace ros;
 
-static const float NOTIFICATION_DELAY = 0.1;
-
+static const double NOTIFICATION_DELAY_DEFAULT = 0.1;
+static const double DURATION_DEFAULT = 0.001;
 class FallStarter {
 private:
 
@@ -25,23 +25,40 @@ private:
    //! Catching controller notifier
    ros::Publisher catchNotifier;
 
-   //! Delay before notifying
-   ros::Duration notificationDelay;
+   //! X torque
+   double x;
+
+   //! Y torque
+   double y;
+
+   //! Z torque
+   double z;
+
+   //! Torque Duration
+   double duration;
+
+   //! Notification delay
+   double delay;
 public:
 	FallStarter() :
-		pnh("~"), notificationDelay(NOTIFICATION_DELAY) {
+		pnh("~") {
             gazeboClient = nh.serviceClient<gazebo_msgs::ApplyBodyWrench>("/gazebo/apply_body_wrench", true /* persistent */);
             catchNotifier = nh.advertise<humanoid_catching::HumanFall>("/human/fall", 1);
+            pnh.param("x", x, 0.0);
+            pnh.param("y", y, 0.0);
+            pnh.param("z", z, 0.0);
+            pnh.param("duration", duration, DURATION_DEFAULT);
+            pnh.param("delay", delay, NOTIFICATION_DELAY_DEFAULT);
     }
 
     void fall() {
         ROS_INFO("Initiating fall");
         gazebo_msgs::ApplyBodyWrench wrench;
         wrench.request.body_name = "human::link";
-        wrench.request.wrench.torque.x = 0;
-        wrench.request.wrench.torque.y = 500;
-        wrench.request.wrench.torque.z = 0;
-        wrench.request.duration = ros::Duration(0.001);
+        wrench.request.wrench.torque.x = x;
+        wrench.request.wrench.torque.y = y;
+        wrench.request.wrench.torque.z = z;
+        wrench.request.duration = ros::Duration(duration);
 
         if (!gazeboClient.call(wrench)) {
             ROS_ERROR("Failed to apply wrench");
@@ -49,7 +66,7 @@ public:
         }
 
         ROS_INFO("Pausing before notifying");
-        notificationDelay.sleep();
+        ros::Duration(delay).sleep();
         ROS_INFO("Notifying fall catcher");
         catchNotifier.publish(humanoid_catching::HumanFall());
         ROS_INFO("Fall initiation complete");
