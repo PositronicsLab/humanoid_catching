@@ -2,7 +2,23 @@ cmake_minimum_required(VERSION 2.8.3)
 project(humanoid_catching)
 
 ## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS roscpp gazebo_msgs geometry_msgs message_filters actionlib actionlib_msgs pr2_controllers_msgs tf sensor_msgs eigen orocos_kdl pluginlib)
+find_package(catkin REQUIRED COMPONENTS
+    moveit_core
+    moveit_ros_planning
+    moveit_ros_planning_interface
+    roscpp
+    gazebo_msgs
+    geometry_msgs
+    message_filters
+    actionlib
+    actionlib_msgs
+    pr2_controllers_msgs
+    tf
+    sensor_msgs
+    eigen
+    orocos_kdl
+    pluginlib
+)
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)

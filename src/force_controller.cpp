@@ -69,9 +69,9 @@ bool ForceController::init(pr2_mechanism_model::RobotState *robot,
     Kp.vel(0) = 50.0;
     Kp.vel(1) = 50.0;
     Kp.vel(2) = 50.0;
-    Kp.rot(0) = 25.0;
-    Kp.rot(1) = 25.0;
-    Kp.rot(2) = 25.0;
+    Kp.rot(0) = 5.0;
+    Kp.rot(1) = 5.0;
+    Kp.rot(2) = 5.0;
 
     Kd.vel(0) = 0.05;
     Kd.vel(1) = 0.05;

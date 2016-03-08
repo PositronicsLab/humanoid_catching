@@ -1,5 +1,6 @@
 <launch>
   <include file="$(find pr2_machine)/$(env ROBOT).machine" />
+  <include file="$(find pr2_moveit_config)/launch/planning_context.launch" />
 
   <!-- Gazebo does not read these live
   <param name="/r_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />

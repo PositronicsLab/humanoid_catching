@@ -103,8 +103,8 @@ private:
         goal.pose = imuData->pose;
         actionlib::SimpleClientGoalState gs = catchHumanClient->sendGoalAndWait(goal, ros::Duration(MAX_CATCH_TIME), ros::Duration(MAX_PREEMPT_TIME));
         if (gs.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
-            ROS_INFO("Human was caught successsfully. Resetting for next fall.");
-            humanFallSub->subscribe();
+            ROS_INFO("Human was initially caught successfully");
+            humanIMUSub->subscribe();
         } else {
             ROS_INFO("Human was not caught successfully. Failure state was %s", gs.getText().c_str());
             humanIMUSub->subscribe();
