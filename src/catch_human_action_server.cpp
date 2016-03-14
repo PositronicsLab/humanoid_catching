@@ -279,7 +279,7 @@ private:
     }
 
     static unsigned int numArmsSolved(const Solution& solution) {
-        unsigned int numArmsSolved;
+        unsigned int numArmsSolved = 0;
         for (unsigned int k = 0; k < boost::size(ARMS); ++k) {
             if (solution.armsSolved[k]) {
                 numArmsSolved++;
@@ -382,8 +382,8 @@ private:
                 // Note: The allowed collision matrix should prevent collisions between the arms
                 robot_state::RobotState currentRobotState = currentScene->getCurrentState();
                 currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
-                if (currentScene->isStateColliding(currentRobotState)) {
-                    ROS_DEBUG("State in collision");
+                if (currentScene->isStateColliding(currentRobotState, j->group, true)) {
+                    ROS_INFO("State in collision.");
                     continue;
                 }
 
