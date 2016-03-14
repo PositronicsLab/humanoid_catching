@@ -16,6 +16,7 @@
 #include <moveit/robot_state/robot_state.h>
 #include <sensor_msgs/JointState.h>
 #include <message_filters/subscriber.h>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 
 namespace {
 using namespace std;
@@ -52,12 +53,14 @@ typedef std::map<std::string, State> StateMapType;
 
 struct Solution {
     bool armsSolved[2];
+    bool feasable;
     geometry_msgs::PoseStamped pose;
     ros::Duration goalTime;
     ros::Duration delta;
 
     Solution(){
         armsSolved[0] = armsSolved[1] = false;
+        feasable = false;
     }
 };
 
@@ -112,6 +115,9 @@ private:
     //! Joint names
     map<string, vector<string> > jointNames;
 
+    //! Planning scene
+    boost::shared_ptr<planning_scene_monitor::PlanningSceneMonitor> planningScene;
+
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
     humanoid_catching::CatchHumanResult result;
@@ -130,8 +136,15 @@ private:
 public:
 	CatchHumanActionServer(const string& name) :
 		pnh("~"),
-       as(nh, name, boost::bind(&CatchHumanActionServer::execute, this, _1), false) {
+        as(nh, name, boost::bind(&CatchHumanActionServer::execute, this, _1), false),
+        planningScene(new planning_scene_monitor::PlanningSceneMonitor("robot_description")) {
+
         ROS_INFO("Initializing the catch human action");
+
+        // Configure the planning scene
+        planningScene->startStateMonitor();
+        planningScene->startSceneMonitor();
+        planningScene->startWorldGeometryMonitor();
 
         // Configure the fall prediction service
         ROS_INFO("Waiting for predict_fall service");
@@ -358,8 +371,24 @@ private:
                 continue;
             }
 
+            // Check for self-collision with this solution
+            planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
+
             ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
             for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
+
+                // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
+                // may be another position that is not in collision.
+                // Note: The allowed collision matrix should prevent collisions between the arms
+                robot_state::RobotState currentRobotState = currentScene->getCurrentState();
+                currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
+                if (currentScene->isStateColliding(currentRobotState)) {
+                    ROS_DEBUG("State in collision");
+                    continue;
+                }
+
+                possibleSolution.feasable = true;
+
                 // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
                 // down and give the second arm time to arrive.
                 possibleSolution.delta = max(possibleSolution.delta, ros::Duration(i->time) - calcExecutionTime(j->group, j->positions));
@@ -370,7 +399,12 @@ private:
                     }
                 }
              }
-             solutions.push_back(possibleSolution);
+
+             if (possibleSolution.feasable) {
+                solutions.push_back(possibleSolution);
+             } else {
+                ROS_INFO("Solution was not feasible");
+             }
         }
 
         if (solutions.empty()) {
