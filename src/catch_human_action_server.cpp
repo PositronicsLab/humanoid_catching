@@ -459,7 +459,7 @@ private:
                 command.header = bestSolution->pose.header;
                 command.target = bestSolution->pose.pose;
                 command.obstacle = obstacle.pose;
-                command.has_obstacle = true;
+                command.has_obstacle = false;
                 command.point_at_target = true;
                 armCommandPubs[i].publish(command);
             } else {
