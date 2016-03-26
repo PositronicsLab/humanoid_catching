@@ -158,8 +158,8 @@ public:
         // Initialize arm clients
         ROS_INFO("Initializing arm command publishers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
-            armCommandPubs.push_back(nh.advertise<humanoid_catching::Move>(ARM_TOPICS[i], 1));
-            goalPubs.push_back(nh.advertise<geometry_msgs::PointStamped>(ARM_GOAL_VIZ_TOPICS[i], 1));
+            armCommandPubs.push_back(nh.advertise<humanoid_catching::Move>(ARM_TOPICS[i], 1, false));
+            goalPubs.push_back(nh.advertise<geometry_msgs::PointStamped>(ARM_GOAL_VIZ_TOPICS[i], 10, true));
         }
 
         trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
@@ -290,7 +290,7 @@ private:
 
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal){
 
-        ROS_INFO("Catching human");
+        ROS_INFO("Catch procedure initiated");
 
         if(!as.isActive() || as.isPreemptRequested() || !ros::ok()){
             ROS_INFO("Catch human action cancelled before started");
@@ -306,13 +306,13 @@ private:
         predictFall.request.velocity = goal->velocity;
         predictFall.request.accel = goal->accel;
 
-        ROS_INFO("Predicting fall");
+        ROS_DEBUG("Predicting fall");
         if (!fallPredictor.call(predictFall)) {
             ROS_WARN("Fall prediction failed");
             as.setAborted();
             return;
         }
-        ROS_INFO("Fall predicted successfully");
+        ROS_DEBUG("Fall predicted successfully");
 
         // Transform to the base_frame of the human (and therefore the obstacle) for IK, which is torso_lift_link
         ROS_INFO("Waiting for transform");
@@ -325,7 +325,7 @@ private:
         tf::StampedTransform goalToTorsoTransform;
         tf.lookupTransform("/torso_lift_link", predictFall.response.header.frame_id, predictFall.response.header.stamp, goalToTorsoTransform);
 
-        ROS_INFO("Transforms aquired");
+        ROS_DEBUG("Transforms aquired");
 
         // We now have a projected time/position path. Search the path for acceptable times.
         vector<Solution> solutions;
@@ -382,8 +382,8 @@ private:
                 // Note: The allowed collision matrix should prevent collisions between the arms
                 robot_state::RobotState currentRobotState = currentScene->getCurrentState();
                 currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
-                if (currentScene->isStateColliding(currentRobotState, j->group, true)) {
-                    ROS_INFO("State in collision.");
+                if (currentScene->isStateColliding(currentRobotState, j->group, false)) {
+                    ROS_DEBUG("State in collision.");
                     continue;
                 }
 
@@ -403,7 +403,7 @@ private:
              if (possibleSolution.feasable) {
                 solutions.push_back(possibleSolution);
              } else {
-                ROS_INFO("Solution was not feasible");
+                ROS_DEBUG("Solution was not feasible");
              }
         }
 
@@ -426,7 +426,7 @@ private:
             if (numArmsSolved(*solution) > highestArmsSolved || numArmsSolved(*solution) == highestArmsSolved && solution->delta > highestDeltaTime) {
                 highestArmsSolved = numArmsSolved(*solution);
                 highestDeltaTime = solution->delta;
-                ROS_INFO("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.pose.position.x,
+                ROS_DEBUG("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.pose.position.x,
                          solution->pose.pose.position.y, solution->pose.pose.position.z, highestArmsSolved, highestDeltaTime.toSec());
                 bestSolution = solution;
             }
@@ -454,6 +454,7 @@ private:
         // Now move both arms to the position
         for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
             if (bestSolution->armsSolved[i]) {
+                ROS_INFO("Publishing command for arm %s.", ARMS[i].c_str());
                 humanoid_catching::Move command;
                 visualizeGoal(bestSolution->pose, i);
                 command.header = bestSolution->pose.header;
