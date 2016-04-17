@@ -214,7 +214,7 @@ public:
         ROS_INFO("Starting the action server");
         as.registerPreemptCallback(boost::bind(&CatchHumanActionServer::preempt, this));
         as.start();
-        ROS_INFO("Catch human action initialized successfully");
+        ROS_INFO("Catch human action server initialized successfully");
 	}
 
 private:
@@ -290,7 +290,7 @@ private:
 
     geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const std_msgs::Header& header) const {
         tf::StampedTransform tfStampedTransform;
-        tf.lookupTransform(tfFrame, "/map", header.stamp, tfStampedTransform);
+        tf.lookupTransform("/map", tfFrame, header.stamp, tfStampedTransform);
         geometry_msgs::TransformStamped stampedTransform;
         transformStampedTFToMsg(tfStampedTransform, stampedTransform);
         geometry_msgs::Pose pose;
@@ -303,15 +303,15 @@ private:
 
     bool endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const {
         ROS_INFO("Waiting for wrist transforms");
-        if(!tf.waitForTransform("/map", "/left_wrist_roll_link_frame", header.stamp, ros::Duration(15)) ||
-            !tf.waitForTransform("/map", "/right_wrist_roll_link_frame", header.stamp, ros::Duration(15))) {
+        if(!tf.waitForTransform("/map", "/l_wrist_roll_link", header.stamp, ros::Duration(1)) ||
+            !tf.waitForTransform("/map", "r_wrist_roll_link", header.stamp, ros::Duration(1))) {
             ROS_WARN("Failed to get wrist transform");
             return false;
         }
 
         poses.resize(2);
-        poses[0] = tfFrameToPose("/left_wrist_roll_link_frame", header);
-        poses[1] = tfFrameToPose("/right_wrist_roll_link_frame", header);
+        poses[0] = tfFrameToPose("/l_wrist_roll_link", header);
+        poses[1] = tfFrameToPose("/r_wrist_roll_link", header);
         return true;
     }
 

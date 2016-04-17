@@ -20,8 +20,8 @@ static const double DURATION = 2.0;
 static const unsigned int MAX_CONTACTS = 3;
 
 // TOOD: Figure these out
-static const double END_EFFECTOR_WIDTH = 0.4;
-static const double END_EFFECTOR_LENGTH = 0.6;
+static const double END_EFFECTOR_WIDTH = 0.2;
+static const double END_EFFECTOR_LENGTH = 0.2;
 static const double END_EFFECTOR_DEPTH = 0.1;
 
 struct Model {
@@ -33,6 +33,9 @@ class FallPredictor {
 private:
     //! Publisher for the fall visualization
     ros::Publisher fallVizPub;
+
+    //! Publisher for the contact visualization
+    ros::Publisher contactVizPub;
 
     //! Node handle
     ros::NodeHandle nh;
@@ -91,6 +94,9 @@ public:
        fallVizPub = nh.advertise<visualization_msgs::Marker>(
          "/fall_predictor/projected_path", 1);
 
+       contactVizPub = nh.advertise<visualization_msgs::Marker>(
+         "/fall_predictor/contacts", 1);
+
        fallPredictionService = nh.advertiseService("/fall_predictor/predict_fall",
             &FallPredictor::predict, this);
 	}
@@ -109,7 +115,12 @@ private:
             contact[i].surface.soft_cfm = 0.01;
         }
 
-        if (int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
+        // Always compute contact with the humanoid as object 1, such that the contact normal
+        // is towards the humanoid
+        dGeomID firstObj = b1 == humanoid.body ? o1 : o2;
+        dGeomID secondObj = b1 == humanoid.body ? o2 : o1;
+
+        if (int numc = dCollide(firstObj, secondObj, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
             for (int i = 0; i < numc; i++) {
                 dJointID c = dJointCreateContact(world, contactgroup, contact + i);
                 dJointAttach(c, b1, b2);
@@ -117,8 +128,8 @@ private:
 
             // Determine if this contact should be saved
             int which = whichEndEffector(b1, b2);
-            if (b1 == humanoid.body || b2 == humanoid.body && which != -1) {
-                cout << "Located an end effector contact" << endl;
+            if ((b1 == humanoid.body || b2 == humanoid.body) && which != -1) {
+                ROS_INFO_STREAM("Located an end effector contact: " << which);
 
                 // Only save one concact per end effector
                 eeContacts[which] = contact[0].geom;
@@ -184,6 +195,9 @@ private:
         dJointGroupDestroy(groundToBodyJG);
         dSpaceDestroy(space);
         dWorldDestroy(world);
+        endEffectors.clear();
+        eeContacts.clear();
+        hasEeContacts.clear();
         dCloseODE();
     }
 
@@ -191,6 +205,30 @@ private:
         dSpaceCollide(space, this, &FallPredictor::staticNearCallback);
         dWorldStep(world, stepSize);
         dJointGroupEmpty(contactgroup);
+    }
+
+    void publishContacts(const vector<humanoid_catching::Contact>& contacts, const string& frame) const {
+        for (unsigned int i = 0; i < contacts.size(); ++i) {
+            if (!contacts[i].is_in_contact) {
+                continue;
+            }
+
+            visualization_msgs::Marker arrow;
+            arrow.header.frame_id = frame;
+            arrow.header.stamp = ros::Time::now();
+            arrow.ns = "contacts";
+            arrow.id = i;
+            arrow.type = visualization_msgs::Marker::ARROW;
+            arrow.pose.orientation = quaternionFromVector(contacts[i].normal);
+            arrow.pose.position = contacts[i].position;
+            arrow.scale.x = 0.1;
+            arrow.scale.y = 0.02;
+
+            // Points are red
+            arrow.color.r = 1.0f;
+            arrow.color.a = 1.0;
+            contactVizPub.publish(arrow);
+        }
     }
 
     void publishPathViz(const vector<geometry_msgs::Pose>& path, const string& frame) const {
@@ -253,6 +291,7 @@ private:
         Model object;
         object.body = dBodyCreate(world);
 
+        ROS_INFO("Adding end effector @ %f %f %f", endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetLinearVel(object.body, 0, 0, 0);
         dBodySetAngularVel(object.body, 0, 0, 0);
@@ -267,6 +306,18 @@ private:
         dBodySetKinematic(object.body);
 
         return object;
+    }
+
+    static geometry_msgs::Quaternion quaternionFromVector(const geometry_msgs::Vector3& input) {
+        tf::Vector3 axisVector(input.x, input.y, input.z);
+        tf::Vector3 upVector(0.0, 0.0, 1.0);
+        tf::Vector3 rightVector = axisVector.cross(upVector);
+        rightVector.normalized();
+        tf::Quaternion q(rightVector, -1.0 * acos(axisVector.dot(upVector)));
+        q.normalize();
+        geometry_msgs::Quaternion orientation;
+        tf::quaternionTFToMsg(q, orientation);
+        return orientation;
     }
 
     bool predict(humanoid_catching::PredictFall::Request& req,
@@ -290,6 +341,7 @@ private:
 
       // Execute the simulation loop for 2 seconds
       for (double t = 0; t <= DURATION; t += STEP_SIZE) {
+
         // Clear end effector contacts
         eeContacts.clear();
         hasEeContacts.clear();
@@ -352,7 +404,12 @@ private:
         publishPathViz(points, res.header.frame_id);
       }
 
-      // TODO: Publish contacts
+      if (contactVizPub.getNumSubscribers() > 0) {
+        ROS_INFO("Publishing contacts");
+        for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i) {
+            publishContacts(i->contacts, res.header.frame_id);
+        }
+      }
 
       // Clean up
       destroyODE();
