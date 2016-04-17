@@ -288,6 +288,33 @@ private:
         return numArmsSolved;
     }
 
+    geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const std_msgs::Header& header) const {
+        tf::StampedTransform tfStampedTransform;
+        tf.lookupTransform(tfFrame, "/map", header.stamp, tfStampedTransform);
+        geometry_msgs::TransformStamped stampedTransform;
+        transformStampedTFToMsg(tfStampedTransform, stampedTransform);
+        geometry_msgs::Pose pose;
+        pose.position.x = stampedTransform.transform.translation.x;
+        pose.position.y = stampedTransform.transform.translation.y;
+        pose.position.z = stampedTransform.transform.translation.z;
+        pose.orientation = stampedTransform.transform.rotation;
+        return pose;
+    }
+
+    bool endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const {
+        ROS_INFO("Waiting for wrist transforms");
+        if(!tf.waitForTransform("/map", "/left_wrist_roll_link_frame", header.stamp, ros::Duration(15)) ||
+            !tf.waitForTransform("/map", "/right_wrist_roll_link_frame", header.stamp, ros::Duration(15))) {
+            ROS_WARN("Failed to get wrist transform");
+            return false;
+        }
+
+        poses.resize(2);
+        poses[0] = tfFrameToPose("/left_wrist_roll_link_frame", header);
+        poses[1] = tfFrameToPose("/right_wrist_roll_link_frame", header);
+        return true;
+    }
+
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal){
 
         ROS_INFO("Catch procedure initiated");
@@ -305,6 +332,12 @@ private:
         predictFall.request.pose = goal->pose;
         predictFall.request.velocity = goal->velocity;
         predictFall.request.accel = goal->accel;
+
+        // Wait for the wrist transforms
+        if (!endEffectorPositions(goal->header, predictFall.request.end_effectors)){
+            as.setAborted();
+            return;
+        }
 
         ROS_DEBUG("Predicting fall");
         if (!fallPredictor.call(predictFall)) {

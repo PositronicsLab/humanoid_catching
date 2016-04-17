@@ -19,7 +19,12 @@ static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
 static const unsigned int MAX_CONTACTS = 3;
 
-struct Humanoid {
+// TOOD: Figure these out
+static const double END_EFFECTOR_WIDTH = 0.4;
+static const double END_EFFECTOR_LENGTH = 0.6;
+static const double END_EFFECTOR_DEPTH = 0.1;
+
+struct Model {
     dBodyID body;  // the dynamics body
     dGeomID geom[1];  // geometries representing this body
 };
@@ -66,7 +71,17 @@ private:
     dJointID groundJoint;
 
     //! Humanoid
-    Humanoid object;
+    Model humanoid;
+
+    //! End effectors
+    vector<Model> endEffectors;
+
+    //! Contacts with end effectors
+    vector<dContactGeom> eeContacts;
+
+    //! Whether contact occurred
+    vector<bool> hasEeContacts;
+
 public:
    FallPredictor() :
      pnh("~") {
@@ -99,9 +114,27 @@ private:
                 dJointID c = dJointCreateContact(world, contactgroup, contact + i);
                 dJointAttach(c, b1, b2);
             }
+
+            // Determine if this contact should be saved
+            int which = whichEndEffector(b1, b2);
+            if (b1 == humanoid.body || b2 == humanoid.body && which != -1) {
+                cout << "Located an end effector contact" << endl;
+
+                // Only save one concact per end effector
+                eeContacts[which] = contact[0].geom;
+                hasEeContacts[which] = true;
+            }
         }
     }
 
+    int whichEndEffector(const dBodyID b1, const dBodyID b2) const {
+        for (unsigned int i = 0; i < endEffectors.size(); ++i) {
+            if (endEffectors[i].body == b1 || endEffectors[i].body == b2) {
+                return i;
+            }
+        }
+        return -1;
+    }
     void initODE() {
         dInitODE();
     }
@@ -122,23 +155,23 @@ private:
     void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& velocity) {
 
         // Create the object
-        object.body = dBodyCreate(world);
+        humanoid.body = dBodyCreate(world);
 
-        dBodySetPosition(object.body, pose.position.x, pose.position.y, pose.position.z);
-        dBodySetLinearVel(object.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
-        dBodySetAngularVel(object.body, velocity.angular.x, velocity.angular.y,velocity.angular.z);
+        dBodySetPosition(humanoid.body, pose.position.x, pose.position.y, pose.position.z);
+        dBodySetLinearVel(humanoid.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
+        dBodySetAngularVel(humanoid.body, velocity.angular.x, velocity.angular.y,velocity.angular.z);
 
         const dReal q[] = {pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w};
-        dBodySetQuaternion(object.body, q);
+        dBodySetQuaternion(humanoid.body, q);
 
         dMass m;
 
         // Use the inertia matrix for a point mass rotating about the ground.
         // Use a very small sphere to mimic a point mass, which was not working properly.
         dMassSetSphereTotal(&m, humanoidMass, 0.01);
-        dBodySetMass(object.body, &m);
-        object.geom[0] = dCreateCylinder(space, 0.01 /* radius */, humanoidHeight);
-        dGeomSetBody(object.geom[0], object.body);
+        dBodySetMass(humanoid.body, &m);
+        humanoid.geom[0] = dCreateCylinder(space, 0.01 /* radius */, humanoidHeight);
+        dGeomSetBody(humanoid.geom[0], humanoid.body);
     }
 
     static void staticNearCallback(void* data, dGeomID o1, dGeomID o2){
@@ -209,9 +242,31 @@ private:
       dBodySetKinematic(groundLink);
 
       groundJoint = dJointCreateBall(world, groundToBodyJG);
-      dJointAttach(groundJoint, object.body, groundLink);
+      dJointAttach(groundJoint, humanoid.body, groundLink);
 
       dJointSetBallAnchor(groundJoint, intersection.x(), intersection.y(), intersection.z());
+    }
+
+    Model initEndEffector(const geometry_msgs::Pose& endEffector){
+
+        // Create the object
+        Model object;
+        object.body = dBodyCreate(world);
+
+        dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
+        dBodySetLinearVel(object.body, 0, 0, 0);
+        dBodySetAngularVel(object.body, 0, 0, 0);
+
+        const dReal q[] = {endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w};
+        dBodySetQuaternion(object.body, q);
+
+        object.geom[0] = dCreateBox(space, END_EFFECTOR_LENGTH, END_EFFECTOR_WIDTH, END_EFFECTOR_DEPTH);
+        dGeomSetBody(object.geom[0], object.body);
+
+        // Set it as unresponsive to forces
+        dBodySetKinematic(object.body);
+
+        return object;
     }
 
     bool predict(humanoid_catching::PredictFall::Request& req,
@@ -229,16 +284,26 @@ private:
 
       initGroundJoint(req.pose);
 
+      for (unsigned int i = 0; i < req.end_effectors.size(); ++i) {
+        endEffectors.push_back(initEndEffector(req.end_effectors[i]));
+      }
+
       // Execute the simulation loop for 2 seconds
       for (double t = 0; t <= DURATION; t += STEP_SIZE) {
+        // Clear end effector contacts
+        eeContacts.clear();
+        hasEeContacts.clear();
+        eeContacts.resize(req.end_effectors.size());
+        hasEeContacts.resize(req.end_effectors.size());
+
         // Step forward
         simLoop(STEP_SIZE);
 
         FallPoint curr;
 
         // Get the location of the body for the current iteration
-        const dReal* position = dBodyGetPosition(object.body);
-        const dReal* orientation = dBodyGetQuaternion(object.body);
+        const dReal* position = dBodyGetPosition(humanoid.body);
+        const dReal* orientation = dBodyGetQuaternion(humanoid.body);
         geometry_msgs::Pose pose;
         pose.position.x = position[0];
         pose.position.y = position[1];
@@ -249,8 +314,8 @@ private:
         pose.orientation.w = orientation[3];
         curr.pose = pose;
 
-        const dReal* linearVelocity = dBodyGetLinearVel(object.body);
-        const dReal* angularVelocity = dBodyGetAngularVel(object.body);
+        const dReal* linearVelocity = dBodyGetLinearVel(humanoid.body);
+        const dReal* angularVelocity = dBodyGetAngularVel(humanoid.body);
         geometry_msgs::Twist twist;
         twist.linear.x = linearVelocity[0];
         twist.linear.y = linearVelocity[1];
@@ -261,6 +326,19 @@ private:
 
         curr.velocity = twist;
         curr.time = ros::Duration(t);
+
+        curr.contacts.resize(eeContacts.size());
+        for (unsigned int i = 0; i < eeContacts.size(); ++i) {
+            curr.contacts[i].is_in_contact = hasEeContacts[i];
+            if (hasEeContacts[i]) {
+                curr.contacts[i].position.x = eeContacts[i].pos[0];
+                curr.contacts[i].position.y = eeContacts[i].pos[1];
+                curr.contacts[i].position.z = eeContacts[i].pos[2];
+                curr.contacts[i].normal.x = eeContacts[i].normal[0];
+                curr.contacts[i].normal.y = eeContacts[i].normal[1];
+                curr.contacts[i].normal.z = eeContacts[i].normal[2];
+            }
+        }
         res.points.push_back(curr);
       }
 
@@ -273,6 +351,8 @@ private:
         }
         publishPathViz(points, res.header.frame_id);
       }
+
+      // TODO: Publish contacts
 
       // Clean up
       destroyODE();
