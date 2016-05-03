@@ -6,4 +6,6 @@ geometry_msgs/Pose[] end_effectors
 ---
 Header header
 humanoid_catching/FallPoint[] points
+float64[] inertia_matrix
+float64 body_mass
 

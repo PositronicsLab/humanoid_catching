@@ -14,6 +14,7 @@ using namespace humanoid_catching;
 //! Default weight in kg
 static const double MASS_DEFAULT = 5;
 static const double HEIGHT_DEFAULT = 1.5;
+static const double RADIUS_DEFAULT = 1.5875; // Width of pole
 
 static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
@@ -320,6 +321,30 @@ private:
         return orientation;
     }
 
+    static geometry_msgs::Vector3 arrayToVector(const dReal* aArray) {
+        geometry_msgs::Vector3 result;
+        result.x = aArray[0];
+        result.y = aArray[1];
+        result.z = aArray[2];
+        return result;
+    }
+
+    static geometry_msgs::Point arrayToPoint(const dReal* aArray) {
+        geometry_msgs::Point result;
+        result.x = aArray[0];
+        result.y = aArray[1];
+        result.z = aArray[2];
+        return result;
+    }
+
+    vector<double> getPoleInertiaMatrix() const {
+        vector<double> I(9);
+        I[0] = 1 / 12.0 * MASS_DEFAULT * pow(HEIGHT_DEFAULT, 2) + 0.25 * MASS_DEFAULT * pow(RADIUS_DEFAULT, 2);
+        I[4] = 1 / 12.0 * MASS_DEFAULT * pow(HEIGHT_DEFAULT, 2) + 0.25 * MASS_DEFAULT * pow(RADIUS_DEFAULT, 2);
+        I[8] = 0.5 * MASS_DEFAULT * pow(RADIUS_DEFAULT, 2);
+        return I;
+    }
+
     bool predict(humanoid_catching::PredictFall::Request& req,
                humanoid_catching::PredictFall::Response& res) {
       ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
@@ -357,24 +382,19 @@ private:
         const dReal* position = dBodyGetPosition(humanoid.body);
         const dReal* orientation = dBodyGetQuaternion(humanoid.body);
         geometry_msgs::Pose pose;
-        pose.position.x = position[0];
-        pose.position.y = position[1];
-        pose.position.z = position[2];
+        pose.position = arrayToPoint(position);
         pose.orientation.x = orientation[0];
         pose.orientation.y = orientation[1];
         pose.orientation.z = orientation[2];
         pose.orientation.w = orientation[3];
         curr.pose = pose;
 
+        curr.ground_contact = arrayToPoint(dBodyGetPosition(groundLink));
         const dReal* linearVelocity = dBodyGetLinearVel(humanoid.body);
         const dReal* angularVelocity = dBodyGetAngularVel(humanoid.body);
         geometry_msgs::Twist twist;
-        twist.linear.x = linearVelocity[0];
-        twist.linear.y = linearVelocity[1];
-        twist.linear.z = linearVelocity[2];
-        twist.angular.x = angularVelocity[0];
-        twist.angular.y = angularVelocity[1];
-        twist.angular.z = angularVelocity[2];
+        twist.linear = arrayToVector(linearVelocity);
+        twist.angular = arrayToVector(angularVelocity);
 
         curr.velocity = twist;
         curr.time = ros::Duration(t);
@@ -383,16 +403,16 @@ private:
         for (unsigned int i = 0; i < eeContacts.size(); ++i) {
             curr.contacts[i].is_in_contact = hasEeContacts[i];
             if (hasEeContacts[i]) {
-                curr.contacts[i].position.x = eeContacts[i].pos[0];
-                curr.contacts[i].position.y = eeContacts[i].pos[1];
-                curr.contacts[i].position.z = eeContacts[i].pos[2];
-                curr.contacts[i].normal.x = eeContacts[i].normal[0];
-                curr.contacts[i].normal.y = eeContacts[i].normal[1];
-                curr.contacts[i].normal.z = eeContacts[i].normal[2];
+                curr.contacts[i].position = arrayToPoint(eeContacts[i].pos);
+                curr.contacts[i].normal = arrayToVector(eeContacts[i].normal);
             }
         }
         res.points.push_back(curr);
       }
+
+      // Set the mass and inertia matrix
+      res.body_mass = MASS_DEFAULT;
+      res.inertia_matrix = getPoleInertiaMatrix();
 
       // Publish the path
       if (fallVizPub.getNumSubscribers() > 0) {

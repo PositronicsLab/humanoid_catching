@@ -47,8 +47,8 @@ private:
         humanoid_catching::IMU imu;
         imu.header = pose->header;
         imu.pose = pose->pose;
-        imu.linear_acceleration = data->linear_acceleration;
-        imu.angular_velocity = data->angular_velocity;
+        imu.acceleration.linear = data->linear_acceleration;
+        imu.velocity.angular = data->angular_velocity;
 
         // Publish the event
         ROS_DEBUG_STREAM("Publishing a human IMU event: " << imu);
