@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(humanoid_catching)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/humanoid_catching/CMakeModules/")
+
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
     moveit_core
@@ -22,7 +24,9 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
-
+find_package(Ravelin REQUIRED)
+find_package(Moby REQUIRED)
+find_package(QPOASES REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -68,6 +72,7 @@ add_message_files(
 add_service_files(
    FILES
    PredictFall.srv
+   CalculateTorques.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -200,6 +205,12 @@ add_executable(fall_starter src/fall_starter.cpp)
 add_dependencies(fall_starter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_starter
    ${catkin_LIBRARIES} ${ODE_LIBRARY}
+)
+
+add_executable(balancer src/balancer.cpp)
+add_dependencies(balancer ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(balancer
+   ${catkin_LIBRARIES} ${ODE_LIBRARY} ${RAVELIN_LIBRARIES} ${MOBY_LIBRARIES} ${QPOASES_LIBRARIES}
 )
 
 #############

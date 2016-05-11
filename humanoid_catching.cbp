@@ -33,6 +33,7 @@
 			<Add option="-fexceptions" />
 		</Compiler>
 		<Unit filename="CMakeLists.txt" />
+		<Unit filename="CMakeModules/FindRavelin.cmake" />
 		<Unit filename="README.md" />
 		<Unit filename="TODO" />
 		<Unit filename="action/CatchHuman.action" />
@@ -62,6 +63,7 @@
 		<Unit filename="pr2_arms_force_controller.yaml" />
 		<Unit filename="rviz/display.rviz" />
 		<Unit filename="src/announced_fall_detector.cpp" />
+		<Unit filename="src/balancer.cpp" />
 		<Unit filename="src/catch_human_action_server.cpp" />
 		<Unit filename="src/catching_controller.cpp" />
 		<Unit filename="src/fake_human_imu.cpp" />
@@ -71,6 +73,7 @@
 		<Unit filename="src/imu_integrator.cpp" />
 		<Unit filename="src/move_arm_fast_action_server.cpp" />
 		<Unit filename="src/simulated_fall_detector.cpp" />
+		<Unit filename="srv/CalculateTorques.srv" />
 		<Unit filename="srv/PredictFall.srv" />
 		<Extensions>
 			<code_completion />

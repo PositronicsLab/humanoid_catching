@@ -5,6 +5,7 @@
 #include <humanoid_catching/PredictFall.h>
 #include <actionlib/client/simple_action_client.h>
 #include <humanoid_catching/Move.h>
+#include <humanoid_catching/CalculateTorques.h>
 #include <tf/transform_listener.h>
 #include <boost/timer.hpp>
 #include <boost/math/constants/constants.hpp>
@@ -30,6 +31,9 @@ static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_for
 static const string ARM_GOAL_VIZ_TOPICS[] = {"/catch_human_action_server/movement_goal/left_arm", "/catch_human_action_server/movement_goal/right_arm"};
 static const double MAX_VELOCITY = 100;
 static const double MAX_ACCELERATION = 100;
+
+//! Tolerance of time to be considered in contact
+static const ros::Duration CONTACT_TIME_TOLERANCE = ros::Duration(0.1);
 
 static const ros::Duration SEARCH_RESOLUTION(0.10);
 static const double pi = boost::math::constants::pi<double>();
@@ -90,6 +94,9 @@ private:
 
     //! Cached IK client.
     ros::ServiceClient ik;
+
+    //! Cached balancing client
+    ros::ServiceClient balancer;
 
     //! Subscriber for joint state updates
     auto_ptr<message_filters::Subscriber<sensor_msgs::JointState> > jointStatesSub;
@@ -154,6 +161,10 @@ public:
         ROS_INFO("Waiting for kinematics_cache/ik service");
         ros::service::waitForService("/kinematics_cache/ik");
         ik = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
+
+        ROS_INFO("Waiting for /balancer/torques service");
+        ros::service::waitForService("/balancer/torques");
+        balancer = nh.serviceClient<kinematics_cache::IKQuery>("/balancer/torques", true /* persistent */);
 
         // Initialize arm clients
         ROS_INFO("Initializing arm command publishers");
@@ -301,6 +312,37 @@ private:
         return pose;
     }
 
+    /**
+     * Determine whether the robot is currently in contact with the humanoid.
+     */
+    bool isRobotInContact(const humanoid_catching::PredictFall::Response& fall) const {
+        for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
+        {
+            if (i->time > CONTACT_TIME_TOLERANCE) {
+                break;
+            }
+            for (vector<Contact>::const_iterator c = i->contacts.begin(); c != i->contacts.end(); ++c) {
+                if (c->is_in_contact) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    const vector<FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall, unsigned int arm) const {
+        for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
+        {
+            if (i->time > CONTACT_TIME_TOLERANCE) {
+                break;
+            }
+            if (i->contacts[arm].is_in_contact) {
+                return i;
+            }
+        }
+        return fall.points.end();
+    }
+
     bool endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const {
         ROS_INFO("Waiting for wrist transforms");
         if(!tf.waitForTransform("/map", "/l_wrist_roll_link", header.stamp, ros::Duration(1)) ||
@@ -320,7 +362,7 @@ private:
         ROS_INFO("Catch procedure initiated");
 
         if(!as.isActive() || as.isPreemptRequested() || !ros::ok()){
-            ROS_INFO("Catch human action cancelled before started");
+            ROS_INFO("Catch human action canceled before started");
             return;
         }
 
@@ -358,148 +400,208 @@ private:
         tf::StampedTransform goalToTorsoTransform;
         tf.lookupTransform("/torso_lift_link", predictFall.response.header.frame_id, predictFall.response.header.stamp, goalToTorsoTransform);
 
-        ROS_DEBUG("Transforms aquired");
+        ROS_DEBUG("Transforms acquired");
 
-        // We now have a projected time/position path. Search the path for acceptable times.
-        vector<Solution> solutions;
+            // Determine if the robot is currently in contact
+            if (isRobotInContact(predictFall.response))
+            {
+                ROS_INFO("Robot is in contact. Executing balancing");
 
-        // Epsilon causes us to always select a position in front of the fall.
-        ros::Duration lastTime;
+                // Determine which arms to execute balancing for.
+                for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
+                    const vector<FallPoint>::const_iterator fallPoint = findContact(predictFall.response, i);
+                    if (fallPoint == predictFall.response.points.end()) {
+                        ROS_INFO("Arm %s is not in contact", ARMS[i].c_str());
+                        continue;
+                    }
+                    humanoid_catching::CalculateTorques calcTorques;
+                    calcTorques.request.body_velocity = fallPoint->velocity;
+                    calcTorques.request.body_inertia_matrix = predictFall.response.inertia_matrix;
+                    calcTorques.request.body_mass = predictFall.response.body_mass;
+                    calcTorques.request.time_delta = ros::Duration(0.001);
+                    calcTorques.request.body_com = fallPoint->pose;
+                    calcTorques.request.contact_position = fallPoint->contacts[i].position;
+                    calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
+                    calcTorques.request.ground_contact = fallPoint->ground_contact;
 
-        for (vector<FallPoint>::const_iterator i = predictFall.response.points.begin(); i != predictFall.response.points.end(); ++i) {
+                    ROS_DEBUG("Calculating torques");
+                    if (!balancer.call(calcTorques)) {
+                        ROS_WARN("Calculating torques failed");
+                        as.setAborted();
+                        return;
+                    }
+                    ROS_DEBUG("Torques calculated successfully");
 
-            // Determine if we should search this point.
-            if (lastTime != ros::Duration(0) && i->time - lastTime < SEARCH_RESOLUTION) {
-                continue;
-            }
-
-            lastTime = i->time;
-
-            Solution possibleSolution;
-            // Initialize to a large negative number.
-            possibleSolution.delta = ros::Duration(-1000);
-            possibleSolution.goalTime = ros::Duration(i->time);
-
-            geometry_msgs::PoseStamped basePose;
-            basePose.header = predictFall.response.header;
-            basePose.pose = i->pose;
-
-            geometry_msgs::PoseStamped transformedPose;
-            transformedPose.header.frame_id = "/torso_lift_link";
-            transformedPose.header.stamp = predictFall.response.header.stamp;
-
-            transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
-            possibleSolution.pose = transformedPose;
-
-            if (trialGoalPub.getNumSubscribers() > 0) {
-                trialGoalPub.publish(poseToPoint(transformedPose));
-            }
-
-            // Lookup the IK solution
-            kinematics_cache::IKQuery ikQuery;
-            ikQuery.request.pose = transformedPose;
-
-            if (!ik.call(ikQuery)) {
-                ROS_DEBUG("Failed to find IK solution for arms");
-                continue;
-            }
-
-            // Check for self-collision with this solution
-            planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
-
-            ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
-            for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j) {
-
-                // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
-                // may be another position that is not in collision.
-                // Note: The allowed collision matrix should prevent collisions between the arms
-                robot_state::RobotState currentRobotState = currentScene->getCurrentState();
-                currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
-                if (currentScene->isStateColliding(currentRobotState, j->group, false)) {
-                    ROS_DEBUG("State in collision.");
-                    continue;
+                    // Execute the movement
+                    ROS_INFO("Dispatching torque command for arm %s", ARMS[i].c_str());
+                    humanoid_catching::Move command;
+                    command.header.stamp = ros::Time::now();
+                    command.has_torques = true;
+                    command.torques = calcTorques.response.torques;
+                    armCommandPubs[i].publish(command);
                 }
+            }
+            else {
+                // We now have a projected time/position path. Search the path for acceptable times.
+                vector<Solution> solutions;
 
-                possibleSolution.feasable = true;
+                // Epsilon causes us to always select a position in front of the fall.
+                ros::Duration lastTime;
 
-                // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
-                // down and give the second arm time to arrive.
-                possibleSolution.delta = max(possibleSolution.delta, ros::Duration(i->time) - calcExecutionTime(j->group, j->positions));
+                for (vector<FallPoint>::const_iterator i = predictFall.response.points.begin(); i != predictFall.response.points.end(); ++i)
+                {
 
-                for (unsigned int k = 0; k < boost::size(ARMS); ++k) {
-                    if (j->group == ARMS[k]) {
-                        possibleSolution.armsSolved[k] = true;
+                    // Determine if we should search this point.
+                    if (lastTime != ros::Duration(0) && i->time - lastTime < SEARCH_RESOLUTION)
+                    {
+                        continue;
+                    }
+
+                    lastTime = i->time;
+
+                    Solution possibleSolution;
+                    // Initialize to a large negative number.
+                    possibleSolution.delta = ros::Duration(-1000);
+                    possibleSolution.goalTime = ros::Duration(i->time);
+
+                    geometry_msgs::PoseStamped basePose;
+                    basePose.header = predictFall.response.header;
+                    basePose.pose = i->pose;
+
+                    geometry_msgs::PoseStamped transformedPose;
+                    transformedPose.header.frame_id = "/torso_lift_link";
+                    transformedPose.header.stamp = predictFall.response.header.stamp;
+
+                    transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
+                    possibleSolution.pose = transformedPose;
+
+                    if (trialGoalPub.getNumSubscribers() > 0)
+                    {
+                        trialGoalPub.publish(poseToPoint(transformedPose));
+                    }
+
+                    // Lookup the IK solution
+                    kinematics_cache::IKQuery ikQuery;
+                    ikQuery.request.pose = transformedPose;
+
+                    if (!ik.call(ikQuery))
+                    {
+                        ROS_DEBUG("Failed to find IK solution for arms");
+                        continue;
+                    }
+
+                    // Check for self-collision with this solution
+                    planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
+
+                    ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
+                    for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j)
+                    {
+
+                        // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
+                        // may be another position that is not in collision.
+                        // Note: The allowed collision matrix should prevent collisions between the arms
+                        robot_state::RobotState currentRobotState = currentScene->getCurrentState();
+                        currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
+                        if (currentScene->isStateColliding(currentRobotState, j->group, false))
+                        {
+                            ROS_DEBUG("State in collision.");
+                            continue;
+                        }
+
+                        possibleSolution.feasable = true;
+
+                        // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
+                        // down and give the second arm time to arrive.
+                        possibleSolution.delta = max(possibleSolution.delta, ros::Duration(i->time) - calcExecutionTime(j->group, j->positions));
+
+                        for (unsigned int k = 0; k < boost::size(ARMS); ++k)
+                        {
+                            if (j->group == ARMS[k])
+                            {
+                                possibleSolution.armsSolved[k] = true;
+                            }
+                        }
+                    }
+
+                    if (possibleSolution.feasable)
+                    {
+                        solutions.push_back(possibleSolution);
+                    }
+                    else
+                    {
+                        ROS_DEBUG("Solution was not feasible");
                     }
                 }
-             }
 
-             if (possibleSolution.feasable) {
-                solutions.push_back(possibleSolution);
-             } else {
-                ROS_DEBUG("Solution was not feasible");
-             }
-        }
+                if (solutions.empty())
+                {
+                    ROS_WARN("No possible catch positions");
+                    as.setAborted();
+                    return;
+                }
 
-        if (solutions.empty()) {
-            ROS_WARN("No possible catch positions");
-            as.setAborted();
-            return;
-        }
+                ROS_INFO("Selecting optimal position from %lu poses", solutions.size());
 
-        ROS_INFO("Selecting optimal position from %lu poses", solutions.size());
+                // Select the point which is reachable most quicly
+                ros::Duration highestDeltaTime = ros::Duration(-1000);
+                unsigned int highestArmsSolved = 0;
 
-        // Select the point which is reachable most quicly
-        ros::Duration highestDeltaTime = ros::Duration(-1000);
-        unsigned int highestArmsSolved = 0;
+                vector<Solution>::iterator bestSolution = solutions.end();
+                for (vector<Solution>::iterator solution = solutions.begin(); solution != solutions.end(); ++solution)
+                {
 
-        vector<Solution>::iterator bestSolution = solutions.end();
-        for (vector<Solution>::iterator solution = solutions.begin(); solution != solutions.end(); ++solution) {
+                    // Always prefer higher armed solutions
+                    if (numArmsSolved(*solution) > highestArmsSolved || numArmsSolved(*solution) == highestArmsSolved && solution->delta > highestDeltaTime)
+                    {
+                        highestArmsSolved = numArmsSolved(*solution);
+                        highestDeltaTime = solution->delta;
+                        ROS_DEBUG("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.pose.position.x,
+                                  solution->pose.pose.position.y, solution->pose.pose.position.z, highestArmsSolved, highestDeltaTime.toSec());
+                        bestSolution = solution;
+                    }
+                }
 
-            // Always prefer higher armed solutions
-            if (numArmsSolved(*solution) > highestArmsSolved || numArmsSolved(*solution) == highestArmsSolved && solution->delta > highestDeltaTime) {
-                highestArmsSolved = numArmsSolved(*solution);
-                highestDeltaTime = solution->delta;
-                ROS_DEBUG("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.pose.position.x,
-                         solution->pose.pose.position.y, solution->pose.pose.position.z, highestArmsSolved, highestDeltaTime.toSec());
-                bestSolution = solution;
+                ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
+                         ros::Time::now().toSec() - startRosTime.toSec());
+
+                if (bestSolution == solutions.end())
+                {
+                    ROS_WARN("No solutions found");
+                    as.setAborted();
+                    return;
+                }
+
+                // Convert the obstacle to the movement frame
+                geometry_msgs::PoseStamped obstacleStamped;
+                obstacleStamped.header = goal->header;
+                obstacleStamped.pose = goal->pose;
+
+                geometry_msgs::PoseStamped obstacle;
+                obstacle.pose = applyTransform(obstacleStamped, goalToTorsoTransform);
+                obstacle.header.frame_id = "/torso_lift_link";
+                obstacle.header.stamp = goal->header.stamp;
+
+                // Now move both arms to the position
+                for (unsigned int i = 0; i < armCommandPubs.size(); ++i)
+                {
+                    if (bestSolution->armsSolved[i])
+                    {
+                        ROS_INFO("Publishing command for arm %s.", ARMS[i].c_str());
+                        humanoid_catching::Move command;
+                        visualizeGoal(bestSolution->pose, i);
+                        command.header = bestSolution->pose.header;
+                        command.target = bestSolution->pose.pose;
+                        command.obstacle = obstacle.pose;
+                        command.has_obstacle = false;
+                        command.point_at_target = true;
+                        armCommandPubs[i].publish(command);
+                    }
+                    else
+                    {
+                        ROS_INFO("Skipping arm %s due to no solution.", ARMS[i].c_str());
+                    }
+                }
             }
-        }
-
-        ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
-                 ros::Time::now().toSec() - startRosTime.toSec());
-
-        if (bestSolution == solutions.end()) {
-            ROS_WARN("No solutions found");
-            as.setAborted();
-            return;
-        }
-
-        // Convert the obstacle to the movement frame
-        geometry_msgs::PoseStamped obstacleStamped;
-        obstacleStamped.header = goal->header;
-        obstacleStamped.pose = goal->pose;
-
-        geometry_msgs::PoseStamped obstacle;
-        obstacle.pose = applyTransform(obstacleStamped, goalToTorsoTransform);
-        obstacle.header.frame_id = "/torso_lift_link";
-        obstacle.header.stamp = goal->header.stamp;
-
-        // Now move both arms to the position
-        for (unsigned int i = 0; i < armCommandPubs.size(); ++i) {
-            if (bestSolution->armsSolved[i]) {
-                ROS_INFO("Publishing command for arm %s.", ARMS[i].c_str());
-                humanoid_catching::Move command;
-                visualizeGoal(bestSolution->pose, i);
-                command.header = bestSolution->pose.header;
-                command.target = bestSolution->pose.pose;
-                command.obstacle = obstacle.pose;
-                command.has_obstacle = false;
-                command.point_at_target = true;
-                armCommandPubs[i].publish(command);
-            } else {
-                ROS_INFO("Skipping arm %s due to no solution.", ARMS[i].c_str());
-            }
-        }
         as.setSucceeded();
     }
 };
