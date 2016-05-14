@@ -78,6 +78,10 @@ private:
       // Pole inertia matrix
       Ravelin::Matrix3d J = Ravelin::MatrixNd(&req.body_inertia_matrix[0]);
 
+      // JRobot
+      // Robot jacobian matrix
+      Ravelin::Matrix3d JRobot = Ravelin::MatrixNd(&req.jacobian_matrix[0]);
+
       // 3x3 working matrix
       Ravelin::Matrix3d temp;
 
@@ -169,35 +173,84 @@ private:
       Q.set_sub_vec(0, qHat);
       Q.set_sub_vec(3, -r.cross(qHat, tempVector));
 
+      // Result vector
+      // Torques, f_n, f_s, f_t, f_robot, v_t
+      Ravelin::VectorNd z(req.torque_limits.size() + 1 + 1 + 1 + 1 + 6);
+
       // Set up minimization function
       Ravelin::MatrixNd H(6, 6);
       Ravelin::VectorNd c(6);
       c.set_zero(c.rows());
 
       // Linear equality constraints
-      Ravelin::MatrixNd A(3);
-      A.set_column(0, N);
-      A.set_column(1, S);
-      A.set_column(2, T);
+      Ravelin::MatrixNd A(6 * 2 + req.torque_limits.size(), z.size());
+      Ravelin::VectorNd b(6 * 2 + req.torque_limits.size());
 
-      Ravelin::VectorNd b(3);
-      b.set_zero(b.rows());
+      // Sv(t) = 0 (no tangent velocity)
+      A.set_sub_mat(0, req.torque_limits.size() + 6 * 4, S);
+      b.set_sub_vec(0, Ravelin::VectorNd::zero(6));
+
+      // Tv(t) = 0 (no tangent velocity)
+      A.set_sub_mat(6, req.torque_limits.size() + 6 * 4, T);
+      b.set_sub_vec(6, Ravelin::VectorNd::zero(6));
+
+      // J_robot(transpose) * Q(transpose) * f_robot = torques
+      Ravelin::MatrixNd JQ(req.torque_limits.size(), 1);
+      Ravelin::MatrixNd Jt(JRobot.columns(), JRobot.rows());
+      JRobot.transpose(Jt);
+      Ravelin::MatrixNd::mult(Jt, Ravelin::MatrixNd(Q, Ravelin::eTranspose), JQ);
+      A.set_sub_mat(6 * 2, req.torque_limits.size() + 3, JQ);
+      A.set_sub_mat(6 * 2, 0, Ravelin::MatrixNd::identity(req.torque_limits.size()).negate());
+      b.set_sub_vec(6 * 2, Ravelin::VectorNd::zero(7));
 
       // Linear inequality constraints
-      Ravelin::VectorNd q;
+      Ravelin::MatrixNd Mc(6, z.size());
+      Ravelin::VectorNd q(6);
 
-      // Solution variable constraints (torque)
-      Ravelin::VectorNd lb(7);
+      // Nv(t) >= 0 (non-negative normal velocity)
+      Mc.set_sub_mat(0, req.torque_limits.size() + 6 * 4, N);
+      q.set_sub_vec(0, Ravelin::VectorNd::zero(6));
 
-      Ravelin::VectorNd ub(7);
+      // Solution variable constraint
+      Ravelin::VectorNd lb(z.size());
+      Ravelin::VectorNd ub(z.size());
 
-      // Result vector
-      // TODO: Make number of torques automatic
-      Ravelin::VectorNd z(7);
+      // Torque constraints
+      unsigned int bound = 0;
+      for (bound; bound < req.torque_limits.size(); ++bound) {
+        lb[bound] = req.torque_limits[bound].minimum;
+        ub[bound] = req.torque_limits[bound].maximum;
+      }
+
+      // f_n >= 0
+      lb[bound] = 0;
+      ub[bound] = INFINITY;
+      ++bound;
+
+      // f_s (no constraints)
+      lb[bound] = INFINITY;
+      ub[bound] = INFINITY;
+      ++bound;
+
+      // f_t (no constraints)
+      lb[bound] = INFINITY;
+      ub[bound] = INFINITY;
+      ++bound;
+
+      // f_robot >= 0
+      lb[bound] = INFINITY;
+      ub[bound] = INFINITY;
+      ++bound;
+
+      // v_t (no constraints)
+      for (bound; bound < z.size(); ++bound) {
+        lb[bound] = INFINITY;
+        ub[bound] = INFINITY;
+      }
 
       // Call solver
       Moby::QPOASES qp;
-      if (!qp.qp_activeset(H, p, lb, ub, M, q, A, b, z)){
+      if (!qp.qp_activeset(H, p, lb, ub, Mc, q, A, b, z)){
             ROS_ERROR("QP failed to find feasible point");
             return false;
       }
@@ -205,7 +258,7 @@ private:
       ROS_INFO_STREAM("QP solved successfully: " << z);
 
       // Copy over result
-      res.torques.resize(7);
+      res.torques.resize(req.torque_limits.size());
       for (unsigned int i = 0; i < z.size(); ++i) {
         res.torques[i] = z[i];
       }

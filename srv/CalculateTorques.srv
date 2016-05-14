@@ -7,6 +7,8 @@ geometry_msgs/Pose body_com
 geometry_msgs/Point ground_contact
 geometry_msgs/Point contact_position
 geometry_msgs/Vector3 contact_normal
+humanoid_catching/Limit[] torque_limits
+float64[] jacobian_matrix
 
 ---
 Header header

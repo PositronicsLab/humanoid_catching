@@ -40,9 +40,10 @@ static const double pi = boost::math::constants::pi<double>();
 
 struct Limit {
     Limit() : velocity(0.0), acceleration(0.0) {}
-    Limit(double aVelocity, double aAcceleration) : velocity(aVelocity), acceleration(aAcceleration) {}
+    Limit(double aVelocity, double aAcceleration, double aEffort) : velocity(aVelocity), acceleration(aAcceleration), effort(effort) {}
     double velocity;
     double acceleration;
+    double effort;
 };
 typedef std::map<std::string, Limit> LimitMapType;
 
@@ -125,6 +126,9 @@ private:
     //! Planning scene
     boost::shared_ptr<planning_scene_monitor::PlanningSceneMonitor> planningScene;
 
+    //! Kinematic model of the robot
+    robot_model::RobotModelPtr kinematicModel;
+
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
     humanoid_catching::CatchHumanResult result;
@@ -178,7 +182,7 @@ public:
         rdf_loader::RDFLoader rdfLoader;
         const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
         const boost::shared_ptr<urdf::ModelInterface>& urdfModel = rdfLoader.getURDF();
-        robot_model::RobotModelPtr kinematicModel(new robot_model::RobotModel(urdfModel, srdf));
+        kinematicModel.reset(new robot_model::RobotModel(urdfModel, srdf));
         ROS_INFO("Robot model initialized successfully");
 
         for (unsigned int k = 0; k < boost::size(ARMS); ++k) {
@@ -213,7 +217,15 @@ public:
                     max_acc = MAX_ACCELERATION;
                 }
 
-                jointLimits[jointName] = Limit(max_velocity, max_acc);
+                // Fetch the effort from the urdf
+                double max_effort;
+                const urdf::Joint* ujoint = urdfModel->getJoint(jointName).get();
+                if (ujoint != NULL && ujoint->limits){
+                  max_effort = ujoint->limits->effort;
+                } else {
+                  max_effort = 0;
+                }
+                jointLimits[jointName] = Limit(max_velocity, max_acc, max_effort);
             }
         }
 
@@ -423,6 +435,23 @@ private:
                     calcTorques.request.contact_position = fallPoint->contacts[i].position;
                     calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
                     calcTorques.request.ground_contact = fallPoint->ground_contact;
+
+                    // Get the jacobian
+                    robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
+                    const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[i]);
+                    Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
+
+                    // Convert to raw type
+                    calcTorques.request.jacobian_matrix.resize(jacobian.rows() * jacobian.cols());
+                    Eigen::Map<Eigen::MatrixXd>(&calcTorques.request.jacobian_matrix[0], jacobian.rows(), jacobian.cols()) = jacobian;
+
+                    // Set the joint limits
+                    calcTorques.request.torque_limits.resize(jointModelGroup->getActiveJointModelNames().size());
+                    for (unsigned int j = 0; j < jointModelGroup->getActiveJointModelNames().size(); ++j) {
+                        double maxEffort = jointLimits[jointModelGroup->getActiveJointModelNames()[j]].effort;
+                        calcTorques.request.torque_limits[j].minimum = -maxEffort;
+                        calcTorques.request.torque_limits[j].maximum = maxEffort;
+                    }
 
                     ROS_DEBUG("Calculating torques");
                     if (!balancer.call(calcTorques)) {

@@ -66,6 +66,7 @@ add_message_files(
    IMU.msg
    ForceControllerFeedback.msg
    Move.msg
+   Limit.msg
 )
 
 ## Generate services in the 'srv' folder

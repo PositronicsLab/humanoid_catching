@@ -33,6 +33,8 @@
 			<Add option="-fexceptions" />
 		</Compiler>
 		<Unit filename="CMakeLists.txt" />
+		<Unit filename="CMakeModules/FindMoby.cmake" />
+		<Unit filename="CMakeModules/FindQPOASES.cmake" />
 		<Unit filename="CMakeModules/FindRavelin.cmake" />
 		<Unit filename="README.md" />
 		<Unit filename="TODO" />
@@ -59,7 +61,6 @@
 		<Unit filename="msg/IMU.msg" />
 		<Unit filename="msg/Move.msg" />
 		<Unit filename="package.xml" />
-		<Unit filename="pr2_arms_cart_imped_controller.yaml" />
 		<Unit filename="pr2_arms_force_controller.yaml" />
 		<Unit filename="rviz/display.rviz" />
 		<Unit filename="src/announced_fall_detector.cpp" />
