@@ -6,10 +6,12 @@
 #include <Ravelin/Quatd.h>
 #include <Ravelin/Opsd.h>
 #include <Moby/qpOASES.h>
+#include <Ravelin/LinAlgd.h>
 
 namespace {
 using namespace std;
 using namespace humanoid_catching;
+using namespace Ravelin;
 
 static const double GRAVITY = 9.81;
 
@@ -34,16 +36,16 @@ public:
 
 private:
 
-    static Ravelin::Vector3d toVector(const geometry_msgs::Vector3& v3) {
-        Ravelin::Vector3d v;
+    static Vector3d toVector(const geometry_msgs::Vector3& v3) {
+        Vector3d v;
         v[0] = v3.x;
         v[1] = v3.y;
         v[2] = v3.z;
         return v;
     }
 
-    static Ravelin::Vector3d toVector(const geometry_msgs::Point& p) {
-        Ravelin::Vector3d v;
+    static Vector3d toVector(const geometry_msgs::Point& p) {
+        Vector3d v;
         v[0] = p.x;
         v[1] = p.y;
         v[2] = p.z;
@@ -57,163 +59,206 @@ private:
 
       // x
       // linear velocity of body
-      Ravelin::Vector3d x = toVector(req.body_velocity.linear);
+      Vector3d x = toVector(req.body_velocity.linear);
 
       // w
       // angular velocity of body
-      Ravelin::Vector3d w = toVector(req.body_velocity.angular);
+      Vector3d w = toVector(req.body_velocity.angular);
 
       // v(t)
       // | x |
       // | w |
-      Ravelin::VectorNd v(6);
+      VectorNd v(6);
       v.set_sub_vec(0, x);
       v.set_sub_vec(3, w);
 
       // R
       // Pole rotation matrix
-      Ravelin::Matrix3d R = Ravelin::MatrixNd(Ravelin::Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w));
+      Matrix3d R = MatrixNd(Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w));
 
       // J
       // Pole inertia matrix
-      Ravelin::Matrix3d J = Ravelin::MatrixNd(&req.body_inertia_matrix[0]);
+      Matrix3d J = MatrixNd(VectorNd(req.body_inertia_matrix.size(), &req.body_inertia_matrix[0]));
 
       // JRobot
       // Robot jacobian matrix
-      Ravelin::Matrix3d JRobot = Ravelin::MatrixNd(&req.jacobian_matrix[0]);
+      Matrix3d JRobot = MatrixNd(VectorNd(req.jacobian_matrix.size(), &req.jacobian_matrix[0]));
 
       // 3x3 working matrix
-      Ravelin::Matrix3d temp;
+      Matrix3d temp;
 
       // RJR_t
-      Ravelin::Matrix3d RJR = R.mult(J, temp).mult(Ravelin::Matrix3d::transpose(R), temp);
+      Matrix3d RJR = R.mult(J, temp).mult(Matrix3d::transpose(R), temp);
 
       // M
       // | Im   0 |
       // | 0 RJR_t|
-      Ravelin::MatrixNd M(6, 6);
+      MatrixNd M(6, 6);
       M.set_zero(M.rows(), M.columns());
-      M.set_sub_mat(0, 0, Ravelin::Matrix3d::identity() * req.body_mass);
+      M.set_sub_mat(0, 0, Matrix3d::identity() * req.body_mass);
       M.set_sub_mat(3, 3, RJR);
 
       // delta t
       double deltaT = req.time_delta.toSec();
 
       // Working vector
-      Ravelin::Vector3d tempVector;
+      Vector3d tempVector;
 
       // fext
       // | g           |
       // | -w x RJR_tw |
-      Ravelin::VectorNd fExt(6);
+      VectorNd fExt(6);
       fExt[0] = 0;
       fExt[1] = 0;
       fExt[2] = GRAVITY;
-      fExt.set_sub_vec(3, Ravelin::Vector3d::cross(-w, RJR.mult(w, tempVector)));
+      fExt.set_sub_vec(3, Vector3d::cross(-w, RJR.mult(w, tempVector)));
 
       // n_hat
       // x component of ground contact position
-      Ravelin::Vector3d nHat;
+      Vector3d nHat;
       nHat[0] = req.ground_contact.x;
       nHat[1] = 0;
       nHat[2] = 0;
 
       // s_hat
       // s component of contact position
-      Ravelin::Vector3d sHat;
+      Vector3d sHat;
       nHat[0] = 0;
       nHat[1] = req.ground_contact.y;
       nHat[2] = 0;
 
       // t_hat
       // z component of contact position
-      Ravelin::Vector3d tHat;
+      Vector3d tHat;
       tHat[0] = 0;
       tHat[1] = 0;
       tHat[2] = req.ground_contact.z;
 
       // q_hat
       // contact normal
-      Ravelin::Vector3d qHat = toVector(req.contact_normal);
+      Vector3d qHat = toVector(req.contact_normal);
 
       // p
       // contact point
-      Ravelin::Vector3d p = toVector(req.ground_contact);
+      Vector3d p = toVector(req.ground_contact);
 
       // x_bar
       // pole COM
-      Ravelin::Vector3d xBar = toVector(req.body_com.position);
+      Vector3d xBar = toVector(req.body_com.position);
 
       // r
-      Ravelin::Vector3d r = p - xBar;
+      Vector3d r = p - xBar;
 
       // N
       // | n_hat     |
       // | r x n_hat |
-      Ravelin::VectorNd N(6);
+      VectorNd N(6);
       N.set_sub_vec(0, nHat);
       N.set_sub_vec(3, r.cross(nHat, tempVector));
 
       // S
       // | s_hat     |
       // | r x s_hat |
-      Ravelin::VectorNd S(6);
+      VectorNd S(6);
       S.set_sub_vec(0, sHat);
       S.set_sub_vec(3, r.cross(sHat, tempVector));
 
       // T
       // | t_hat     |
       // | r x t_hat |
-      Ravelin::VectorNd T(6);
+      VectorNd T(6);
       T.set_sub_vec(0, tHat);
       T.set_sub_vec(3, r.cross(tHat, tempVector));
 
       // Q
-      Ravelin::VectorNd Q(6);
+      VectorNd Q(6);
       Q.set_sub_vec(0, qHat);
       Q.set_sub_vec(3, -r.cross(qHat, tempVector));
 
       // Result vector
-      // Torques, f_n, f_s, f_t, f_robot, v_t
-      Ravelin::VectorNd z(req.torque_limits.size() + 1 + 1 + 1 + 1 + 6);
+      // Torques, f_n, f_s, f_t, f_robot, v_(t + tdelta)
+      const int torqueIdx = 0;
+      const int fNIdx = req.torque_limits.size();
+      const int fSIdx = fNIdx + 1;
+      const int fTIdx = fSIdx + 1;
+      const int fRobotIdx = fTIdx + 1;
+      const int vTDeltaIdx = fRobotIdx + 1;
+      VectorNd z(req.torque_limits.size() + 1 + 1 + 1 + 1 + 6);
 
       // Set up minimization function
-      Ravelin::MatrixNd H(6, 6);
-      Ravelin::VectorNd c(6);
+      MatrixNd H(6, z.size());
+      H.set_sub_mat(0, vTDeltaIdx, M);
+
+      VectorNd c(6);
       c.set_zero(c.rows());
 
       // Linear equality constraints
-      Ravelin::MatrixNd A(6 * 2 + req.torque_limits.size(), z.size());
-      Ravelin::VectorNd b(6 * 2 + req.torque_limits.size());
+      MatrixNd A(6 * 3 + req.torque_limits.size(), z.size());
+      VectorNd b(6 * 3 + req.torque_limits.size());
 
-      // Sv(t) = 0 (no tangent velocity)
-      A.set_sub_mat(0, req.torque_limits.size() + 6 * 4, S);
-      b.set_sub_vec(0, Ravelin::VectorNd::zero(6));
+      // Sv(t + t_delta) = 0 (no tangent velocity)
+      unsigned idx = 0;
+      A.set_sub_mat(idx, vTDeltaIdx, S);
+      b.set_sub_vec(idx, VectorNd::zero(6));
+      idx += 6;
 
-      // Tv(t) = 0 (no tangent velocity)
-      A.set_sub_mat(6, req.torque_limits.size() + 6 * 4, T);
-      b.set_sub_vec(6, Ravelin::VectorNd::zero(6));
+      // Tv(t + t_delta) = 0 (no tangent velocity)
+      A.set_sub_mat(idx, vTDeltaIdx, T);
+      b.set_sub_vec(idx, VectorNd::zero(6));
+      idx += 6;
 
       // J_robot(transpose) * Q(transpose) * f_robot = torques
-      Ravelin::MatrixNd JQ(req.torque_limits.size(), 1);
-      Ravelin::MatrixNd Jt(JRobot.columns(), JRobot.rows());
+      MatrixNd JQ(req.torque_limits.size(), 1);
+      MatrixNd Jt(JRobot.columns(), JRobot.rows());
       JRobot.transpose(Jt);
-      Ravelin::MatrixNd::mult(Jt, Ravelin::MatrixNd(Q, Ravelin::eTranspose), JQ);
-      A.set_sub_mat(6 * 2, req.torque_limits.size() + 3, JQ);
-      A.set_sub_mat(6 * 2, 0, Ravelin::MatrixNd::identity(req.torque_limits.size()).negate());
-      b.set_sub_vec(6 * 2, Ravelin::VectorNd::zero(7));
+      MatrixNd::mult(Jt, MatrixNd(Q, eTranspose), JQ);
+      A.set_sub_mat(idx, fRobotIdx, JQ);
+      A.set_sub_mat(idx, torqueIdx, MatrixNd::identity(req.torque_limits.size()).negate());
+      b.set_sub_vec(idx, VectorNd::zero(req.torque_limits.size()));
+      idx += 6;
+
+      // v_(t + t_delta) = v_t + M_inv (N_t * f_n + S_t * f_s + T_t * f_t + delta_t * f_ext + Q_t * delta_t * f_robot)
+      // Manipulated to fit constraint form
+      // -v_t - M_inv * delta_t * f_ext = M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + M_inv * Q_t * delta_t * f_robot + -v_(t + t_delta)
+      LinAlgd linAlgd;
+      MatrixNd MInverse = M;
+      linAlgd.pseudo_invert(MInverse);
+
+      MatrixNd MInverseN(MInverse.rows(), N.columns());
+      MInverse.mult(N, MInverseN);
+      A.set_sub_mat(idx, fNIdx, MInverseN);
+
+      MatrixNd MInverseS(MInverse.rows(), S.columns());
+      MInverse.mult(S, MInverseS);
+      A.set_sub_mat(idx, fSIdx, MInverseS);
+
+      MatrixNd MInverseT(MInverse.rows(), T.columns());
+      MInverse.mult(T, MInverseT);
+      A.set_sub_mat(idx, fTIdx,MInverseT);
+
+      MatrixNd MInverseQ(MInverse.rows(), Q.columns());
+      MInverse.mult(Q, MInverseQ);
+      MInverseQ *= deltaT;
+      A.set_sub_mat(idx, fRobotIdx, MInverseQ);
+      A.set_sub_mat(idx, vTDeltaIdx, MatrixNd::identity(6).negate());
+
+      VectorNd MInverseFExt(6);
+      MInverseFExt.set_zero();
+      MInverse.mult(fExt, MInverseFExt, deltaT);
+      MInverseFExt.negate() -= v;
+      b.set_sub_vec(idx, MInverseFExt);
 
       // Linear inequality constraints
-      Ravelin::MatrixNd Mc(6, z.size());
-      Ravelin::VectorNd q(6);
+      MatrixNd Mc(6, z.size());
+      VectorNd q(6);
 
       // Nv(t) >= 0 (non-negative normal velocity)
       Mc.set_sub_mat(0, req.torque_limits.size() + 6 * 4, N);
-      q.set_sub_vec(0, Ravelin::VectorNd::zero(6));
+      q.set_sub_vec(0, VectorNd::zero(6));
 
       // Solution variable constraint
-      Ravelin::VectorNd lb(z.size());
-      Ravelin::VectorNd ub(z.size());
+      VectorNd lb(z.size());
+      VectorNd ub(z.size());
 
       // Torque constraints
       unsigned int bound = 0;
