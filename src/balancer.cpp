@@ -36,6 +36,11 @@ public:
 
 private:
 
+    /**
+     * Convert a geometry_msgs::Vector3 to a Ravelin::Vector3d
+     * @param v3 geometry_msgs::Vector3
+     * @return Ravelin Vector3d
+     */
     static Vector3d toVector(const geometry_msgs::Vector3& v3) {
         Vector3d v;
         v[0] = v3.x;
@@ -44,6 +49,11 @@ private:
         return v;
     }
 
+    /**
+     * Convert a geometry_msgs::Point to a Ravelin::Vector3d
+     * @param p geometry_msgs::Point
+     * @return Ravelin Vector3d
+     */
     static Vector3d toVector(const geometry_msgs::Point& p) {
         Vector3d v;
         v[0] = p.x;
@@ -52,18 +62,24 @@ private:
         return v;
     }
 
+    /**
+     * Calculate balancing torques
+     * @param req Request
+     * @param res Response
+     * @return Success
+     */
     bool calculateTorques(humanoid_catching::CalculateTorques::Request& req,
-               humanoid_catching::CalculateTorques::Response& res) {
+                          humanoid_catching::CalculateTorques::Response& res) {
 
       ROS_INFO("Calculating torques frame %s", req.header.frame_id.c_str());
 
       // x
       // linear velocity of body
-      Vector3d x = toVector(req.body_velocity.linear);
+      const Vector3d x = toVector(req.body_velocity.linear);
 
       // w
       // angular velocity of body
-      Vector3d w = toVector(req.body_velocity.angular);
+      const Vector3d w = toVector(req.body_velocity.angular);
 
       // v(t)
       // | x |
@@ -74,21 +90,20 @@ private:
 
       // R
       // Pole rotation matrix
-      Matrix3d R = MatrixNd(Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w));
+      const Matrix3d R = MatrixNd(Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w));
 
       // J
       // Pole inertia matrix
-      Matrix3d J = MatrixNd(VectorNd(req.body_inertia_matrix.size(), &req.body_inertia_matrix[0]));
+      const Matrix3d J = MatrixNd(VectorNd(req.body_inertia_matrix.size(), &req.body_inertia_matrix[0]));
 
       // JRobot
-      // Robot jacobian matrix
-      Matrix3d JRobot = MatrixNd(VectorNd(req.jacobian_matrix.size(), &req.jacobian_matrix[0]));
-
-      // 3x3 working matrix
-      Matrix3d temp;
+      // Robot end effector jacobian matrix
+      const Matrix3d JRobot = MatrixNd(VectorNd(req.jacobian_matrix.size(), &req.jacobian_matrix[0]));
 
       // RJR_t
-      Matrix3d RJR = R.mult(J, temp).mult(Matrix3d::transpose(R), temp);
+      Matrix3d RJR;
+      Matrix3d RTranspose = R.transpose(RTranspose);
+      RJR = R.mult(J, RJR).mult(RTranspose, RJR);
 
       // M
       // | Im   0 |
@@ -136,18 +151,18 @@ private:
 
       // q_hat
       // contact normal
-      Vector3d qHat = toVector(req.contact_normal);
+      const Vector3d qHat = toVector(req.contact_normal);
 
       // p
       // contact point
-      Vector3d p = toVector(req.ground_contact);
+      const Vector3d p = toVector(req.ground_contact);
 
       // x_bar
       // pole COM
-      Vector3d xBar = toVector(req.body_com.position);
+      const Vector3d xBar = toVector(req.body_com.position);
 
       // r
-      Vector3d r = p - xBar;
+      const Vector3d r = p - xBar;
 
       // N
       // | n_hat     |
@@ -193,33 +208,35 @@ private:
       c.set_zero(c.rows());
 
       // Linear equality constraints
-      MatrixNd A(6 * 3 + req.torque_limits.size(), z.size());
-      VectorNd b(6 * 3 + req.torque_limits.size());
+      MatrixNd A(1 * 2 + req.torque_limits.size() + 6, z.size());
+      VectorNd b(1 * 2 + req.torque_limits.size() + 6);
 
       // Sv(t + t_delta) = 0 (no tangent velocity)
       unsigned idx = 0;
       A.set_sub_mat(idx, vTDeltaIdx, S);
-      b.set_sub_vec(idx, VectorNd::zero(6));
-      idx += 6;
+      b.set_sub_vec(idx, VectorNd::zero(1));
+      idx += 1;
 
       // Tv(t + t_delta) = 0 (no tangent velocity)
       A.set_sub_mat(idx, vTDeltaIdx, T);
-      b.set_sub_vec(idx, VectorNd::zero(6));
-      idx += 6;
+      b.set_sub_vec(idx, VectorNd::zero(1));
+      idx += 1;
 
       // J_robot(transpose) * Q(transpose) * f_robot = torques
+      // Transformed to:
+      // J_Robot(transpose) * Q(transpose) * f_robot - I * torques = 0
       MatrixNd JQ(req.torque_limits.size(), 1);
       MatrixNd Jt(JRobot.columns(), JRobot.rows());
       JRobot.transpose(Jt);
-      MatrixNd::mult(Jt, MatrixNd(Q, eTranspose), JQ);
+      Jt.mult(MatrixNd(Q, eTranspose), JQ);
       A.set_sub_mat(idx, fRobotIdx, JQ);
       A.set_sub_mat(idx, torqueIdx, MatrixNd::identity(req.torque_limits.size()).negate());
       b.set_sub_vec(idx, VectorNd::zero(req.torque_limits.size()));
-      idx += 6;
+      idx += req.torque_limits.size();
 
       // v_(t + t_delta) = v_t + M_inv (N_t * f_n + S_t * f_s + T_t * f_t + delta_t * f_ext + Q_t * delta_t * f_robot)
       // Manipulated to fit constraint form
-      // -v_t - M_inv * delta_t * f_ext = M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + M_inv * Q_t * delta_t * f_robot + -v_(t + t_delta)
+      // -v_t - M_inv * delta_t * f_ext = M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + M_inv * Q_t * delta_t * f_robot + -I * v_(t + t_delta)
       LinAlgd linAlgd;
       MatrixNd MInverse = M;
       linAlgd.pseudo_invert(MInverse);
@@ -234,12 +251,13 @@ private:
 
       MatrixNd MInverseT(MInverse.rows(), T.columns());
       MInverse.mult(T, MInverseT);
-      A.set_sub_mat(idx, fTIdx,MInverseT);
+      A.set_sub_mat(idx, fTIdx, MInverseT);
 
       MatrixNd MInverseQ(MInverse.rows(), Q.columns());
       MInverse.mult(Q, MInverseQ);
       MInverseQ *= deltaT;
       A.set_sub_mat(idx, fRobotIdx, MInverseQ);
+
       A.set_sub_mat(idx, vTDeltaIdx, MatrixNd::identity(6).negate());
 
       VectorNd MInverseFExt(6);
@@ -253,7 +271,7 @@ private:
       VectorNd q(6);
 
       // Nv(t) >= 0 (non-negative normal velocity)
-      Mc.set_sub_mat(0, req.torque_limits.size() + 6 * 4, N);
+      Mc.set_sub_mat(0, vTDeltaIdx, N);
       q.set_sub_vec(0, VectorNd::zero(6));
 
       // Solution variable constraint
@@ -283,7 +301,7 @@ private:
       ++bound;
 
       // f_robot >= 0
-      lb[bound] = INFINITY;
+      lb[bound] = 0;
       ub[bound] = INFINITY;
       ++bound;
 
