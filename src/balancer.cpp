@@ -30,7 +30,7 @@ public:
    Balancer() :
      pnh("~") {
 
-       balancerService = nh.advertiseService("/balancer/calculate_torques",
+       balancerService = nh.advertiseService("/balancer/torques",
             &Balancer::calculateTorques, this);
 	}
 

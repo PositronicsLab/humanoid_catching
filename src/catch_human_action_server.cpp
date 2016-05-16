@@ -168,7 +168,7 @@ public:
 
         ROS_INFO("Waiting for /balancer/torques service");
         ros::service::waitForService("/balancer/torques");
-        balancer = nh.serviceClient<kinematics_cache::IKQuery>("/balancer/torques", true /* persistent */);
+        balancer = nh.serviceClient<humanoid_catching::CalculateTorques>("/balancer/torques", true /* persistent */);
 
         // Initialize arm clients
         ROS_INFO("Initializing arm command publishers");
@@ -425,6 +425,9 @@ private:
                     if (fallPoint == predictFall.response.points.end()) {
                         ROS_INFO("Arm %s is not in contact", ARMS[i].c_str());
                         continue;
+                    }
+                    else {
+                        ROS_INFO("Executing balancing for arm %s", ARMS[i].c_str());
                     }
                     humanoid_catching::CalculateTorques calcTorques;
                     calcTorques.request.body_velocity = fallPoint->velocity;
