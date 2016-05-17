@@ -96,7 +96,7 @@ private:
       // R
       // Pole rotation matrix
       ROS_INFO("Calculating R matrix");
-      const Matrix3d R = MatrixNd(Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w));
+      const Matrix3d R = Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w);
       ROS_INFO_STREAM("R: " << R);
 
       // J
