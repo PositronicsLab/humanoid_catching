@@ -114,9 +114,9 @@ private:
 
       // RJR_t
       ROS_INFO("Calculating RJR");
-      Matrix3d RJR;
-      Matrix3d RTranspose = R.transpose(RTranspose);
-      RJR = R.mult(J, RJR).mult(RTranspose, RJR);
+      Matrix3d RJ, RJR;
+      R.mult(J, RJ);
+      RJ.mult_transpose(R, RJR);
       ROS_INFO_STREAM("RJR: " << RJR);
 
       // M
