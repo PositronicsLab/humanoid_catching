@@ -109,7 +109,7 @@ private:
       // JRobot
       // Robot end effector jacobian matrix
       ROS_INFO("Calculating JRobot");
-      const MatrixNd JRobot = MatrixNd(req.torque_limits.size(), 6, &req.jacobian_matrix[0]);
+      const MatrixNd JRobot = MatrixNd(6, req.torque_limits.size(), &req.jacobian_matrix[0]);
       ROS_INFO_STREAM("JRobot: " << JRobot);
 
       // RJR_t
@@ -147,30 +147,31 @@ private:
       ROS_INFO_STREAM("fExt: " << fExt);
 
       // n_hat
-      // x component of ground contact position
+      // contact normal
+      // TODO: Pass in ground contact normal
       ROS_INFO("Calculating nHat");
       Vector3d nHat;
-      nHat[0] = req.ground_contact.x;
+      nHat[0] = 1;
       nHat[1] = 0;
       nHat[2] = 0;
       ROS_INFO_STREAM("nHat: " << nHat);
 
       // s_hat
-      // s component of contact position
+      // vector orthogonal to contact normal
       ROS_INFO("Calculating sHat");
       Vector3d sHat;
       nHat[0] = 0;
-      nHat[1] = req.ground_contact.y;
+      nHat[1] = 1;
       nHat[2] = 0;
       ROS_INFO_STREAM("sHat: " << sHat);
 
       // t_hat
-      // z component of contact position
+      // vector orthogonal to contact normal
       ROS_INFO("Calculating tHat");
       Vector3d tHat;
       tHat[0] = 0;
       tHat[1] = 0;
-      tHat[2] = req.ground_contact.z;
+      tHat[2] = 1;
       ROS_INFO_STREAM("tHat: " << tHat);
 
       // q_hat
@@ -242,12 +243,12 @@ private:
 
       // Set up minimization function
       ROS_INFO("Calculating H");
-      MatrixNd H(6, z.size());
-      H.set_sub_mat(0, vTDeltaIdx, M);
+      MatrixNd H(z.size(), z.size());
+      H.set_sub_mat(vTDeltaIdx, vTDeltaIdx, M);
       ROS_INFO_STREAM("H: " << H);
 
       ROS_INFO("Calculating c");
-      VectorNd c(6);
+      VectorNd c(z.rows());
       c.set_zero(c.rows());
       ROS_INFO_STREAM("c: " << c);
 
@@ -276,7 +277,8 @@ private:
       MatrixNd JQ(req.torque_limits.size(), 1);
       MatrixNd Jt = JRobot;
       Jt.transpose();
-      MatrixNd Qt(Q, eTranspose);
+      // TODO: This is the incorrect Q matrix
+      MatrixNd Qt(Q, eNoTranspose);
       Jt.mult(Qt, JQ);
       A.set_sub_mat(idx, fRobotIdx, JQ);
       A.set_sub_mat(idx, torqueIdx, MatrixNd::identity(req.torque_limits.size()).negate());
@@ -289,7 +291,7 @@ private:
       // -v_t - M_inv * delta_t * f_ext = M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + M_inv * Q_t * delta_t * f_robot + -I * v_(t + t_delta)
       LinAlgd linAlgd;
       MatrixNd MInverse = M;
-      linAlgd.pseudo_invert(MInverse);
+      linAlgd.invert(MInverse);
 
       MatrixNd MInverseN(MInverse.rows(), N.columns());
       MInverse.mult(N, MInverseN);
@@ -372,7 +374,7 @@ private:
       // Call solver
       ROS_INFO("Calling solver");
       Moby::QPOASES qp;
-      if (!qp.qp_activeset(H, p, lb, ub, Mc, q, A, b, z)){
+      if (!qp.qp_activeset(H, c, lb, ub, Mc, q, A, b, z)){
             ROS_ERROR("QP failed to find feasible point");
             return false;
       }
