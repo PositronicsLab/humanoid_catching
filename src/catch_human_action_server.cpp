@@ -439,6 +439,11 @@ private:
                     calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
                     calcTorques.request.ground_contact = fallPoint->ground_contact;
 
+                    // TODO: IMPLEMENT
+                    vector<double> jointVelocities;
+                    jointVelocities.resize(7);
+                    calcTorques.request.joint_velocity = jointVelocities;
+
                     // Get the jacobian
                     robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
                     const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[i]);
