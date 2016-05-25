@@ -18,6 +18,9 @@
 #include <sensor_msgs/JointState.h>
 #include <message_filters/subscriber.h>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+#include <Ravelin/URDFReaderd.h>
+#include <Ravelin/RigidBodyd.h>
+#include <Ravelin/Jointd.h>
 
 namespace {
 using namespace std;
@@ -129,6 +132,9 @@ private:
     //! Kinematic model of the robot
     robot_model::RobotModelPtr kinematicModel;
 
+    //! Ravelin dynamic body
+    boost::shared_ptr<Ravelin::DynamicBodyd> robotBody;
+
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
     humanoid_catching::CatchHumanResult result;
@@ -184,6 +190,15 @@ public:
         const boost::shared_ptr<urdf::ModelInterface>& urdfModel = rdfLoader.getURDF();
         kinematicModel.reset(new robot_model::RobotModel(urdfModel, srdf));
         ROS_INFO("Robot model initialized successfully");
+
+        string urdfLocation;
+        pnh.param<string>("urdf", urdfLocation, "pr2.urdf");
+        string robotName;
+        vector<boost::shared_ptr<Ravelin::RigidBodyd> > links;
+        vector<boost::shared_ptr<Ravelin::Jointd> > joints;
+        if (!Ravelin::URDFReaderd::read(urdfLocation, robotName, links, joints)) {
+            ROS_ERROR("Failed to parse URDF: %s", urdfLocation.c_str());
+        }
 
         for (unsigned int k = 0; k < boost::size(ARMS); ++k) {
             const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[k]);
@@ -439,15 +454,22 @@ private:
                     calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
                     calcTorques.request.ground_contact = fallPoint->ground_contact;
 
-                    // TODO: IMPLEMENT
-                    vector<double> jointVelocities;
-                    jointVelocities.resize(7);
-                    calcTorques.request.joint_velocity = jointVelocities;
+                    // Get the inertia matrix
+                    Ravelin::MatrixNd robotInertiaMatrix;
+                    robotBody->get_generalized_inertia(robotInertiaMatrix);
+                    calcTorques.request.robot_inertia_matrix = vector<double>(robotInertiaMatrix.data(), robotInertiaMatrix.data() + robotInertiaMatrix.size());
 
                     // Get the jacobian
                     robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
-                    const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[i]);
+                    const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[i]);
                     Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
+
+                    const vector<const robot_model::JointModel*>& jointModels = jointModelGroup->getJointModels();
+                    calcTorques.request.joint_velocity.resize(jointModels.size());
+                    for (vector<const robot_model::JointModel*>::const_iterator joint = jointModels.begin(); joint != jointModels.end(); ++joint) {
+                        // Assume all joints are 1 dof
+                        calcTorques.request.joint_velocity[i] = currentRobotState.getJointVelocities(*joint)[0];
+                    }
 
                     // Convert to raw type
                     calcTorques.request.jacobian_matrix.resize(jacobian.rows() * jacobian.cols());

@@ -1,6 +1,7 @@
 Header header
 geometry_msgs/Twist body_velocity
 float64[] body_inertia_matrix
+float64[] robot_inertia_matrix
 float64 body_mass
 duration time_delta
 geometry_msgs/Pose body_com

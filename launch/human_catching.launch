@@ -20,6 +20,7 @@
   </node>
 
   <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
+    <param name="urdf" value="/home/jlurz/catkin_ws/src/humanoid_catching/models/pr2.urdf" />
   </node>
 
   <!-- Disabled due to spurious detections -->

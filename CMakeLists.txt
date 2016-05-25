@@ -27,6 +27,7 @@ find_package(Boost REQUIRED COMPONENTS system)
 find_package(Ravelin REQUIRED)
 find_package(Moby REQUIRED)
 find_package(QPOASES REQUIRED)
+find_package(LibXml2 REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -136,7 +137,7 @@ add_definitions(-DdDOUBLE)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR})
 
 ## Declare a C++ library
 # add_library(humanoid_catching
@@ -181,7 +182,7 @@ target_link_libraries(move_arm_fast_action_server
 add_executable(catch_human_action_server src/catch_human_action_server.cpp)
 add_dependencies(catch_human_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(catch_human_action_server
-   ${catkin_LIBRARIES}
+   ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES}
 )
 
 add_executable(fall_predictor src/fall_predictor.cpp)

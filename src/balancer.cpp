@@ -151,9 +151,7 @@ private:
 
       // M_robot
       ROS_INFO("Calculating M_robot");
-      MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size());
-      // TODO: Implement
-      M_robot.set_identity();
+      MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size(), &req.robot_inertia_matrix[0]);
 
       // M
       // | M_pole 0  |
@@ -178,6 +176,7 @@ private:
       // f_ext
       // | g           |
       // | -w x RJR_tw |
+      // | 0           |
       ROS_INFO("Calculating f_ext");
       VectorNd f_ext(POLE_DOF + req.joint_velocity.size());
       f_ext.set_zero();
@@ -239,6 +238,7 @@ private:
       // N
       // | n_hat     |
       // | r x n_hat |
+      // | 0         |
       ROS_INFO("Calculating N");
       VectorNd N(POLE_DOF + req.joint_velocity.size());
       N.set_zero();
@@ -269,8 +269,10 @@ private:
       ROS_INFO_STREAM("T: " << T);
 
       // Q
-      // | q_hat |
-      // | r x q_hat
+      // | q_hat        |
+      // | r x q_hat    |
+      // | | -q_hat | J |
+      // | |    0   |   |
       ROS_INFO("Calculating Q");
       VectorNd Q(POLE_DOF + req.joint_velocity.size());
       Q.set_zero();
@@ -334,9 +336,9 @@ private:
       idx += 1;
 
       ROS_INFO("Setting velocity constraint");
-      // v_(t + t_delta) = v_t + M_inv (N_t * f_n + S_t * f_s + T_t * f_t + delta_t * f_ext + P_t * torque + Q_t * f_robot)
+      // v_(t + t_delta) = v_t + M_inv (N_t * f_n + S_t * f_s + T_t * f_t + delta_t * f_ext + P_t * torque + delta_t * Q_t * f_robot)
       // Manipulated to fit constraint form
-      // -v_t - M_inv * delta_t * f_ext = M_inv * P_t * torque + M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + M_inv * Q_t * f_robot + -I * v_(t + t_delta)
+      // -v_t - M_inv * delta_t * f_ext = M_inv * P_t * torque + M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + delta_t * M_inv * Q_t * f_robot + -I * v_(t + t_delta)
 
       ROS_INFO("Inverting M");
       LinAlgd linAlgd;
@@ -344,7 +346,6 @@ private:
       linAlgd.invert(M_inverse);
 
       ROS_INFO("Calculating M_inverse P");
-      // TODO: Ensure we don't need to transpose here
       MatrixNd M_inverse_P(M_inverse.rows(), P.columns());
       M_inverse.mult(P, M_inverse_P);
       A.set_sub_mat(idx, torque_idx, M_inverse_P);
@@ -367,6 +368,7 @@ private:
       ROS_INFO("Calculating M_inverse Q");
       MatrixNd M_inverse_Q(M_inverse.rows(), Q.columns());
       M_inverse.mult(Q, M_inverse_Q);
+      M_inverse_Q *= delta_t;
       A.set_sub_mat(idx, f_robot_idx, M_inverse_Q);
 
       A.set_sub_mat(idx, v_t_delta_idx, MatrixNd::identity(POLE_DOF + req.joint_velocity.size()).negate());
