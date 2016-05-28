@@ -155,7 +155,9 @@ private:
       // M_robot
       ROS_INFO("Calculating M_robot");
       MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size(), &req.robot_inertia_matrix[0]);
-      ROS_INFO_STREAM("M_robot rank: " << linAlgd.calc_rank(M_robot) << " Cond number: " << linAlgd.cond(M_robot));
+      assert(linAlgd.calc_rank(M_robot) == req.joint_velocity.size());
+      ROS_INFO_STREAM("M_robot: " << M_robot);
+
       // M
       // | M_pole 0  |
       // | 0 M_robot |
