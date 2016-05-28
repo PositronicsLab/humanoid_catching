@@ -475,6 +475,7 @@ private:
                     else {
                         ROS_INFO("Executing balancing for arm %s", ARMS[i].c_str());
                     }
+
                     humanoid_catching::CalculateTorques calcTorques;
                     calcTorques.request.body_velocity = fallPoint->velocity;
                     calcTorques.request.body_inertia_matrix = predictFall.response.inertia_matrix;
@@ -531,6 +532,7 @@ private:
                     ROS_INFO("Dispatching torque command for arm %s", ARMS[i].c_str());
                     humanoid_catching::Move command;
                     command.header.stamp = ros::Time::now();
+                    command.header.frame_id = "/torso_lift_link";
                     command.has_torques = true;
                     command.torques = calcTorques.response.torques;
                     armCommandPubs[i].publish(command);

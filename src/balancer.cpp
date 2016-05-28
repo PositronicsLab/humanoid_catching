@@ -131,7 +131,6 @@ private:
       // J
       // Pole inertia matrix
       ROS_INFO("Calculating J matrix");
-      ROS_INFO_STREAM("BIM: " << req.body_inertia_matrix.size());
       const Matrix3d J = Matrix3d(&req.body_inertia_matrix[0]);
       ROS_INFO_STREAM("J: " << J);
 
@@ -161,15 +160,18 @@ private:
       // M
       // | M_pole 0  |
       // | 0 M_robot |
+      ROS_INFO("Calculating M");
       MatrixNd M(POLE_DOF + req.joint_velocity.size(), POLE_DOF + req.joint_velocity.size());
       M.set_zero();
       M.set_sub_mat(0, 0, M_pole);
       M.set_sub_mat(M_pole.rows(), M_pole.columns(), M_robot);
+      ROS_INFO_STREAM("M: " << M);
 
       // J_robot
       // Robot end effector jacobian matrix
       ROS_INFO("Calculating J_robot");
-      const MatrixNd J_robot = MatrixNd(6, req.torque_limits.size(), &req.jacobian_matrix[0]);
+      MatrixNd J_robot = MatrixNd(6, req.torque_limits.size(), &req.jacobian_matrix[0]);
+      assert(linAlgd.calc_rank(J_robot) == 6);
       ROS_INFO_STREAM("J_robot: " << J_robot);
 
       // delta t
@@ -424,12 +426,12 @@ private:
       ++bound;
 
       // f_s (no constraints)
-      lb[bound] = INFINITY;
+      lb[bound] = -INFINITY;
       ub[bound] = INFINITY;
       ++bound;
 
       // f_t (no constraints)
-      lb[bound] = INFINITY;
+      lb[bound] = -INFINITY;
       ub[bound] = INFINITY;
       ++bound;
 
@@ -440,7 +442,7 @@ private:
 
       // v_t and v_robot (no constraints)
       for (bound; bound < z.size(); ++bound) {
-        lb[bound] = INFINITY;
+        lb[bound] = -INFINITY;
         ub[bound] = INFINITY;
       }
 
@@ -458,6 +460,9 @@ private:
       ROS_INFO_STREAM("QP solved successfully: " << z);
 
       // Copy over result
+      VectorNd torques;
+      z.get_sub_vec(torque_idx, torque_idx + req.torque_limits.size(), torques);
+      ROS_INFO_STREAM("Torques: " << torques);
       res.torques.reserve(req.torque_limits.size());
       for (unsigned int i = torque_idx; i < torque_idx + req.torque_limits.size(); ++i) {
         res.torques.push_back(z[i]);
