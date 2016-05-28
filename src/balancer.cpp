@@ -308,6 +308,7 @@ private:
       // Set up minimization function
       ROS_INFO("Calculating H");
       MatrixNd H(z.size(), z.size());
+      H.set_zero();
       H.set_sub_mat(v_t_delta_idx, v_t_delta_idx, M_pole);
       ROS_INFO_STREAM("H: " << H);
 
