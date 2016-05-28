@@ -21,6 +21,7 @@
 #include <Ravelin/URDFReaderd.h>
 #include <Ravelin/RigidBodyd.h>
 #include <Ravelin/Jointd.h>
+#include <Ravelin/RCArticulatedBodyd.h>
 
 namespace {
 using namespace std;
@@ -133,7 +134,10 @@ private:
     robot_model::RobotModelPtr kinematicModel;
 
     //! Ravelin dynamic body
-    boost::shared_ptr<Ravelin::DynamicBodyd> robotBody;
+    boost::shared_ptr<Ravelin::RCArticulatedBodyd> body;
+
+    //! Record the indexes into the body for the two sets of arm joints
+    map<string, pair<int, int> > jointIndices;
 
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
@@ -200,8 +204,35 @@ public:
             ROS_ERROR("Failed to parse URDF: %s", urdfLocation.c_str());
         }
 
+        ROS_INFO("Creating body");
+        body = boost::shared_ptr<Ravelin::RCArticulatedBodyd>(new Ravelin::RCArticulatedBodyd());
+        body->set_links_and_joints(links, joints);
+        body->set_floating_base(false);
+        ROS_INFO("Body created correctly");
+
         for (unsigned int k = 0; k < boost::size(ARMS); ++k) {
             const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[k]);
+
+            // Determine the indices for the arms within the body joints in Ravelin
+            int lowerIndex = -1;
+            int upperIndex = -1;
+            int curr = 0;
+            for (int l = 0; l < joints.size(); ++l) {
+                if (joints[l]->joint_id == jointModelGroup->getActiveJointModelNames()[0]) {
+                    assert(lowerIndex == -1);
+                    lowerIndex = curr;
+                }
+                if (joints[l]->joint_id == jointModelGroup->getActiveJointModelNames().back()) {
+                    assert(upperIndex == -1);
+                    upperIndex = curr;
+                }
+                curr += joints[l]->num_dof();
+            }
+
+            assert(lowerIndex != -1);
+            assert(upperIndex != -1);
+
+            jointIndices[ARMS[k]] = pair<int, int>(lowerIndex, upperIndex);
 
             ROS_INFO("Loading joint limits for arm %s", ARMS[k].c_str());
             for (unsigned int i = 0; i < jointModelGroup->getActiveJointModels().size(); ++i) {
@@ -456,15 +487,20 @@ private:
 
                     // Get the inertia matrix
                     Ravelin::MatrixNd robotInertiaMatrix;
-                    robotBody->get_generalized_inertia(robotInertiaMatrix);
-                    calcTorques.request.robot_inertia_matrix = vector<double>(robotInertiaMatrix.data(), robotInertiaMatrix.data() + robotInertiaMatrix.size());
+                    body->get_generalized_inertia(robotInertiaMatrix);
+
+                    Ravelin::MatrixNd armMatrix;
+                    robotInertiaMatrix.get_sub_mat(jointIndices[ARMS[i]].first, jointIndices[ARMS[i]].second + 1,
+                                                                            jointIndices[ARMS[i]].first, jointIndices[ARMS[i]].second + 1, armMatrix);
+
+                    calcTorques.request.robot_inertia_matrix = vector<double>(armMatrix.data(), armMatrix.data() + armMatrix.size());
 
                     // Get the jacobian
                     robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
                     const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[i]);
                     Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
 
-                    const vector<const robot_model::JointModel*>& jointModels = jointModelGroup->getJointModels();
+                    const vector<const robot_model::JointModel*>& jointModels = jointModelGroup->getActiveJointModels();
                     calcTorques.request.joint_velocity.resize(jointModels.size());
                     for (vector<const robot_model::JointModel*>::const_iterator joint = jointModels.begin(); joint != jointModels.end(); ++joint) {
                         // Assume all joints are 1 dof

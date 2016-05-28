@@ -24,6 +24,9 @@ private:
     //! Private nh
     ros::NodeHandle pnh;
 
+    //! Linear algebra object
+    LinAlgd linAlgd;
+
     //! Balancer Service
     ros::ServiceServer balancerService;
 
@@ -152,7 +155,7 @@ private:
       // M_robot
       ROS_INFO("Calculating M_robot");
       MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size(), &req.robot_inertia_matrix[0]);
-
+      ROS_INFO_STREAM("M_robot rank: " << linAlgd.calc_rank(M_robot) << " Cond number: " << linAlgd.cond(M_robot));
       // M
       // | M_pole 0  |
       // | 0 M_robot |
@@ -341,7 +344,6 @@ private:
       // -v_t - M_inv * delta_t * f_ext = M_inv * P_t * torque + M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + delta_t * M_inv * Q_t * f_robot + -I * v_(t + t_delta)
 
       ROS_INFO("Inverting M");
-      LinAlgd linAlgd;
       MatrixNd M_inverse = M;
       linAlgd.invert(M_inverse);
 
