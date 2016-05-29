@@ -14,7 +14,7 @@ using namespace humanoid_catching;
 using namespace Ravelin;
 
 static const double GRAVITY = 9.81;
-static const double POLE_DOF = 6;
+static const unsigned int POLE_DOF = 6;
 
 class Balancer {
 private:
@@ -307,6 +307,7 @@ private:
       const int f_t_idx = f_s_idx + 1;
       const int f_robot_idx = f_t_idx + 1;
       const int v_t_delta_idx = f_robot_idx + 1;
+      const int v_t_delta_robot_idx = v_t_delta_idx + POLE_DOF;
       VectorNd z(req.torque_limits.size() + 1 + 1 + 1 + 1 + POLE_DOF + req.joint_velocity.size());
 
       // Set up minimization function
@@ -463,6 +464,15 @@ private:
       VectorNd torques;
       z.get_sub_vec(torque_idx, torque_idx + req.torque_limits.size(), torques);
       ROS_INFO_STREAM("Torques: " << torques);
+
+      VectorNd pole_velocities;
+      z.get_sub_vec(v_t_delta_idx, v_t_delta_idx + POLE_DOF, pole_velocities);
+      ROS_INFO_STREAM("pole_velocities: " << pole_velocities);
+
+      VectorNd arm_velocities;
+      z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + req.torque_limits.size(), arm_velocities);
+      ROS_INFO_STREAM("arm_velocities: " << arm_velocities);
+
       res.torques.reserve(req.torque_limits.size());
       for (unsigned int i = torque_idx; i < torque_idx + req.torque_limits.size(); ++i) {
         res.torques.push_back(z[i]);
