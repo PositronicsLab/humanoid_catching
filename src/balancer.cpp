@@ -84,95 +84,95 @@ private:
     bool calculateTorques(humanoid_catching::CalculateTorques::Request& req,
                           humanoid_catching::CalculateTorques::Response& res) {
 
-      ROS_INFO("Calculating torques frame %s", req.header.frame_id.c_str());
+      ROS_INFO("Calculating torques");
 
       // x_pole
       // linear velocity of body
-      ROS_INFO("Calculating x_pole vector");
+      ROS_DEBUG("Calculating x_pole vector");
       const Vector3d x_pole = to_vector(req.body_velocity.linear);
-      ROS_INFO_STREAM("x_pole: " << x_pole);
+      ROS_DEBUG_STREAM("x_pole: " << x_pole);
 
       // w_pole
       // angular velocity of body
-      ROS_INFO("Calculating w_pole vector");
+      ROS_DEBUG("Calculating w_pole vector");
       const Vector3d w_pole = to_vector(req.body_velocity.angular);
-      ROS_INFO_STREAM("w_pole: " << w_pole);
+      ROS_DEBUG_STREAM("w_pole: " << w_pole);
 
       // v_pole(t)
       // | x_pole |
       // | w_pole |
-      ROS_INFO("Calculating v_pole vector");
+      ROS_DEBUG("Calculating v_pole vector");
       VectorNd v_pole(POLE_DOF);
       v_pole.set_sub_vec(0, x_pole);
       v_pole.set_sub_vec(3, w_pole);
-      ROS_INFO_STREAM("v_pole: " << v_pole);
+      ROS_DEBUG_STREAM("v_pole: " << v_pole);
 
       // v_robot
       // joint velocities of the robot
-      ROS_INFO("Calculating v_robot vector");
+      ROS_DEBUG("Calculating v_robot vector");
       const VectorNd v_robot = to_vector(req.joint_velocity);
-      ROS_INFO_STREAM("v_robot: " << v_robot);
+      ROS_DEBUG_STREAM("v_robot: " << v_robot);
 
       // v(t)
       // | v_pole |
       // | v_robot |
-      ROS_INFO("Calculating v vector");
+      ROS_DEBUG("Calculating v vector");
       VectorNd v(POLE_DOF + req.joint_velocity.size());
       v.set_sub_vec(0, v_pole);
       v.set_sub_vec(POLE_DOF, v_robot);
-      ROS_INFO_STREAM("v: " << v);
+      ROS_DEBUG_STREAM("v: " << v);
 
       // R
       // Pole rotation matrix
-      ROS_INFO("Calculating R matrix");
+      ROS_DEBUG("Calculating R matrix");
       const Matrix3d R = Quatd(req.body_com.orientation.x, req.body_com.orientation.y, req.body_com.orientation.z, req.body_com.orientation.w);
-      ROS_INFO_STREAM("R: " << R);
+      ROS_DEBUG_STREAM("R: " << R);
 
       // J
       // Pole inertia matrix
-      ROS_INFO("Calculating J matrix");
+      ROS_DEBUG("Calculating J matrix");
       const Matrix3d J = Matrix3d(&req.body_inertia_matrix[0]);
-      ROS_INFO_STREAM("J: " << J);
+      ROS_DEBUG_STREAM("J: " << J);
 
       // RJR_t
-      ROS_INFO("Calculating RJR");
+      ROS_DEBUG("Calculating RJR");
       Matrix3d RJ, RJR;
       R.mult(J, RJ);
       RJ.mult_transpose(R, RJR);
-      ROS_INFO_STREAM("RJR: " << RJR);
+      ROS_DEBUG_STREAM("RJR: " << RJR);
 
       // M_pole
       // | Im   0 |
       // | 0 RJR_t|
-      ROS_INFO("Calculating M_pole");
+      ROS_DEBUG("Calculating M_pole");
       MatrixNd M_pole(POLE_DOF, POLE_DOF);
       M_pole.set_zero();
       M_pole.set_sub_mat(0, 0, Matrix3d::identity() * req.body_mass);
       M_pole.set_sub_mat(3, 3, RJR);
-      ROS_INFO_STREAM("M_pole: " << M_pole);
+      ROS_DEBUG_STREAM("M_pole: " << M_pole);
 
       // M_robot
-      ROS_INFO("Calculating M_robot");
+      ROS_DEBUG("Calculating M_robot");
       MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size(), &req.robot_inertia_matrix[0]);
       assert(linAlgd.calc_rank(M_robot) == req.joint_velocity.size());
-      ROS_INFO_STREAM("M_robot: " << M_robot);
+      ROS_DEBUG_STREAM("M_robot: " << M_robot);
 
       // M
       // | M_pole 0  |
       // | 0 M_robot |
-      ROS_INFO("Calculating M");
+      ROS_DEBUG("Calculating M");
       MatrixNd M(POLE_DOF + req.joint_velocity.size(), POLE_DOF + req.joint_velocity.size());
       M.set_zero();
       M.set_sub_mat(0, 0, M_pole);
       M.set_sub_mat(M_pole.rows(), M_pole.columns(), M_robot);
-      ROS_INFO_STREAM("M: " << M);
+      ROS_DEBUG_STREAM("M: " << M);
 
       // J_robot
       // Robot end effector jacobian matrix
-      ROS_INFO("Calculating J_robot");
+      ROS_DEBUG("Calculating J_robot");
       MatrixNd J_robot = MatrixNd(6, req.torque_limits.size(), &req.jacobian_matrix[0]);
       assert(linAlgd.calc_rank(J_robot) == 6);
-      ROS_INFO_STREAM("J_robot: " << J_robot);
+      ROS_DEBUG_STREAM("J_robot: " << J_robot);
 
       // delta t
       double delta_t = req.time_delta.toSec();
@@ -184,103 +184,103 @@ private:
       // | g           |
       // | -w x RJR_tw |
       // | 0           |
-      ROS_INFO("Calculating f_ext");
+      ROS_DEBUG("Calculating f_ext");
       VectorNd f_ext(POLE_DOF + req.joint_velocity.size());
       f_ext.set_zero();
       f_ext[2] = GRAVITY;
       f_ext.set_sub_vec(3, Vector3d::cross(-w_pole, RJR.mult(w_pole, temp_vector)));
-      ROS_INFO_STREAM("f_ext: " << f_ext);
+      ROS_DEBUG_STREAM("f_ext: " << f_ext);
 
       // n_hat
       // contact normal
       // TODO: Pass in ground contact normal
-      ROS_INFO("Calculating n_hat");
+      ROS_DEBUG("Calculating n_hat");
       Vector3d n_hat;
       n_hat[0] = 1;
       n_hat[1] = 0;
       n_hat[2] = 0;
-      ROS_INFO_STREAM("n_hat: " << n_hat);
+      ROS_DEBUG_STREAM("n_hat: " << n_hat);
 
       // s_hat
       // vector orthogonal to contact normal
-      ROS_INFO("Calculating s_hat");
+      ROS_DEBUG("Calculating s_hat");
       Vector3d s_hat;
       s_hat[0] = 0;
       s_hat[1] = 1;
       s_hat[2] = 0;
-      ROS_INFO_STREAM("s_hat: " << s_hat);
+      ROS_DEBUG_STREAM("s_hat: " << s_hat);
 
       // t_hat
       // vector orthogonal to contact normal
-      ROS_INFO("Calculating t_hat");
+      ROS_DEBUG("Calculating t_hat");
       Vector3d t_hat;
       t_hat[0] = 0;
       t_hat[1] = 0;
       t_hat[2] = 1;
-      ROS_INFO_STREAM("t_hat: " << t_hat);
+      ROS_DEBUG_STREAM("t_hat: " << t_hat);
 
       // q_hat
       // contact normal
-      ROS_INFO("Calculating q_hat");
+      ROS_DEBUG("Calculating q_hat");
       const Vector3d q_hat = to_vector(req.contact_normal);
-      ROS_INFO_STREAM("q_hat: " << q_hat);
+      ROS_DEBUG_STREAM("q_hat: " << q_hat);
 
       // p
       // contact point
-      ROS_INFO("Calculating P");
+      ROS_DEBUG("Calculating P");
       const Vector3d p = to_vector(req.ground_contact);
-      ROS_INFO_STREAM("p: " << p);
+      ROS_DEBUG_STREAM("p: " << p);
 
       // x_bar
       // pole COM
-      ROS_INFO("Calculating x_bar");
+      ROS_DEBUG("Calculating x_bar");
       const Vector3d x_bar = to_vector(req.body_com.position);
-      ROS_INFO_STREAM("x_bar: " << x_bar);
+      ROS_DEBUG_STREAM("x_bar: " << x_bar);
 
       // r
-      ROS_INFO("Calculating r");
+      ROS_DEBUG("Calculating r");
       const Vector3d r = p - x_bar;
-      ROS_INFO_STREAM("r: " << r);
+      ROS_DEBUG_STREAM("r: " << r);
 
       // N
       // | n_hat     |
       // | r x n_hat |
       // | 0         |
-      ROS_INFO("Calculating N");
+      ROS_DEBUG("Calculating N");
       VectorNd N(POLE_DOF + req.joint_velocity.size());
       N.set_zero();
       N.set_sub_vec(0, n_hat);
       N.set_sub_vec(3, r.cross(n_hat, temp_vector));
-      ROS_INFO_STREAM("N: " << N);
+      ROS_DEBUG_STREAM("N: " << N);
 
       // S
       // | s_hat     |
       // | r x s_hat |
       // | 0         |
-      ROS_INFO("Calculating S");
+      ROS_DEBUG("Calculating S");
       VectorNd S(POLE_DOF + req.joint_velocity.size());
       S.set_zero();
       S.set_sub_vec(0, s_hat);
       S.set_sub_vec(3, r.cross(s_hat, temp_vector));
-      ROS_INFO_STREAM("S: " << S);
+      ROS_DEBUG_STREAM("S: " << S);
 
       // T
       // | t_hat     |
       // | r x t_hat |
       // | 0         |
-      ROS_INFO("Calculating T");
+      ROS_DEBUG("Calculating T");
       VectorNd T(POLE_DOF + req.joint_velocity.size());
       T.set_zero();
       T.set_sub_vec(0, t_hat);
       T.set_sub_vec(3, r.cross(t_hat, temp_vector));
-      ROS_INFO_STREAM("T: " << T);
+      ROS_DEBUG_STREAM("T: " << T);
 
       // Q
       // | q_hat        |
       // | r x q_hat    |
       // | | -q_hat | J |
       // | |    0   |   |
-      ROS_INFO("Calculating Q");
+      ROS_DEBUG("Calculating Q");
       VectorNd Q(POLE_DOF + req.joint_velocity.size());
       Q.set_zero();
       Q.set_sub_vec(0, q_hat);
@@ -291,10 +291,10 @@ private:
       VectorNd J_q_hat(req.joint_velocity.size());
       J.mult(q_hat_extended, J_q_hat);
       Q.set_sub_vec(6, J_q_hat);
-      ROS_INFO_STREAM("Q: " << Q);
+      ROS_DEBUG_STREAM("Q: " << Q);
 
       // P
-      ROS_INFO("Calculating P");
+      ROS_DEBUG("Calculating P");
       MatrixNd P(POLE_DOF + req.joint_velocity.size(), req.joint_velocity.size());
       P.set_zero();
       P.set_sub_mat(6, 0, MatrixNd::identity(req.joint_velocity.size()));
@@ -311,19 +311,19 @@ private:
       VectorNd z(req.torque_limits.size() + 1 + 1 + 1 + 1 + POLE_DOF + req.joint_velocity.size());
 
       // Set up minimization function
-      ROS_INFO("Calculating H");
+      ROS_DEBUG("Calculating H");
       MatrixNd H(z.size(), z.size());
       H.set_zero();
       H.set_sub_mat(v_t_delta_idx, v_t_delta_idx, M_pole);
-      ROS_INFO_STREAM("H: " << H);
+      ROS_DEBUG_STREAM("H: " << H);
 
-      ROS_INFO("Calculating c");
+      ROS_DEBUG("Calculating c");
       VectorNd c(z.rows());
       c.set_zero(c.rows());
-      ROS_INFO_STREAM("c: " << c);
+      ROS_DEBUG_STREAM("c: " << c);
 
       // Linear equality constraints
-      ROS_INFO("Calculating A + b");
+      ROS_DEBUG("Calculating A + b");
       MatrixNd A(1 * 2 + POLE_DOF + req.joint_velocity.size(), z.size());
       A.set_zero();
 
@@ -332,48 +332,49 @@ private:
 
       unsigned idx = 0;
 
-      ROS_INFO("Setting Sv constraint");
+      ROS_DEBUG("Setting Sv constraint");
       // Sv(t + t_delta) = 0 (no tangent velocity)
       A.set_sub_mat(idx, v_t_delta_idx, S);
       b.set_sub_vec(idx, VectorNd::zero(1));
       idx += 1;
 
-      ROS_INFO("Setting Tv constraint");
+      ROS_DEBUG("Setting Tv constraint");
       // Tv(t + t_delta) = 0 (no tangent velocity)
       A.set_sub_mat(idx, v_t_delta_idx, T);
       b.set_sub_vec(idx, VectorNd::zero(1));
       idx += 1;
 
-      ROS_INFO("Setting velocity constraint");
-      // v_(t + t_delta) = v_t + M_inv (N_t * f_n + S_t * f_s + T_t * f_t + delta_t * f_ext + P_t * torque + delta_t * Q_t * f_robot)
+      ROS_DEBUG("Setting velocity constraint");
+      // v_(t + t_delta) = v_t + M_inv (N_t * f_n + S_t * f_s + T_t * f_t + delta_t * f_ext + delta_t * P_t * torque + delta_t * Q_t * f_robot)
       // Manipulated to fit constraint form
-      // -v_t - M_inv * delta_t * f_ext = M_inv * P_t * torque + M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + delta_t * M_inv * Q_t * f_robot + -I * v_(t + t_delta)
+      // -v_t - M_inv * delta_t * f_ext = M_inv * delta_t * P_t * torque + M_inv * N_t * f_n + M_inv * S_t * f_s + M_inv * T_t * f_t + delta_t * M_inv * Q_t * f_robot + -I * v_(t + t_delta)
 
-      ROS_INFO("Inverting M");
+      ROS_DEBUG("Inverting M");
       MatrixNd M_inverse = M;
       linAlgd.invert(M_inverse);
 
-      ROS_INFO("Calculating M_inverse P");
+      ROS_DEBUG("Calculating M_inverse P");
       MatrixNd M_inverse_P(M_inverse.rows(), P.columns());
       M_inverse.mult(P, M_inverse_P);
+      M_inverse_P *= delta_t;
       A.set_sub_mat(idx, torque_idx, M_inverse_P);
 
-      ROS_INFO("Calculating M_inverse N");
+      ROS_DEBUG("Calculating M_inverse N");
       MatrixNd M_inverse_N(M_inverse.rows(), N.columns());
       M_inverse.mult(N, M_inverse_N);
       A.set_sub_mat(idx, f_n_idx, M_inverse_N);
 
-      ROS_INFO("Calculating M_inverse S");
+      ROS_DEBUG("Calculating M_inverse S");
       MatrixNd M_inverse_S(M_inverse.rows(), S.columns());
       M_inverse.mult(S, M_inverse_S);
       A.set_sub_mat(idx, f_s_idx, M_inverse_S);
 
-      ROS_INFO("Calculating M_inverse T");
+      ROS_DEBUG("Calculating M_inverse T");
       MatrixNd M_inverse_T(M_inverse.rows(), T.columns());
       M_inverse.mult(T, M_inverse_T);
       A.set_sub_mat(idx, f_t_idx, M_inverse_T);
 
-      ROS_INFO("Calculating M_inverse Q");
+      ROS_DEBUG("Calculating M_inverse Q");
       MatrixNd M_inverse_Q(M_inverse.rows(), Q.columns());
       M_inverse.mult(Q, M_inverse_Q);
       M_inverse_Q *= delta_t;
@@ -381,7 +382,7 @@ private:
 
       A.set_sub_mat(idx, v_t_delta_idx, MatrixNd::identity(POLE_DOF + req.joint_velocity.size()).negate());
 
-      ROS_INFO("Calculating M_inverse F_ext");
+      ROS_DEBUG("Calculating M_inverse F_ext");
       VectorNd M_inverse_F_ext(POLE_DOF);
       M_inverse_F_ext.set_zero();
       M_inverse.mult(f_ext, M_inverse_F_ext, delta_t);
@@ -389,7 +390,7 @@ private:
       b.set_sub_vec(idx, M_inverse_F_ext);
 
       // Linear inequality constraints
-      ROS_INFO("Calculating Mc and q");
+      ROS_DEBUG("Calculating Mc and q");
       MatrixNd Mc(N.rows() + Q.rows(), z.size());
       Mc.set_zero();
 
@@ -406,11 +407,11 @@ private:
       Mc.set_sub_mat(idx, v_t_delta_idx, Q);
       q.set_sub_vec(idx, VectorNd::zero(Q.rows()));
 
-      ROS_INFO_STREAM("Mc: " << Mc);
-      ROS_INFO_STREAM("q: " << q);
+      ROS_DEBUG_STREAM("Mc: " << Mc);
+      ROS_DEBUG_STREAM("q: " << q);
 
       // Solution variable constraint
-      ROS_INFO("Calculating lb and ub");
+      ROS_DEBUG("Calculating lb and ub");
       VectorNd lb(z.size());
       VectorNd ub(z.size());
 
@@ -453,11 +454,11 @@ private:
         ub[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].maximum;
       }
 
-      ROS_INFO_STREAM("lb: " << lb);
-      ROS_INFO_STREAM("ub: " << ub);
+      ROS_DEBUG_STREAM("lb: " << lb);
+      ROS_DEBUG_STREAM("ub: " << ub);
 
       // Call solver
-      ROS_INFO("Calling solver");
+      ROS_DEBUG("Calling solver");
       Moby::QPOASES qp;
       if (!qp.qp_activeset(H, c, lb, ub, Mc, q, A, b, z)){
             ROS_ERROR("QP failed to find feasible point");

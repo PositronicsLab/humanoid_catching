@@ -17,7 +17,7 @@ static const double GAMMA = 1e4;
 
 void ForceController::commandCB(const humanoid_catching::MoveConstPtr &command)
 {
-    ROS_INFO("Force controller with kinematic chain ending at %s received a new move command", tip_name.c_str());
+    ROS_DEBUG("Force controller with kinematic chain ending at %s received a new move command", tip_name.c_str());
     if (command->header.frame_id != "/" + root_name)
     {
         ROS_ERROR("Move commands must be in the %s frame. Command was in the %s frame.",

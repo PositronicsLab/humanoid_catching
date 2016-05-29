@@ -453,7 +453,7 @@ private:
 
     bool endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const
     {
-        ROS_INFO("Waiting for wrist transforms");
+        ROS_DEBUG("Waiting for wrist transforms");
         if(!tf.waitForTransform("/map", "/l_wrist_roll_link", header.stamp, ros::Duration(1)) ||
                 !tf.waitForTransform("/map", "r_wrist_roll_link", header.stamp, ros::Duration(1)))
         {
@@ -504,7 +504,7 @@ private:
         ROS_DEBUG("Fall predicted successfully");
 
         // Transform to the base_frame of the human (and therefore the obstacle) for IK, which is torso_lift_link
-        ROS_INFO("Waiting for transform");
+        ROS_DEBUG("Waiting for /torso_lift_link transform");
         if(!tf.waitForTransform(predictFall.response.header.frame_id, "/torso_lift_link", predictFall.response.header.stamp, ros::Duration(15)))
         {
             ROS_WARN("Failed to get transform from %s to /torso_lift_link", predictFall.response.header.frame_id.c_str());
@@ -520,8 +520,6 @@ private:
         // Determine if the robot is currently in contact
         if (isRobotInContact(predictFall.response))
         {
-            ROS_INFO("Robot is in contact. Executing balancing");
-
             // Determine which arms to execute balancing for.
             for (unsigned int i = 0; i < boost::size(ARMS); ++i)
             {
@@ -533,7 +531,7 @@ private:
                 }
                 else
                 {
-                    ROS_INFO("Executing balancing for arm %s", ARMS[i].c_str());
+                    ROS_INFO("Robot is in contact. Executing balancing for arm %s", ARMS[i].c_str());
                 }
 
                 humanoid_catching::CalculateTorques calcTorques;
@@ -726,9 +724,6 @@ private:
                 }
             }
 
-            ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
-                     ros::Time::now().toSec() - startRosTime.toSec());
-
             if (bestSolution == solutions.end())
             {
                 ROS_WARN("No solutions found");
@@ -767,6 +762,9 @@ private:
                 }
             }
         }
+
+        ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
+        ros::Time::now().toSec() - startRosTime.toSec());
         as.setSucceeded();
     }
 };
