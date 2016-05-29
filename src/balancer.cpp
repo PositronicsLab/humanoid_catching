@@ -193,20 +193,19 @@ private:
 
       // n_hat
       // contact normal
-      // TODO: Pass in ground contact normal
       ROS_DEBUG("Calculating n_hat");
       Vector3d n_hat;
-      n_hat[0] = 1;
+      n_hat[0] = 0;
       n_hat[1] = 0;
-      n_hat[2] = 0;
+      n_hat[2] = 1;
       ROS_DEBUG_STREAM("n_hat: " << n_hat);
 
       // s_hat
       // vector orthogonal to contact normal
       ROS_DEBUG("Calculating s_hat");
       Vector3d s_hat;
-      s_hat[0] = 0;
-      s_hat[1] = 1;
+      s_hat[0] = 1;
+      s_hat[1] = 0;
       s_hat[2] = 0;
       ROS_DEBUG_STREAM("s_hat: " << s_hat);
 
@@ -215,8 +214,8 @@ private:
       ROS_DEBUG("Calculating t_hat");
       Vector3d t_hat;
       t_hat[0] = 0;
-      t_hat[1] = 0;
-      t_hat[2] = 1;
+      t_hat[1] = 1;
+      t_hat[2] = 0;
       ROS_DEBUG_STREAM("t_hat: " << t_hat);
 
       // q_hat
