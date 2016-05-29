@@ -36,6 +36,7 @@ static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_for
 static const string ARM_GOAL_VIZ_TOPICS[] = {"/catch_human_action_server/movement_goal/left_arm", "/catch_human_action_server/movement_goal/right_arm"};
 static const double MAX_VELOCITY = 100;
 static const double MAX_ACCELERATION = 100;
+static const double MAX_EFFORT = 100;
 
 //! Tolerance of time to be considered in contact
 static const ros::Duration CONTACT_TIME_TOLERANCE = ros::Duration(0.1);
@@ -45,8 +46,8 @@ static const double pi = boost::math::constants::pi<double>();
 
 struct Limit
 {
-    Limit() : velocity(0.0), acceleration(0.0) {}
-    Limit(double aVelocity, double aAcceleration, double aEffort) : velocity(aVelocity), acceleration(aAcceleration), effort(effort) {}
+    Limit() : velocity(0.0), acceleration(0.0), effort(0.0) {}
+    Limit(double aVelocity, double aAcceleration, double aEffort) : velocity(aVelocity), acceleration(aAcceleration), effort(aEffort) {}
     double velocity;
     double acceleration;
     double effort;
@@ -227,7 +228,7 @@ public:
         {
             const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[k]);
 
-            // Determine the indices for the arms within the body joints in Ravelin
+            // Determine the indexes for the arms within the body joints in Ravelin
             int lowerIndex = -1;
             int upperIndex = -1;
             int curr = 0;
@@ -261,17 +262,17 @@ public:
                 jointStates[jointName] = State(0.0, 0.0);
 
                 const string prefix = "robot_description_planning/joint_limits/" + jointName + "/";
-                ROS_INFO_NAMED("catch_human_action_server", "Loading velocity and accleration limits for joint %s", jointName.c_str());
+                ROS_DEBUG_NAMED("catch_human_action_server", "Loading velocity and acceleration limits for joint %s", jointName.c_str());
 
                 bool has_vel_limits;
                 double max_velocity;
                 if (nh.getParam(prefix + "has_velocity_limits", has_vel_limits) && has_vel_limits && nh.getParam(prefix + "max_velocity", max_velocity))
                 {
-                    ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity to %f", max_velocity);
+                    ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to %f", max_velocity);
                 }
                 else
                 {
-                    ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity to default");
+                    ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to default");
                     max_velocity = MAX_VELOCITY;
                 }
 
@@ -279,11 +280,11 @@ public:
                 double max_acc;
                 if (nh.getParam(prefix + "has_acceleration_limits", has_acc_limits) && has_acc_limits && nh.getParam(prefix + "max_acceleration", max_acc))
                 {
-                    ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration to %f", max_acc);
+                    ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to %f", max_acc);
                 }
                 else
                 {
-                    ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration to default");
+                    ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to default");
                     max_acc = MAX_ACCELERATION;
                 }
 
@@ -293,10 +294,12 @@ public:
                 if (ujoint != NULL && ujoint->limits)
                 {
                     max_effort = ujoint->limits->effort;
+                    ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointName.c_str());
                 }
                 else
                 {
-                    max_effort = 0;
+                    ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointName.c_str());
+                    max_effort = MAX_EFFORT;
                 }
                 jointLimits[jointName] = Limit(max_velocity, max_acc, max_effort);
             }
@@ -503,7 +506,7 @@ private:
         ROS_INFO("Waiting for transform");
         if(!tf.waitForTransform(predictFall.response.header.frame_id, "/torso_lift_link", predictFall.response.header.stamp, ros::Duration(15)))
         {
-            ROS_WARN("Failed to get transform");
+            ROS_WARN("Failed to get transform from %s to /torso_lift_link", predictFall.response.header.frame_id.c_str());
             as.setAborted();
             return;
         }
@@ -557,12 +560,11 @@ private:
                 const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[i]);
                 Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
 
-                const vector<const robot_model::JointModel*>& jointModels = jointModelGroup->getActiveJointModels();
-                calcTorques.request.joint_velocity.resize(jointModels.size());
-                for (vector<const robot_model::JointModel*>::const_iterator joint = jointModels.begin(); joint != jointModels.end(); ++joint)
-                {
-                    // Assume all joints are 1 dof
-                    calcTorques.request.joint_velocity[i] = currentRobotState.getJointVelocities(*joint)[0];
+                // Set current velocities
+                const vector<string>& jointModelNames = jointModelGroup->getActiveJointModelNames();
+                calcTorques.request.joint_velocity.resize(jointModelNames.size());
+                for (unsigned int j = 0; j < jointModelNames.size(); ++j) {
+                    calcTorques.request.joint_velocity[j] = jointStates[jointModelNames[j]].velocity;
                 }
 
                 // Convert to raw type
@@ -570,12 +572,17 @@ private:
                 Eigen::Map<Eigen::MatrixXd>(&calcTorques.request.jacobian_matrix[0], jacobian.rows(), jacobian.cols()) = jacobian;
 
                 // Set the joint limits
-                calcTorques.request.torque_limits.resize(jointModelGroup->getActiveJointModelNames().size());
-                for (unsigned int j = 0; j < jointModelGroup->getActiveJointModelNames().size(); ++j)
+                calcTorques.request.torque_limits.resize(jointModelNames.size());
+                calcTorques.request.velocity_limits.resize(jointModelNames.size());
+                for (unsigned int j = 0; j < jointModelNames.size(); ++j)
                 {
-                    double maxEffort = jointLimits[jointModelGroup->getActiveJointModelNames()[j]].effort;
+                    double maxEffort = jointLimits[jointModelNames[j]].effort;
                     calcTorques.request.torque_limits[j].minimum = -maxEffort;
                     calcTorques.request.torque_limits[j].maximum = maxEffort;
+
+                    double maxVelocity = jointLimits[jointModelNames[j]].velocity;
+                    calcTorques.request.velocity_limits[j].minimum = -maxVelocity;
+                    calcTorques.request.velocity_limits[j].maximum = maxVelocity;
                 }
 
                 ROS_DEBUG("Calculating torques");

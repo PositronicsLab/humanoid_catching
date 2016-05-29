@@ -442,6 +442,7 @@ private:
       ++bound;
 
       // v_t and v_robot (no constraints)
+      // TODO: Add robot velocity constraints
       for (bound; bound < z.size(); ++bound) {
         lb[bound] = -INFINITY;
         ub[bound] = INFINITY;
