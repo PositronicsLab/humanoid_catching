@@ -441,11 +441,16 @@ private:
       ub[bound] = INFINITY;
       ++bound;
 
-      // v_t and v_robot (no constraints)
-      // TODO: Add robot velocity constraints
-      for (bound; bound < z.size(); ++bound) {
+      // v_t pole(no constraints)
+      for (bound; bound < v_t_delta_robot_idx; ++bound) {
         lb[bound] = -INFINITY;
         ub[bound] = INFINITY;
+      }
+
+      // v_t robot
+      for (bound; bound < z.size(); ++bound) {
+        lb[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].minimum;
+        ub[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].maximum;
       }
 
       ROS_INFO_STREAM("lb: " << lb);

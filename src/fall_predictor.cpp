@@ -14,7 +14,7 @@ using namespace humanoid_catching;
 //! Default weight in kg
 static const double MASS_DEFAULT = 5;
 static const double HEIGHT_DEFAULT = 1.5;
-static const double RADIUS_DEFAULT = 1.5875; // Width of pole
+static const double RADIUS_DEFAULT = 0.025; // Width of pole
 
 static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;

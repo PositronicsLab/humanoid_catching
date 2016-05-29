@@ -210,6 +210,7 @@ public:
 
         string urdfLocation;
         pnh.param<string>("urdf", urdfLocation, "pr2.urdf");
+
         string robotName;
         vector<boost::shared_ptr<Ravelin::RigidBodyd> > links;
         vector<boost::shared_ptr<Ravelin::Jointd> > joints;
