@@ -467,6 +467,17 @@ private:
         return true;
     }
 
+    void sendTorques(const unsigned int arm, const vector<double>& torques) {
+        // Execute the movement
+        ROS_INFO("Dispatching torque command for arm %s", ARMS[arm].c_str());
+        humanoid_catching::Move command;
+        command.header.stamp = ros::Time::now();
+        command.header.frame_id = "/torso_lift_link";
+        command.has_torques = true;
+        command.torques = torques;
+        armCommandPubs[arm].publish(command);
+    }
+
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal)
     {
 
@@ -527,6 +538,9 @@ private:
                 if (fallPoint == predictFall.response.points.end())
                 {
                     ROS_INFO("Arm %s is not in contact", ARMS[i].c_str());
+                    vector<double> zeroTorques;
+                    zeroTorques.resize(7);
+                    sendTorques(i, zeroTorques);
                     continue;
                 }
                 else
@@ -588,19 +602,10 @@ private:
                 if (!balancer.call(calcTorques))
                 {
                     ROS_WARN("Calculating torques failed");
-                    as.setAborted();
-                    return;
+                    continue;
                 }
                 ROS_DEBUG("Torques calculated successfully");
-
-                // Execute the movement
-                ROS_INFO("Dispatching torque command for arm %s", ARMS[i].c_str());
-                humanoid_catching::Move command;
-                command.header.stamp = ros::Time::now();
-                command.header.frame_id = "/torso_lift_link";
-                command.has_torques = true;
-                command.torques = calcTorques.response.torques;
-                armCommandPubs[i].publish(command);
+                sendTorques(i, calcTorques.response.torques);
             }
         }
         else

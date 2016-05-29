@@ -449,9 +449,10 @@ private:
       }
 
       // v_t robot
+      // robot velocity constraints are not implemented as the velocities are not fully modeled.
       for (bound; bound < z.size(); ++bound) {
-        lb[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].minimum;
-        ub[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].maximum;
+        lb[bound] = -INFINITY;
+        ub[bound] = INFINITY;
       }
 
       ROS_DEBUG_STREAM("lb: " << lb);
