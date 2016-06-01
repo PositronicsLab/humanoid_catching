@@ -174,7 +174,7 @@ private:
 
       // delta t
       double delta_t = req.time_delta.toSec();
-      ROS_INFO_STREAM("delta_t: " << delta_t);
+      ROS_DEBUG_STREAM("delta_t: " << delta_t);
 
       // Working vector
       Vector3d temp_vector;
@@ -295,7 +295,7 @@ private:
       ROS_DEBUG("Calculating P");
       MatrixNd P(POLE_DOF + req.joint_velocity.size(), req.joint_velocity.size());
       P.set_zero();
-      P.set_sub_mat(POLE_DOF, 0, MatrixNd::identity(req.joint_velocity.size()));
+      P.set_sub_mat(0, 0, MatrixNd::identity(req.joint_velocity.size()));
 
       // Result vector
       // Torques, f_n, f_s, f_t, f_robot, v_(t + t_delta)
@@ -350,10 +350,12 @@ private:
       ROS_DEBUG("Inverting M");
       MatrixNd M_inverse = M;
       linAlgd.invert(M_inverse);
+      ROS_DEBUG_STREAM("M_inverse: " << endl << M_inverse);
 
       ROS_DEBUG("Calculating M_inverse P");
       MatrixNd M_inverse_P(M_inverse.rows(), P.columns());
       M_inverse.mult(P, M_inverse_P);
+      ROS_DEBUG_STREAM("M_inverse_P" << M_inverse_P);
       M_inverse_P *= delta_t;
       A.set_sub_mat(idx, torque_idx, M_inverse_P);
 
@@ -361,20 +363,24 @@ private:
       MatrixNd M_inverse_N(M_inverse.rows(), N.columns());
       M_inverse.mult(N, M_inverse_N);
       A.set_sub_mat(idx, f_n_idx, M_inverse_N);
+      ROS_DEBUG_STREAM("M_inverse_N" << M_inverse_N);
 
       ROS_DEBUG("Calculating M_inverse S");
       MatrixNd M_inverse_S(M_inverse.rows(), S.columns());
       M_inverse.mult(S, M_inverse_S);
+      ROS_DEBUG_STREAM("M_inverse_S" << M_inverse_S);
       A.set_sub_mat(idx, f_s_idx, M_inverse_S);
 
       ROS_DEBUG("Calculating M_inverse T");
       MatrixNd M_inverse_T(M_inverse.rows(), T.columns());
       M_inverse.mult(T, M_inverse_T);
+      ROS_DEBUG_STREAM("M_inverse_T" << M_inverse_S);
       A.set_sub_mat(idx, f_t_idx, M_inverse_T);
 
       ROS_DEBUG("Calculating M_inverse Q");
       MatrixNd M_inverse_Q(M_inverse.rows(), Q.columns());
       M_inverse.mult(Q, M_inverse_Q);
+      ROS_DEBUG_STREAM("M_inverse_Q" << M_inverse_Q);
       M_inverse_Q *= delta_t;
       A.set_sub_mat(idx, f_robot_idx, M_inverse_Q);
 
@@ -384,7 +390,9 @@ private:
       VectorNd M_inverse_F_ext(POLE_DOF);
       M_inverse_F_ext.set_zero();
       M_inverse.mult(f_ext, M_inverse_F_ext, delta_t);
+      ROS_DEBUG_STREAM("M_inverse F_ext" << M_inverse_F_ext);
       M_inverse_F_ext.negate() -= v;
+      ROS_DEBUG_STREAM("-v - M_inverse F_ext" << M_inverse_F_ext);
       b.set_sub_vec(idx, M_inverse_F_ext);
 
       // Linear inequality constraints
@@ -479,9 +487,7 @@ private:
       z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + req.torque_limits.size(), arm_velocities);
       ROS_INFO_STREAM("arm_velocities: " << arm_velocities);
 
-      ROS_INFO_STREAM("f_robot: " << z[f_robot_idx]);
-
-      ROS_INFO_STREAM("f_n: " << z[f_n_idx] << " f_s: " << z[f_s_idx] << " f_t: " << z[f_t_idx]);
+      ROS_INFO_STREAM("f_robot: " << z[f_robot_idx] << " f_n: " << z[f_n_idx] << " f_s: " << z[f_s_idx] << " f_t: " << z[f_t_idx]);
 
       res.torques.reserve(req.torque_limits.size());
       for (unsigned int i = torque_idx; i < torque_idx + req.torque_limits.size(); ++i) {
