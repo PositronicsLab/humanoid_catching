@@ -111,7 +111,7 @@ private:
       // joint velocities of the robot
       ROS_DEBUG("Calculating v_robot vector");
       const VectorNd v_robot = to_vector(req.joint_velocity);
-      ROS_DEBUG_STREAM("v_robot: " << v_robot);
+      ROS_INFO_STREAM("v_robot: " << v_robot);
 
       // v(t)
       // | v_pole |
@@ -154,7 +154,6 @@ private:
       // M_robot
       ROS_DEBUG("Calculating M_robot");
       MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size(), &req.robot_inertia_matrix[0]);
-      assert(linAlgd.calc_rank(M_robot) == req.joint_velocity.size());
       ROS_DEBUG_STREAM("M_robot: " << M_robot);
 
       // M
@@ -171,11 +170,11 @@ private:
       // Robot end effector jacobian matrix
       ROS_DEBUG("Calculating J_robot");
       MatrixNd J_robot = MatrixNd(6, req.torque_limits.size(), &req.jacobian_matrix[0]);
-      assert(linAlgd.calc_rank(J_robot) == 6);
       ROS_DEBUG_STREAM("J_robot: " << J_robot);
 
       // delta t
       double delta_t = req.time_delta.toSec();
+      ROS_INFO_STREAM("delta_t: " << delta_t);
 
       // Working vector
       Vector3d temp_vector;
@@ -296,7 +295,7 @@ private:
       ROS_DEBUG("Calculating P");
       MatrixNd P(POLE_DOF + req.joint_velocity.size(), req.joint_velocity.size());
       P.set_zero();
-      P.set_sub_mat(6, 0, MatrixNd::identity(req.joint_velocity.size()));
+      P.set_sub_mat(POLE_DOF, 0, MatrixNd::identity(req.joint_velocity.size()));
 
       // Result vector
       // Torques, f_n, f_s, f_t, f_robot, v_(t + t_delta)
@@ -461,8 +460,8 @@ private:
       ROS_DEBUG("Calling solver");
       Moby::QPOASES qp;
       if (!qp.qp_activeset(H, c, lb, ub, Mc, q, A, b, z)){
-            ROS_ERROR("QP failed to find feasible point");
-            return false;
+        ROS_ERROR("QP failed to find feasible point");
+        return false;
       }
 
       ROS_INFO_STREAM("QP solved successfully: " << z);
@@ -479,6 +478,10 @@ private:
       VectorNd arm_velocities;
       z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + req.torque_limits.size(), arm_velocities);
       ROS_INFO_STREAM("arm_velocities: " << arm_velocities);
+
+      ROS_INFO_STREAM("f_robot: " << z[f_robot_idx]);
+
+      ROS_INFO_STREAM("f_n: " << z[f_n_idx] << " f_s: " << z[f_s_idx] << " f_t: " << z[f_t_idx]);
 
       res.torques.reserve(req.torque_limits.size());
       for (unsigned int i = torque_idx; i < torque_idx + req.torque_limits.size(); ++i) {
