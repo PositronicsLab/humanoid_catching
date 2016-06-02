@@ -295,7 +295,7 @@ private:
       ROS_DEBUG("Calculating P");
       MatrixNd P(POLE_DOF + req.joint_velocity.size(), req.joint_velocity.size());
       P.set_zero();
-      P.set_sub_mat(0, 0, MatrixNd::identity(req.joint_velocity.size()));
+      P.set_sub_mat(POLE_DOF, 0, MatrixNd::identity(req.joint_velocity.size()));
 
       // Result vector
       // Torques, f_n, f_s, f_t, f_robot, v_(t + t_delta)
