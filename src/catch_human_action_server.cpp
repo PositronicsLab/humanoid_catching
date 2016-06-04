@@ -399,10 +399,10 @@ private:
         return numArmsSolved;
     }
 
-    geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const std_msgs::Header& header) const
+    geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base = "/map") const
     {
         tf::StampedTransform tfStampedTransform;
-        tf.lookupTransform("/map", tfFrame, header.stamp, tfStampedTransform);
+        tf.lookupTransform(base, tfFrame, stamp, tfStampedTransform);
         geometry_msgs::TransformStamped stampedTransform;
         transformStampedTFToMsg(tfStampedTransform, stampedTransform);
         geometry_msgs::Pose pose;
@@ -462,12 +462,13 @@ private:
         }
 
         poses.resize(2);
-        poses[0] = tfFrameToPose("/l_wrist_roll_link", header);
-        poses[1] = tfFrameToPose("/r_wrist_roll_link", header);
+        poses[0] = tfFrameToPose("/l_wrist_roll_link", header.stamp);
+        poses[1] = tfFrameToPose("/r_wrist_roll_link", header.stamp);
         return true;
     }
 
-    void sendTorques(const unsigned int arm, const vector<double>& torques) {
+    void sendTorques(const unsigned int arm, const vector<double>& torques)
+    {
         // Execute the movement
         ROS_INFO("Dispatching torque command for arm %s", ARMS[arm].c_str());
         humanoid_catching::Move command;
@@ -576,7 +577,8 @@ private:
                 // Set current velocities
                 const vector<string>& jointModelNames = jointModelGroup->getActiveJointModelNames();
                 calcTorques.request.joint_velocity.resize(jointModelNames.size());
-                for (unsigned int j = 0; j < jointModelNames.size(); ++j) {
+                for (unsigned int j = 0; j < jointModelNames.size(); ++j)
+                {
                     calcTorques.request.joint_velocity[j] = jointStates[jointModelNames[j]].velocity;
                 }
 
@@ -769,7 +771,7 @@ private:
         }
 
         ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
-        ros::Time::now().toSec() - startRosTime.toSec());
+                 ros::Time::now().toSec() - startRosTime.toSec());
         as.setSucceeded();
     }
 };

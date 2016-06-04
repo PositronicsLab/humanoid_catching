@@ -20,10 +20,10 @@ static const double STEP_SIZE = 0.01;
 static const double DURATION = 2.0;
 static const unsigned int MAX_CONTACTS = 3;
 
-// TOOD: Figure these out
-static const double END_EFFECTOR_WIDTH = 0.2;
-static const double END_EFFECTOR_LENGTH = 0.2;
-static const double END_EFFECTOR_DEPTH = 0.1;
+// Computed from models
+static const double END_EFFECTOR_WIDTH = 0.100908;
+static const double END_EFFECTOR_LENGTH = 0.244724;
+static const double END_EFFECTOR_HEIGHT = 0.055100;
 
 struct Model {
     dBodyID body;  // the dynamics body
@@ -300,7 +300,7 @@ private:
         const dReal q[] = {endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w};
         dBodySetQuaternion(object.body, q);
 
-        object.geom[0] = dCreateBox(space, END_EFFECTOR_LENGTH, END_EFFECTOR_WIDTH, END_EFFECTOR_DEPTH);
+        object.geom[0] = dCreateBox(space, END_EFFECTOR_LENGTH, END_EFFECTOR_WIDTH, END_EFFECTOR_HEIGHT);
         dGeomSetBody(object.geom[0], object.body);
 
         // Set it as unresponsive to forces

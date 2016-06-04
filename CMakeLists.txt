@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
     eigen
     orocos_kdl
     pluginlib
+    resource_retriever
 )
 
 ## System dependencies are found with CMake's conventions
@@ -213,6 +214,12 @@ add_executable(balancer src/balancer.cpp)
 add_dependencies(balancer ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(balancer
    ${catkin_LIBRARIES} ${ODE_LIBRARY} ${RAVELIN_LIBRARIES} ${MOBY_LIBRARIES} ${QPOASES_LIBRARIES}
+)
+
+add_executable(calc_ee_bb src/calc_ee_bb.cpp)
+add_dependencies(calc_ee_bb ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(calc_ee_bb
+   ${catkin_LIBRARIES}
 )
 
 #############
