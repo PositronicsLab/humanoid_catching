@@ -220,7 +220,9 @@ private:
       // q_hat
       // contact normal
       ROS_DEBUG("Calculating q_hat");
-      const Vector3d q_hat = to_vector(req.contact_normal);
+      Vector3d q_hat = to_vector(req.contact_normal);
+      // Contact normal is robot to pole, but we want the inverse.
+      q_hat *= -1;
       ROS_DEBUG_STREAM("q_hat: " << q_hat);
 
       // p
@@ -283,12 +285,16 @@ private:
       Q.set_zero();
       Q.set_sub_vec(0, q_hat);
       Q.set_sub_vec(3, r.cross(q_hat, temp_vector));
-      VectorNd q_hat_extended(J.columns());
+
+      MatrixNd J_robot_transpose = J_robot;
+      J_robot_transpose.transpose();
+
+      VectorNd q_hat_extended(6);
       q_hat_extended.set_zero();
       q_hat_extended.set_sub_vec(0, -q_hat);
       VectorNd J_q_hat(req.joint_velocity.size());
-      J.mult(q_hat_extended, J_q_hat);
-      Q.set_sub_vec(6, J_q_hat);
+      J_robot_transpose.mult(q_hat_extended, J_q_hat);
+      Q.set_sub_vec(POLE_DOF, J_q_hat);
       ROS_DEBUG_STREAM("Q: " << Q);
 
       // P
