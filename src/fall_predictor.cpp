@@ -26,7 +26,7 @@ static const double END_EFFECTOR_LENGTH = 0.244724;
 static const double END_EFFECTOR_HEIGHT = 0.055100;
 
 // Inflate the end effector so that contact is perceived when the end effector is near the pole
-static const double INFLATION_FACTOR = 0.0;
+static const double INFLATION_FACTOR = 0.25;
 
 struct Model {
     dBodyID body;  // the dynamics body
