@@ -13,7 +13,7 @@ using namespace std;
 using namespace humanoid_catching;
 using namespace Ravelin;
 
-static const double GRAVITY = 9.81;
+static const double GRAVITY = -9.81;
 static const unsigned int POLE_DOF = 6;
 
 class Balancer {
@@ -120,7 +120,7 @@ private:
       VectorNd v(POLE_DOF + req.joint_velocity.size());
       v.set_sub_vec(0, v_pole);
       v.set_sub_vec(POLE_DOF, v_robot);
-      ROS_DEBUG_STREAM("v: " << v);
+      ROS_INFO_STREAM("v: " << v);
 
       // R
       // Pole rotation matrix
@@ -180,15 +180,15 @@ private:
       Vector3d temp_vector;
 
       // f_ext
-      // | g           |
+      // | mg           |
       // | -w x RJR_tw |
       // | 0           |
       ROS_DEBUG("Calculating f_ext");
       VectorNd f_ext(POLE_DOF + req.joint_velocity.size());
       f_ext.set_zero();
-      f_ext[2] = GRAVITY;
+      f_ext[2] = req.body_mass * GRAVITY;
       f_ext.set_sub_vec(3, Vector3d::cross(-w_pole, RJR.mult(w_pole, temp_vector)));
-      ROS_DEBUG_STREAM("f_ext: " << f_ext);
+      ROS_INFO_STREAM("f_ext: " << f_ext);
 
       // n_hat
       // contact normal
@@ -395,12 +395,12 @@ private:
       A.set_sub_mat(idx, v_t_delta_idx, MatrixNd::identity(POLE_DOF + req.joint_velocity.size()).negate());
 
       ROS_DEBUG("Calculating M_inverse F_ext");
-      VectorNd M_inverse_F_ext(POLE_DOF);
+      VectorNd M_inverse_F_ext(POLE_DOF + req.joint_velocity.size());
       M_inverse_F_ext.set_zero();
       M_inverse.mult(f_ext, M_inverse_F_ext, delta_t);
-      ROS_DEBUG_STREAM("M_inverse F_ext" << M_inverse_F_ext);
+      ROS_INFO_STREAM("M_inverse F_ext" << M_inverse_F_ext);
       M_inverse_F_ext.negate() -= v;
-      ROS_DEBUG_STREAM("-v - M_inverse F_ext" << M_inverse_F_ext);
+      ROS_INFO_STREAM("-v - M_inverse F_ext" << M_inverse_F_ext);
       b.set_sub_vec(idx, M_inverse_F_ext);
 
       ROS_DEBUG_STREAM("A: " << endl << A);
@@ -455,9 +455,9 @@ private:
       ub[bound] = INFINITY;
       ++bound;
 
-      // f_robot >= 0
-      lb[bound] = 0;
-      ub[bound] = INFINITY;
+      // f_robot <= 0
+      lb[bound] = -INFINITY;
+      ub[bound] = 0;
       ++bound;
 
       // v_t pole(no constraints)
@@ -520,9 +520,14 @@ private:
       Q_f_q *= z[f_robot_idx] * delta_t;
       ROS_INFO_STREAM("Qf_q" << Q_f_q);
 
+      VectorNd Q_f_q_1 = Q;
+      Q_f_q_1 *= 1.0 * delta_t;
+      ROS_INFO_STREAM("Q_f_q_1" << Q_f_q_1);
+
       VectorNd P_torques(POLE_DOF + req.torque_limits.size());
       P.mult(torques, P_torques);
       ROS_INFO_STREAM("P_torques: " << P_torques);
+
 
       res.torques.reserve(req.torque_limits.size());
       for (unsigned int i = torque_idx; i < torque_idx + req.torque_limits.size(); ++i) {

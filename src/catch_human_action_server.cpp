@@ -479,6 +479,16 @@ private:
         armCommandPubs[arm].publish(command);
     }
 
+    /**
+     * Instruct the specified arm to stop moving.
+     * @param arm Arm to stop
+     */
+    void stopArm(const unsigned int arm) {
+        vector<double> zeroTorques;
+        zeroTorques.resize(7);
+        sendTorques(arm, zeroTorques);
+    }
+
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal)
     {
 
@@ -539,9 +549,7 @@ private:
                 if (fallPoint == predictFall.response.points.end())
                 {
                     ROS_INFO("Arm %s is not in contact", ARMS[i].c_str());
-                    vector<double> zeroTorques;
-                    zeroTorques.resize(7);
-                    sendTorques(i, zeroTorques);
+                    stopArm(i);
                     continue;
                 }
                 else
@@ -604,6 +612,7 @@ private:
                 if (!balancer.call(calcTorques))
                 {
                     ROS_WARN("Calculating torques failed");
+                    // Continue using current torques
                     continue;
                 }
                 ROS_DEBUG("Torques calculated successfully");
@@ -706,13 +715,16 @@ private:
             if (solutions.empty())
             {
                 ROS_WARN("No possible catch positions");
+                for (unsigned int i = 0; i < boost::size(ARMS); ++i) {
+                    stopArm(i);
+                }
                 as.setAborted();
                 return;
             }
 
             ROS_INFO("Selecting optimal position from %lu poses", solutions.size());
 
-            // Select the point which is reachable most quicly
+            // Select the point which is reachable most quickly
             ros::Duration highestDeltaTime = ros::Duration(-1000);
             unsigned int highestArmsSolved = 0;
 
