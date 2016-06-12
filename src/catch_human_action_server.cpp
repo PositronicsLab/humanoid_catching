@@ -23,6 +23,7 @@
 #include <Ravelin/Jointd.h>
 #include <Ravelin/RCArticulatedBodyd.h>
 
+// TODO: Validate everything is in robot frame
 namespace
 {
 using namespace std;

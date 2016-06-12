@@ -180,7 +180,7 @@ private:
       Vector3d temp_vector;
 
       // f_ext
-      // | mg           |
+      // | -mg           |
       // | -w x RJR_tw |
       // | 0           |
       ROS_DEBUG("Calculating f_ext");
@@ -221,8 +221,6 @@ private:
       // contact normal
       ROS_DEBUG("Calculating q_hat");
       Vector3d q_hat = to_vector(req.contact_normal);
-      // Contact normal is robot to pole, but we want the inverse.
-      q_hat *= -1;
       ROS_DEBUG_STREAM("q_hat: " << q_hat);
 
       // p
@@ -297,16 +295,6 @@ private:
       Q.set_sub_vec(POLE_DOF, J_q_hat);
       ROS_DEBUG_STREAM("Q: " << Q);
 
-      // upper_Q
-      // | q_hat        |
-      // | r x q_hat    |
-      // | 0            |
-      ROS_DEBUG("Calculating upper Q");
-      VectorNd upper_Q(POLE_DOF + req.joint_velocity.size());
-      upper_Q.set_zero();
-      upper_Q.set_sub_vec(0, q_hat);
-      upper_Q.set_sub_vec(3, r.cross(q_hat, temp_vector));
-
       // P
       ROS_DEBUG("Calculating P");
       MatrixNd P(POLE_DOF + req.joint_velocity.size(), req.joint_velocity.size());
@@ -339,7 +327,7 @@ private:
 
       // Linear equality constraints
       ROS_DEBUG("Calculating A + b");
-      MatrixNd A(1 * 3 + POLE_DOF + req.joint_velocity.size(), z.size());
+      MatrixNd A(1 * 2 + POLE_DOF + req.joint_velocity.size(), z.size());
       A.set_zero();
 
       VectorNd b(A.rows());
@@ -356,12 +344,6 @@ private:
       ROS_DEBUG("Setting Tv constraint");
       // Tv(t + t_delta) = 0 (no tangent velocity)
       A.set_sub_mat(idx, v_t_delta_idx, T, eTranspose);
-      b[idx] = 0;
-      idx += 1;
-
-
-      // Qv(t) = 0 (no interpenetration)
-      A.set_sub_mat(idx, v_t_delta_idx, Q, eTranspose);
       b[idx] = 0;
       idx += 1;
 
@@ -401,8 +383,8 @@ private:
       A.set_sub_mat(idx, f_t_idx, M_inverse_T);
 
       ROS_DEBUG("Calculating M_inverse Q");
-      MatrixNd M_inverse_Q(M_inverse.rows(), upper_Q.columns());
-      M_inverse.mult(upper_Q, M_inverse_Q);
+      MatrixNd M_inverse_Q(M_inverse.rows(), Q.columns());
+      M_inverse.mult(Q, M_inverse_Q);
       ROS_DEBUG_STREAM("M_inverse_Q" << M_inverse_Q);
       M_inverse_Q *= delta_t;
       A.set_sub_mat(idx, f_robot_idx, M_inverse_Q);
@@ -425,7 +407,7 @@ private:
 
       // Linear inequality constraints
       ROS_DEBUG("Calculating Mc and q");
-      MatrixNd Mc(1, z.size());
+      MatrixNd Mc(2, z.size());
       Mc.set_zero();
 
       VectorNd q(Mc.rows());
@@ -434,6 +416,11 @@ private:
 
       // Nv(t) >= 0 (non-negative normal velocity)
       Mc.set_sub_mat(idx, v_t_delta_idx, N, eTranspose);
+      q[idx] = 0;
+      idx += 1;
+
+      // Qv(t) >= 0 (no interpenetration)
+      Mc.set_sub_mat(idx, v_t_delta_idx, Q, eTranspose);
       q[idx] = 0;
       idx += 1;
 
@@ -467,9 +454,9 @@ private:
       ub[bound] = INFINITY;
       ++bound;
 
-      // f_robot <= 0
-      lb[bound] = -INFINITY;
-      ub[bound] = 0;
+      // f_robot >= 0
+      lb[bound] = 0;
+      ub[bound] = INFINITY;
       ++bound;
 
       // v_t pole(no constraints)
@@ -480,12 +467,11 @@ private:
 
       // v_t robot
       for (bound; bound < z.size(); ++bound) {
-        // Velocity constraints are currently disabled as they cause the QP often to fail
-        // to solve.
-        // lb[bound] = -INFINITY;
-        // ub[bound] = INFINITY;
-        lb[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].minimum;
-        ub[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].maximum;
+        // TODO: Enable once everything works
+        lb[bound] = -INFINITY;
+        ub[bound] = INFINITY;
+        // lb[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].minimum;
+        // ub[bound] = req.velocity_limits[bound - v_t_delta_robot_idx].maximum;
       }
 
       ROS_DEBUG_STREAM("lb: " << lb);
@@ -543,6 +529,11 @@ private:
 
       double Q_t = Q.dot(all_velocities);
       ROS_INFO_STREAM("Q_t" << Q_t);
+
+      // Show robot velocity in robot frame
+      VectorNd ee_velocity(6);
+      J_robot.mult(arm_velocities, ee_velocity);
+      ROS_INFO_STREAM("ee_velocity: " << ee_velocity);
 
       res.torques.reserve(req.torque_limits.size());
       for (unsigned int i = torque_idx; i < torque_idx + req.torque_limits.size(); ++i) {
