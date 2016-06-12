@@ -146,7 +146,7 @@ private:
     boost::shared_ptr<Ravelin::RCArticulatedBodyd> body;
 
     //! Record the indexes into the body for the two sets of arm joints
-    map<string, pair<int, int> > jointIndices;
+    map<string, int> jointIndices;
 
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
@@ -157,12 +157,7 @@ private:
         ROS_DEBUG("Received a joint states message");
         for(unsigned int i = 0; i < msg->name.size(); ++i)
         {
-            StateMapType::iterator iter = jointStates.find(msg->name[i]);
-            if (iter != jointStates.end())
-            {
-                iter->second.position = msg->position[i];
-                iter->second.velocity = msg->velocity[i];
-            }
+            jointStates[msg->name[i]] = State(msg->position[i], msg->velocity[i]);
         }
     }
 
@@ -231,37 +226,21 @@ public:
             const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[k]);
 
             // Determine the indexes for the arms within the body joints in Ravelin
-            int lowerIndex = -1;
-            int upperIndex = -1;
             int curr = 0;
             for (int l = 0; l < joints.size(); ++l)
             {
-                if (joints[l]->joint_id == jointModelGroup->getActiveJointModelNames()[0])
-                {
-                    assert(lowerIndex == -1);
-                    lowerIndex = curr;
-                }
-                if (joints[l]->joint_id == jointModelGroup->getActiveJointModelNames().back())
-                {
-                    assert(upperIndex == -1);
-                    upperIndex = curr;
+                // Only record joints that represent generalized coordinates
+                if (joints[l]->num_dof() > 0) {
+                    jointIndices[joints[l]->joint_id] = curr;
                 }
                 curr += joints[l]->num_dof();
             }
-
-            assert(lowerIndex != -1);
-            assert(upperIndex != -1);
-
-            jointIndices[ARMS[k]] = pair<int, int>(lowerIndex, upperIndex);
 
             ROS_INFO("Loading joint limits for arm %s", ARMS[k].c_str());
             for (unsigned int i = 0; i < jointModelGroup->getActiveJointModels().size(); ++i)
             {
                 const string& jointName = jointModelGroup->getActiveJointModels()[i]->getName();
                 jointNames[ARMS[k]].push_back(jointName);
-
-                // Set default position and velocity
-                jointStates[jointName] = State(0.0, 0.0);
 
                 const string prefix = "robot_description_planning/joint_limits/" + jointName + "/";
                 ROS_DEBUG_NAMED("catch_human_action_server", "Loading velocity and acceleration limits for joint %s", jointName.c_str());
@@ -568,23 +547,41 @@ private:
                 calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
                 calcTorques.request.ground_contact = fallPoint->ground_contact;
 
+                // Get the list of joints in this group
+                const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[i]);
+                const vector<string>& jointModelNames = jointModelGroup->getActiveJointModelNames();
+
+                // Update the joint positions and velocities
+                unsigned int numGeneralized = body->num_generalized_coordinates(Ravelin::DynamicBodyd::eEuler);
+
+                // Copy over positions velocities
+                Ravelin::VectorNd currentPositions(numGeneralized);
+                currentPositions.set_zero();
+                Ravelin::VectorNd currentVelocities(numGeneralized);
+                currentVelocities.set_zero();
+
+                for(map<string, int>::iterator it = jointIndices.begin(); it != jointIndices.end(); ++it) {
+                    currentPositions[it->second] = jointStates[it->first].position;
+                    currentVelocities[it->second] = jointStates[it->first].velocity;
+                }
+
+                body->set_generalized_coordinates_euler(currentPositions);
+                body->set_generalized_velocity(Ravelin::DynamicBodyd::eEuler, currentVelocities);
+
                 // Get the inertia matrix
                 Ravelin::MatrixNd robotInertiaMatrix;
                 body->get_generalized_inertia(robotInertiaMatrix);
-
                 Ravelin::MatrixNd armMatrix;
-                robotInertiaMatrix.get_sub_mat(jointIndices[ARMS[i]].first, jointIndices[ARMS[i]].second + 1,
-                                               jointIndices[ARMS[i]].first, jointIndices[ARMS[i]].second + 1, armMatrix);
+                robotInertiaMatrix.get_sub_mat(jointIndices[jointModelNames[0]], jointIndices[jointModelNames.back()] + 1,
+                                               jointIndices[jointModelNames[0]], jointIndices[jointModelNames.back()] + 1, armMatrix);
 
                 calcTorques.request.robot_inertia_matrix = vector<double>(armMatrix.data(), armMatrix.data() + armMatrix.size());
 
                 // Get the jacobian
                 robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
-                const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[i]);
                 Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
 
                 // Set current velocities
-                const vector<string>& jointModelNames = jointModelGroup->getActiveJointModelNames();
                 calcTorques.request.joint_velocity.resize(jointModelNames.size());
                 for (unsigned int j = 0; j < jointModelNames.size(); ++j)
                 {
