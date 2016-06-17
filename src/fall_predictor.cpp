@@ -26,7 +26,7 @@ static const double END_EFFECTOR_LENGTH = 0.244724;
 static const double END_EFFECTOR_HEIGHT = 0.055100;
 
 // Inflate the end effector so that contact is perceived when the end effector is near the pole
-static const double INFLATION_FACTOR = 0.25;
+static const double INFLATION_FACTOR = 0.0;
 
 struct Model {
     dBodyID body;  // the dynamics body
@@ -133,9 +133,9 @@ private:
             // Determine if this contact should be saved
             int which = whichEndEffector(b1, b2);
             if ((b1 == humanoid.body || b2 == humanoid.body) && which != -1) {
-                ROS_INFO_STREAM("Located an end effector contact: " << which);
+                ROS_DEBUG_STREAM("Located an end effector contact: " << which);
 
-                // Only save one concact per end effector
+                // Only save one contact per end effector
                 eeContacts[which] = contact[0].geom;
                 hasEeContacts[which] = true;
             }
@@ -295,7 +295,9 @@ private:
         Model object;
         object.body = dBodyCreate(world);
 
-        ROS_INFO("Adding end effector @ %f %f %f", endEffector.position.x, endEffector.position.y, endEffector.position.z);
+        ROS_DEBUG("Adding end effector @ %f %f %f (%f %f %f %f)",
+                 endEffector.position.x, endEffector.position.y, endEffector.position.z,
+                 endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetLinearVel(object.body, 0, 0, 0);
         dBodySetAngularVel(object.body, 0, 0, 0);
