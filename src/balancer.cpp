@@ -507,21 +507,24 @@ private:
 
       ROS_INFO_STREAM("f_robot: " << z[f_robot_idx] << " f_n: " << z[f_n_idx] << " f_s: " << z[f_s_idx] << " f_t: " << z[f_t_idx]);
 
-      // Re-optimize to minimize arm velocity
-      for (bound = v_t_delta_idx; bound < v_t_delta_robot_idx; ++bound) {
-        lb[bound] = z[bound] - EPSILON;
-        ub[bound] = z[bound] + EPSILON;
-      }
+      // Add constraints for pole velocities
+      MatrixNd A_plus(1 * 2 + POLE_DOF + req.joint_velocity.size() + POLE_DOF, z.size());
+      A_plus.set_zero();
+      A_plus.set_sub_mat(0, 0, A);
+      A_plus.set_sub_mat(A.rows(), v_t_delta_idx, MatrixNd::identity(POLE_DOF));
+      VectorNd b_plus(A_plus.rows());
+      b_plus.set_sub_vec(0, b);
+      b_plus.set_sub_vec(b.rows(), pole_velocities);
 
       // Set up minimization function
-      ROS_DEBUG("Calculating H");
+      ROS_DEBUG("Calculating H2");
       H.set_zero();
       H.set_sub_mat(v_t_delta_robot_idx, v_t_delta_robot_idx, M_robot);
-      ROS_DEBUG_STREAM("H: " << H);
+      ROS_DEBUG_STREAM("H2: " << H);
 
       // Call solver
-      ROS_INFO_STREAM("Calling solver: " << z.size() << " variables, " << Mc.rows() << " inequality constraints and " << A.rows() << " equality constraints");
-      if (!qp.qp_activeset(H, c, lb, ub, Mc, q, A, b, z)){
+      ROS_INFO_STREAM("Calling solver: " << z.size() << " variables, " << Mc.rows() << " inequality constraints and " << A_plus.rows() << " equality constraints");
+      if (!qp.qp_activeset(H, c, lb, ub, Mc, q, A_plus, b_plus, z)){
         ROS_ERROR("QP failed to find feasible point");
         return false;
       }
