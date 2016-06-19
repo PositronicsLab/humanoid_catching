@@ -408,6 +408,7 @@ private:
             {
                 if (c->is_in_contact)
                 {
+                    cout << "CONTACT AT: " << i->time << endl;
                     return true;
                 }
             }
