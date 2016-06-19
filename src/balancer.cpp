@@ -89,9 +89,9 @@ private:
 
       const int num_joints = req.torque_limits.size();
 
-      // Ignore last 2 joints that only impact orientation of end effector
+      // Ignore last 3 joints that only impact orientation of end effector
       // that is not used in this formulation
-      const int num_effective_joints = num_joints - 2;
+      const int num_effective_joints = num_joints - 3;
 
       // x_pole
       // linear velocity of body
@@ -117,14 +117,15 @@ private:
       // v_robot
       // joint velocities of the robot
       ROS_DEBUG("Calculating v_robot vector");
-      const VectorNd v_robot = to_vector(req.joint_velocity);
+      VectorNd v_robot = to_vector(req.joint_velocity);
+      v_robot.resize(num_effective_joints);
       ROS_INFO_STREAM("v_robot (" << v_robot.norm() << "): " << v_robot);
 
       // v(t)
       // | v_pole |
       // | v_robot |
       ROS_DEBUG("Calculating v vector");
-      VectorNd v(POLE_DOF + req.joint_velocity.size());
+      VectorNd v(POLE_DOF + num_effective_joints);
       v.set_sub_vec(0, v_pole);
       v.set_sub_vec(POLE_DOF, v_robot);
       ROS_DEBUG_STREAM("v: " << v);
@@ -160,14 +161,16 @@ private:
 
       // M_robot
       ROS_DEBUG("Calculating M_robot");
-      MatrixNd M_robot(req.joint_velocity.size(), req.joint_velocity.size(), &req.robot_inertia_matrix[0]);
-      ROS_DEBUG_STREAM("M_robot: " << M_robot);
+      MatrixNd M_robot_base(num_joints, num_joints, &req.robot_inertia_matrix[0]);
+      MatrixNd M_robot;
+      M_robot_base.get_sub_mat(0, num_effective_joints, 0, num_effective_joints, M_robot);
+      ROS_DEBUG_STREAM("M_robot: " << endl << M_robot);
 
       // M
       // | M_pole 0  |
       // | 0 M_robot |
       ROS_DEBUG("Calculating M");
-      MatrixNd M(POLE_DOF + req.joint_velocity.size(), POLE_DOF + req.joint_velocity.size());
+      MatrixNd M(POLE_DOF + num_effective_joints, POLE_DOF + num_effective_joints);
       M.set_zero();
       M.set_sub_mat(0, 0, M_pole);
       M.set_sub_mat(M_pole.rows(), M_pole.columns(), M_robot);
@@ -176,8 +179,10 @@ private:
       // J_robot
       // Robot end effector jacobian matrix
       ROS_DEBUG("Calculating J_robot");
-      MatrixNd J_robot = MatrixNd(6, num_joints, &req.jacobian_matrix[0]);
-      ROS_INFO_STREAM("J_robot: " << J_robot);
+      MatrixNd J_robot_base = MatrixNd(6, num_joints, &req.jacobian_matrix[0]);
+      MatrixNd J_robot;
+      J_robot_base.get_sub_mat(0, 6, 0, num_effective_joints, J_robot);
+      ROS_DEBUG_STREAM("J_robot: " << endl << J_robot);
 
       // delta t
       double delta_t = req.time_delta.toSec();
@@ -191,7 +196,7 @@ private:
       // | -w x RJR_tw |
       // | 0           |
       ROS_DEBUG("Calculating f_ext");
-      VectorNd f_ext(POLE_DOF + req.joint_velocity.size());
+      VectorNd f_ext(POLE_DOF + num_effective_joints);
       f_ext.set_zero();
       f_ext[2] = req.body_mass * GRAVITY;
       f_ext.set_sub_vec(3, Vector3d::cross(-w_pole, RJR_t.mult(w_pole, temp_vector)));
@@ -253,7 +258,7 @@ private:
       // | r x n_hat |
       // | 0         |
       ROS_DEBUG("Calculating N");
-      VectorNd N(POLE_DOF + req.joint_velocity.size());
+      VectorNd N(POLE_DOF + num_effective_joints);
       N.set_zero();
       N.set_sub_vec(0, n_hat);
       N.set_sub_vec(3, r.cross(n_hat, temp_vector));
@@ -264,7 +269,7 @@ private:
       // | r x s_hat |
       // | 0         |
       ROS_DEBUG("Calculating S");
-      VectorNd S(POLE_DOF + req.joint_velocity.size());
+      VectorNd S(POLE_DOF + num_effective_joints);
       S.set_zero();
       S.set_sub_vec(0, s_hat);
       S.set_sub_vec(3, r.cross(s_hat, temp_vector));
@@ -275,7 +280,7 @@ private:
       // | r x t_hat |
       // | 0         |
       ROS_DEBUG("Calculating T");
-      VectorNd T(POLE_DOF + req.joint_velocity.size());
+      VectorNd T(POLE_DOF + num_effective_joints);
       T.set_zero();
       T.set_sub_vec(0, t_hat);
       T.set_sub_vec(3, r.cross(t_hat, temp_vector));
@@ -287,7 +292,7 @@ private:
       // | | -q_hat | J |
       // | |    0   |   |
       ROS_DEBUG("Calculating Q");
-      VectorNd Q(POLE_DOF + num_joints);
+      VectorNd Q(POLE_DOF + num_effective_joints);
       Q.set_zero();
       Q.set_sub_vec(0, q_hat);
       Q.set_sub_vec(3, -r.cross(q_hat, temp_vector));
@@ -298,28 +303,28 @@ private:
       VectorNd q_hat_extended(6);
       q_hat_extended.set_zero();
       q_hat_extended.set_sub_vec(0, -q_hat);
-      VectorNd J_q_hat(num_joints);
+      VectorNd J_q_hat(num_effective_joints);
       J_robot_transpose.mult(q_hat_extended, J_q_hat);
       Q.set_sub_vec(POLE_DOF, J_q_hat);
       ROS_DEBUG_STREAM("Q: " << Q);
 
       // P
       ROS_DEBUG("Calculating P");
-      MatrixNd P(POLE_DOF + num_joints, num_joints);
+      MatrixNd P(POLE_DOF + num_effective_joints, num_effective_joints);
       P.set_zero();
-      P.set_sub_mat(POLE_DOF, 0, MatrixNd::identity(num_joints));
+      P.set_sub_mat(POLE_DOF, 0, MatrixNd::identity(num_effective_joints));
       ROS_DEBUG_STREAM("P: " << endl << P);
 
       // Result vector
       // Torques, f_n, f_s, f_t, f_robot, v_(t + t_delta)
       int torque_idx = 0;
-      int f_n_idx = torque_idx + num_joints;
+      int f_n_idx = torque_idx + num_effective_joints;
       int f_s_idx = f_n_idx + 1;
       int f_t_idx = f_s_idx + 1;
       int f_robot_idx = f_t_idx + 1;
       int v_t_delta_pole_idx = f_robot_idx + 1;
       int v_t_delta_robot_idx = v_t_delta_pole_idx + POLE_DOF;
-      VectorNd z(num_joints + 1 + 1 + 1 + 1 + POLE_DOF + num_joints);
+      VectorNd z(num_effective_joints + 1 + 1 + 1 + 1 + POLE_DOF + num_effective_joints);
       z.set_zero();
 
       // Set up minimization function
@@ -336,7 +341,7 @@ private:
 
       // Linear equality constraints
       ROS_DEBUG("Calculating A + b");
-      MatrixNd A(1 * 2 + POLE_DOF + num_joints, z.size());
+      MatrixNd A(1 * 2 + POLE_DOF + num_effective_joints, z.size());
       A.set_zero();
 
       VectorNd b(A.rows());
@@ -364,7 +369,7 @@ private:
       ROS_DEBUG("Inverting M");
       MatrixNd M_inverse = M;
       linAlgd.invert(M_inverse);
-      ROS_DEBUG_STREAM("M_inverse: " << endl << M_inverse);
+      ROS_DEBUG_STREAM("M_inverse: " << M_inverse);
 
       ROS_DEBUG("Calculating M_inverse P");
       MatrixNd M_inverse_P(M_inverse.rows(), P.columns());
@@ -400,10 +405,10 @@ private:
       ROS_DEBUG_STREAM("M_inverse_Q" << M_inverse_Q);
 
       ROS_DEBUG("Setting Identity Matrix for v_delta_t");
-      A.set_sub_mat(idx, v_t_delta_pole_idx, MatrixNd::identity(POLE_DOF + num_joints).negate());
+      A.set_sub_mat(idx, v_t_delta_pole_idx, MatrixNd::identity(POLE_DOF + num_effective_joints).negate());
 
       ROS_DEBUG("Calculating M_inverse F_ext");
-      VectorNd M_inverse_F_ext(POLE_DOF + req.joint_velocity.size());
+      VectorNd M_inverse_F_ext(POLE_DOF + num_effective_joints);
       M_inverse_F_ext.set_zero();
       M_inverse.mult(f_ext, M_inverse_F_ext, delta_t);
       ROS_DEBUG_STREAM("M_inverse F_ext" << M_inverse_F_ext);
@@ -443,7 +448,7 @@ private:
 
       // Torque constraints
       unsigned int bound = 0;
-      for (bound; bound < num_joints; ++bound) {
+      for (bound; bound < num_effective_joints; ++bound) {
         lb[bound] = req.torque_limits[bound].minimum;
         ub[bound] = req.torque_limits[bound].maximum;
         z[bound] = (req.torque_limits[bound].maximum - req.torque_limits[bound].minimum) / 2.0;
@@ -505,18 +510,18 @@ private:
       ROS_INFO_STREAM("pole_velocities (" << pole_velocities.norm() << "): " << pole_velocities);
 
       VectorNd arm_velocities;
-      z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + num_joints, arm_velocities);
+      z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + num_effective_joints, arm_velocities);
       ROS_DEBUG_STREAM("arm_velocities (" << arm_velocities.norm() << "): " << arm_velocities);
 
       // Check torques
       bound = 0;
-      for (bound; bound < num_joints; ++bound) {
+      for (bound; bound < num_effective_joints; ++bound) {
         assert(z[bound] >= req.torque_limits[bound].minimum);
         assert(z[bound] <= req.torque_limits[bound].maximum);
       }
 
       // Check interpenetration constraint
-      VectorNd all_velocities(POLE_DOF + num_joints);
+      VectorNd all_velocities(POLE_DOF + num_effective_joints);
       all_velocities.set_sub_vec(0, pole_velocities);
       all_velocities.set_sub_vec(POLE_DOF, arm_velocities);
       assert(VectorNd::dot(all_velocities, Q) >= -EPSILON * 1.01 /* due to floating point issues */);
@@ -531,8 +536,8 @@ private:
       // Result vector
       // Torques, f_n, f_s, f_t, f_robot, v_(t + t_delta)
       torque_idx = 0;
-      v_t_delta_robot_idx = num_joints;
-      z.resize(num_joints + num_joints);
+      v_t_delta_robot_idx = num_effective_joints;
+      z.resize(num_effective_joints + num_effective_joints);
       z.set_zero();
 
       // Set up minimization function
@@ -549,7 +554,7 @@ private:
 
       // Linear equality constraints
       ROS_DEBUG_STREAM("Calculating A + b");
-      A.resize(num_joints, z.size());
+      A.resize(num_effective_joints, z.size());
       A.set_zero();
 
       b.resize(A.rows());
@@ -575,7 +580,7 @@ private:
       M_inverse_P *= delta_t;
       ROS_DEBUG_STREAM("M_inverse_P" << M_inverse_P);
       A.set_sub_mat(idx, torque_idx, M_inverse_P);
-      A.set_sub_mat(idx, v_t_delta_robot_idx, MatrixNd::identity(num_joints).negate());
+      A.set_sub_mat(idx, v_t_delta_robot_idx, MatrixNd::identity(num_effective_joints).negate());
 
       ROS_DEBUG_STREAM("Calculating M_inverse_Q_f_robot");
       VectorNd M_inverse_Q_f_robot(req.joint_velocity.size());
@@ -601,7 +606,7 @@ private:
 
       // Qv(t) >= -epsilon (no interpenetration)
       // Q_lower * v_robot >= -Q_upper * v_pole - epsilon
-      Mc.set_sub_mat(idx, v_t_delta_robot_idx, Q.get_sub_vec(POLE_DOF, POLE_DOF + num_joints, temp_vector_n), eTranspose);
+      Mc.set_sub_mat(idx, v_t_delta_robot_idx, Q.get_sub_vec(POLE_DOF, POLE_DOF + num_effective_joints, temp_vector_n), eTranspose);
       q[idx] = -VectorNd::dot(Q.get_sub_vec(0, POLE_DOF, temp_vector_n), pole_velocities) - EPSILON;
       idx += 1;
 
@@ -615,7 +620,7 @@ private:
 
       // Torque constraints
       bound = 0;
-      for (bound; bound < num_joints; ++bound) {
+      for (bound; bound < num_effective_joints; ++bound) {
         lb[bound] = req.torque_limits[bound].minimum;
         ub[bound] = req.torque_limits[bound].maximum;
         z[bound] = (req.torque_limits[bound].maximum - req.torque_limits[bound].minimum) / 2.0;
@@ -642,12 +647,12 @@ private:
 
       // Check torques
       bound = 0;
-      for (bound; bound < num_joints; ++bound) {
+      for (bound; bound < num_effective_joints; ++bound) {
         assert(z[bound] >= req.torque_limits[bound].minimum);
         assert(z[bound] <= req.torque_limits[bound].maximum);
       }
 
-      z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + num_joints, arm_velocities);
+      z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + num_effective_joints, arm_velocities);
       ROS_INFO_STREAM("arm_velocities (" << arm_velocities.norm() << "): " << arm_velocities);
 
       // Check interpenetration constraint
@@ -657,7 +662,7 @@ private:
 
       // Copy over result
       VectorNd torques;
-      z.get_sub_vec(torque_idx, torque_idx + num_joints, torques);
+      z.get_sub_vec(torque_idx, torque_idx + num_effective_joints, torques);
       ROS_INFO_STREAM("Torques: " << torques);
 
       // Show robot velocity in robot frame
@@ -665,9 +670,9 @@ private:
       J_robot.mult(arm_velocities, ee_velocity);
       ROS_INFO_STREAM("ee_velocity: " << ee_velocity);
 
-      res.torques.reserve(num_joints);
-      for (unsigned int i = torque_idx; i < torque_idx + num_joints; ++i) {
-        res.torques.push_back(z[i]);
+      res.torques.resize(num_joints);
+      for (unsigned int i = torque_idx, j = 0; i < torque_idx + num_effective_joints; ++i, ++j) {
+        res.torques[j] = z[i];
       }
 
       ROS_INFO_STREAM("****QP Completed****");
