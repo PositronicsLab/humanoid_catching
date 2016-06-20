@@ -408,7 +408,6 @@ private:
             {
                 if (c->is_in_contact)
                 {
-                    cout << "CONTACT AT: " << i->time << endl;
                     return true;
                 }
             }
@@ -542,7 +541,7 @@ private:
                 calcTorques.request.body_velocity = fallPoint->velocity;
                 calcTorques.request.body_inertia_matrix = predictFall.response.inertia_matrix;
                 calcTorques.request.body_mass = predictFall.response.body_mass;
-                calcTorques.request.time_delta = ros::Duration(0.001);
+                calcTorques.request.time_delta = ros::Duration(0.01);
                 calcTorques.request.body_com = fallPoint->pose;
                 calcTorques.request.contact_position = fallPoint->contacts[i].position;
                 calcTorques.request.contact_normal = fallPoint->contacts[i].normal;

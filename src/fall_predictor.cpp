@@ -295,7 +295,7 @@ private:
         Model object;
         object.body = dBodyCreate(world);
 
-        ROS_DEBUG("Adding end effector @ %f %f %f (%f %f %f %f)",
+        ROS_INFO("Adding end effector @ %f %f %f (%f %f %f %f)",
                  endEffector.position.x, endEffector.position.y, endEffector.position.z,
                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
