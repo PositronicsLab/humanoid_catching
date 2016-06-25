@@ -49,6 +49,7 @@ public:
             pnh.param("z", z, 0.0);
             pnh.param("duration", duration, DURATION_DEFAULT);
             pnh.param("delay", delay, NOTIFICATION_DELAY_DEFAULT);
+            ros::service::waitForService("/balancer/torques");
     }
 
     void fall() {

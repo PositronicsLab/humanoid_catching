@@ -85,7 +85,7 @@ private:
     bool calculateTorques(humanoid_catching::CalculateTorques::Request& req,
                           humanoid_catching::CalculateTorques::Response& res) {
 
-      ROS_INFO("****Calculating torques****");
+      ROS_INFO("****Calculating torques for arm %s****", req.name.c_str());
 
       const int num_joints = req.torque_limits.size();
 
@@ -233,25 +233,23 @@ private:
       // contact normal
       ROS_DEBUG("Calculating q_hat");
       Vector3d q_hat = to_vector(req.contact_normal);
-      // TODO: Need to ensure this is always reasonable
-      ROS_INFO_STREAM("q_hat: " << q_hat);
+      ROS_WARN_STREAM("q_hat: " << q_hat);
 
       // p
       // contact point
       ROS_DEBUG("Calculating P");
       const Vector3d p = to_vector(req.ground_contact);
-      ROS_DEBUG_STREAM("p: " << p);
+      ROS_INFO_STREAM("p: " << p);
 
       // x_bar
-      // pole COM
       ROS_DEBUG("Calculating x_bar");
       const Vector3d x_bar = to_vector(req.body_com.position);
-      ROS_DEBUG_STREAM("x_bar: " << x_bar);
+      ROS_INFO_STREAM("x_bar: " << x_bar);
 
       // r
       ROS_DEBUG("Calculating r");
       const Vector3d r = p - x_bar;
-      ROS_DEBUG_STREAM("r: " << r);
+      ROS_INFO_STREAM("r: " << r);
 
       // N
       // | n_hat     |
@@ -486,7 +484,9 @@ private:
       }
 
       // v_t robot
-      for (bound; bound < z.size(); ++bound) {
+      for (unsigned int i = 0; bound < z.size(); ++bound, ++i) {
+        // lb[bound] = req.velocity_limits[i].minimum;
+        // ub[bound] = req.velocity_limits[i].maximum;
         lb[bound] = -INFINITY;
         ub[bound] = INFINITY;
         z[bound] = 0;
@@ -511,7 +511,7 @@ private:
 
       VectorNd arm_velocities;
       z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + num_effective_joints, arm_velocities);
-      ROS_DEBUG_STREAM("arm_velocities (" << arm_velocities.norm() << "): " << arm_velocities);
+      ROS_INFO_STREAM("arm_velocities (" << arm_velocities.norm() << "): " << arm_velocities);
 
       // Check torques
       bound = 0;
@@ -528,6 +528,10 @@ private:
 
       double f_robot = z[f_robot_idx];
       ROS_INFO_STREAM("f_robot: " << f_robot << " f_n: " << z[f_n_idx] << " f_s: " << z[f_s_idx] << " f_t: " << z[f_t_idx]);
+
+      VectorNd torques;
+      z.get_sub_vec(torque_idx, torque_idx + num_effective_joints, torques);
+      ROS_DEBUG_STREAM("Torques: " << torques);
 
       //
       // Second optimization for robot velocity
@@ -627,9 +631,11 @@ private:
       }
 
       // v_t robot
-      for (bound; bound < z.size(); ++bound) {
+      for (unsigned int i = 0; bound < z.size(); ++bound, ++i) {
         lb[bound] = -INFINITY;
         ub[bound] = INFINITY;
+        // lb[bound] = req.velocity_limits[i].minimum;
+        // ub[bound] = req.velocity_limits[i].maximum;
         z[bound] = 0;
       }
 
@@ -661,7 +667,6 @@ private:
       assert(VectorNd::dot(all_velocities, Q) >= -EPSILON * 1.01 /* due to floating point issues */);
 
       // Copy over result
-      VectorNd torques;
       z.get_sub_vec(torque_idx, torque_idx + num_effective_joints, torques);
       ROS_INFO_STREAM("Torques: " << torques);
 
@@ -669,6 +674,42 @@ private:
       VectorNd ee_velocity(6);
       J_robot.mult(arm_velocities, ee_velocity);
       ROS_INFO_STREAM("ee_velocity: " << ee_velocity);
+
+      // Check forward dynamics
+      // TODO: Move to function
+      /*
+      N *= z[f_n_idx];
+      ROS_INFO_STREAM("N: " << N);
+
+      S *= z[f_s_idx];
+      ROS_INFO_STREAM("S: " << S);
+
+      T *= z[f_t_idx];
+      ROS_INFO_STREAM("T: " << T);
+
+      f_ext *= delta_t;
+      ROS_INFO_STREAM("f_ext: " << f_ext);
+
+      Q *= f_robot * delta_t;
+      ROS_INFO_STREAM("Q: " << Q);
+
+      VectorNd applied_torques;
+      P.mult(torques, applied_torques);
+      P *= delta_t;
+      ROS_INFO_STREAM("Applied torques" << applied_torques);
+
+      VectorNd sum(10);
+      sum.set_zero();
+      sum += N;
+      sum += S;
+      sum += T;
+      sum += f_ext;
+      sum += Q;
+      sum += applied_torques;
+      sum = M_inverse.mult(sum, temp_vector_n);
+      sum += v;
+      ROS_INFO_STREAM("vt_d: " << sum);
+      */
 
       res.torques.resize(num_joints);
       for (unsigned int i = torque_idx, j = 0; i < torque_idx + num_effective_joints; ++i, ++j) {

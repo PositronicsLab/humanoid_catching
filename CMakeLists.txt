@@ -133,6 +133,7 @@ catkin_package(
 find_library(
    ODE_LIBRARY
    NAMES libode ode
+   PATHS /usr/lib /usr/local/lib
 )
 add_definitions(-DdDOUBLE)
 

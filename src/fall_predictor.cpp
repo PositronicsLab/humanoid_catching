@@ -16,21 +16,22 @@ static const double MASS_DEFAULT = 5;
 static const double HEIGHT_DEFAULT = 1.5;
 static const double RADIUS_DEFAULT = 0.025; // Width of pole
 
-static const double STEP_SIZE = 0.01;
+static const double STEP_SIZE = 0.001;
 static const double DURATION = 2.0;
-static const unsigned int MAX_CONTACTS = 3;
+static const unsigned int MAX_CONTACTS = 6;
 
-// Computed from models
+// Computed from models. Note that the gazebo convention for the PR2 model has the end
+// effector aligned along the z axis in the zero orientation
 static const double END_EFFECTOR_WIDTH = 0.100908;
-static const double END_EFFECTOR_LENGTH = 0.244724;
 static const double END_EFFECTOR_HEIGHT = 0.055100;
+static const double END_EFFECTOR_LENGTH = 0.244724;
 
-// Inflate the end effector so that contact is perceived when the end effector is near the pole
+// Inflate the end effector to detect near contact
 static const double INFLATION_FACTOR = 0.0;
 
 struct Model {
     dBodyID body;  // the dynamics body
-    dGeomID geom[1];  // geometries representing this body
+    dGeomID geom;  // geometries representing this body
 };
 
 class FallPredictor {
@@ -50,8 +51,11 @@ private:
     //! Fall prediction Service
     ros::ServiceServer fallPredictionService;
 
-    //! Height of the center of mass
+    //! Height of object
     double humanoidHeight;
+
+    //! Radius of object
+    double humanoidRadius;
 
     //! Mass of the humanoid
     double humanoidMass;
@@ -89,10 +93,13 @@ private:
     //! Whether contact occurred
     vector<bool> hasEeContacts;
 
+    //! Current time
+    double t;
 public:
    FallPredictor() :
-     pnh("~") {
+     pnh("~"), t(0.0) {
        pnh.param("humanoid_height", humanoidHeight, HEIGHT_DEFAULT);
+       pnh.param("humanoid_radius", humanoidRadius, RADIUS_DEFAULT);
        pnh.param("humanoid_mass", humanoidMass, MASS_DEFAULT);
 
        fallVizPub = nh.advertise<visualization_msgs::Marker>(
@@ -111,33 +118,32 @@ private:
         dBodyID b2 = dGeomGetBody(o2);
         dContact contact[MAX_CONTACTS];
         for (int i = 0; i < MAX_CONTACTS; i++){
-            contact[i].surface.mode = dContactBounce | dContactSoftCFM;
+            contact[i].surface.mode = dContactSoftCFM;
             contact[i].surface.mu = dInfinity;
             contact[i].surface.mu2 = 0;
-            contact[i].surface.bounce = 0.01;
-            contact[i].surface.bounce_vel = 0.1;
             contact[i].surface.soft_cfm = 0.01;
         }
 
         // Always compute contact with the humanoid as object 1, such that the contact normal
         // is towards the humanoid
-        dGeomID firstObj = b1 == humanoid.body ? o1 : o2;
-        dGeomID secondObj = b1 == humanoid.body ? o2 : o1;
+        dGeomID firstObj = o1 == humanoid.geom ? o1 : o2;
+        dGeomID secondObj = o1 == humanoid.geom ? o2 : o1;
 
         if (int numc = dCollide(firstObj, secondObj, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
             for (int i = 0; i < numc; i++) {
                 dJointID c = dJointCreateContact(world, contactgroup, contact + i);
                 dJointAttach(c, b1, b2);
-            }
 
-            // Determine if this contact should be saved
-            int which = whichEndEffector(b1, b2);
-            if ((b1 == humanoid.body || b2 == humanoid.body) && which != -1) {
-                ROS_DEBUG_STREAM("Located an end effector contact: " << which);
+                // Determine if this contact should be saved
+                int which = whichEndEffector(b1, b2);
+                if ((b1 == humanoid.body || b2 == humanoid.body) && which != -1) {
+                    assert(firstObj == humanoid.geom && secondObj == endEffectors[which].geom
+                           && firstObj == contact[i].geom.g1 && secondObj == contact[i].geom.g2);
 
-                // Only save one contact per end effector
-                eeContacts[which] = contact[0].geom;
-                hasEeContacts[which] = true;
+                    // Only save one contact per end effector
+                    eeContacts[which] = contact[i].geom;
+                    hasEeContacts[which] = true;
+                }
             }
         }
     }
@@ -162,9 +168,7 @@ private:
         dWorldSetGravity(world, 0, 0, -9.81);
         dWorldSetERP(world, 0.2);
         dWorldSetCFM(world, 1e-5);
-        dWorldSetContactMaxCorrectingVel(world, 0.9);
         dWorldSetContactSurfaceLayer(world, 0.001);
-        dWorldSetAutoDisableFlag(world, 1);
     }
 
     void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& velocity) {
@@ -185,8 +189,8 @@ private:
         // Use a very small sphere to mimic a point mass, which was not working properly.
         dMassSetSphereTotal(&m, humanoidMass, 0.01);
         dBodySetMass(humanoid.body, &m);
-        humanoid.geom[0] = dCreateCylinder(space, 0.01 /* radius */, humanoidHeight);
-        dGeomSetBody(humanoid.geom[0], humanoid.body);
+        humanoid.geom = dCreateCylinder(space, humanoidRadius, humanoidHeight);
+        dGeomSetBody(humanoid.geom, humanoid.body);
     }
 
     static void staticNearCallback(void* data, dGeomID o1, dGeomID o2){
@@ -212,8 +216,13 @@ private:
     }
 
     void publishContacts(const vector<humanoid_catching::Contact>& contacts, const string& frame) const {
+
         for (unsigned int i = 0; i < contacts.size(); ++i) {
             if (!contacts[i].is_in_contact) {
+                visualization_msgs::Marker deleteAll;
+                deleteAll.ns = "contacts";
+                deleteAll.action = visualization_msgs::Marker::DELETE;
+                contactVizPub.publish(deleteAll);
                 continue;
             }
 
@@ -225,35 +234,69 @@ private:
             arrow.type = visualization_msgs::Marker::ARROW;
             arrow.pose.orientation = quaternionFromVector(contacts[i].normal);
             arrow.pose.position = contacts[i].position;
-            arrow.scale.x = 0.1;
-            arrow.scale.y = 0.02;
+            arrow.scale.x = 0.5;
+            arrow.scale.y = 0.05;
+            arrow.scale.z = 0.05;
 
-            // Points are red
-            arrow.color.r = 1.0f;
+            // Contacts are blue
+            arrow.color.b = 1.0f;
+            if (i == 1) {
+                arrow.color.r = 1.0f;
+            }
             arrow.color.a = 1.0;
             contactVizPub.publish(arrow);
         }
     }
 
-    void publishPathViz(const vector<geometry_msgs::Pose>& path, const string& frame) const {
-        visualization_msgs::Marker points;
-        points.header.frame_id = frame;
-        points.header.stamp = ros::Time::now();
-        points.ns = "fall_prediction";
-        points.id = 0;
-        points.type = visualization_msgs::Marker::POINTS;
-        points.pose.orientation.w = 1.0;
-        points.scale.x = 0.01;
-        points.scale.y = 0.01;
+    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const string& frame) const {
+        for (unsigned int i = 0; i < ees.size(); ++i) {
+            visualization_msgs::Marker box;
+            box.header.frame_id = frame;
+            box.header.stamp = ros::Time::now();
+            box.ns = "end_effectors";
+            box.id = i;
+            box.type = visualization_msgs::Marker::CUBE;
+            box.pose = ees[i];
+            box.scale.x = END_EFFECTOR_LENGTH;
+            box.scale.y = END_EFFECTOR_WIDTH;
+            box.scale.z = END_EFFECTOR_HEIGHT;
 
-        // Points are green
-        points.color.g = 1.0f;
-        points.color.a = 1.0;
+            // Box is red
+            box.color.r = 1.0f;
+            if (i == 1) {
+                box.color.b = 1.0f;
+            }
+            box.color.a = 1.0;
+            fallVizPub.publish(box);
+        }
+    }
+
+    void publishPathViz(const vector<geometry_msgs::Pose>& path, const string& frame) const {
+        // Clear first
+        visualization_msgs::Marker deleteAll;
+        deleteAll.ns = "pole";
+        deleteAll.action = 3;
+        fallVizPub.publish(deleteAll);
 
         for (unsigned int i = 0; i < path.size(); ++i) {
-            points.points.push_back(path[i].position);
+            visualization_msgs::Marker cyl;
+            cyl.header.frame_id = frame;
+            cyl.header.stamp = ros::Time::now();
+            cyl.ns = "pole";
+            cyl.id = 0; // TODO: Enable i;
+            cyl.type = visualization_msgs::Marker::CYLINDER;
+            cyl.pose = path[i];
+            cyl.scale.x = humanoidRadius;
+            cyl.scale.y = humanoidRadius;
+            cyl.scale.z = humanoidHeight;
+
+            // Cylinder is green
+            cyl.color.g = 1.0f;
+            cyl.color.a = 1.0;
+            fallVizPub.publish(cyl);
         }
-        fallVizPub.publish(points);
+
+        // Clear any other values
     }
 
     void initGroundJoint(const geometry_msgs::Pose& humanPose) {
@@ -298,18 +341,18 @@ private:
         ROS_INFO("Adding end effector @ %f %f %f (%f %f %f %f)",
                  endEffector.position.x, endEffector.position.y, endEffector.position.z,
                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
+
+        object.geom = dCreateBox(space,
+                                    END_EFFECTOR_LENGTH * (1 + INFLATION_FACTOR),
+                                    END_EFFECTOR_WIDTH  * (1 + INFLATION_FACTOR),
+                                    END_EFFECTOR_HEIGHT * (1 + INFLATION_FACTOR));
+        dGeomSetBody(object.geom, object.body);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetLinearVel(object.body, 0, 0, 0);
         dBodySetAngularVel(object.body, 0, 0, 0);
 
         const dReal q[] = {endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w};
         dBodySetQuaternion(object.body, q);
-
-        object.geom[0] = dCreateBox(space,
-                                    END_EFFECTOR_LENGTH * (1 + INFLATION_FACTOR),
-                                    END_EFFECTOR_WIDTH  * (1 + INFLATION_FACTOR),
-                                    END_EFFECTOR_HEIGHT * (1 + INFLATION_FACTOR));
-        dGeomSetBody(object.geom[0], object.body);
 
         // Set it as unresponsive to forces
         dBodySetKinematic(object.body);
@@ -345,17 +388,44 @@ private:
         return result;
     }
 
+    static geometry_msgs::Quaternion arrayToQuat(const dReal* aArray) {
+        geometry_msgs::Quaternion result;
+        result.x = aArray[0];
+        result.y = aArray[1];
+        result.z = aArray[2];
+        result.w = aArray[3];
+        return result;
+    }
+
+    static geometry_msgs::Pose getBodyPose(dBodyID body) {
+        const dReal* position = dBodyGetPosition(body);
+        const dReal* orientation = dBodyGetQuaternion(body);
+        geometry_msgs::Pose pose;
+        pose.position = arrayToPoint(position);
+        pose.orientation = arrayToQuat(orientation);
+        return pose;
+    }
+
+    static geometry_msgs::Twist getBodyTwist(dBodyID body) {
+        const dReal* linearVelocity = dBodyGetLinearVel(body);
+        const dReal* angularVelocity = dBodyGetAngularVel(body);
+        geometry_msgs::Twist twist;
+        twist.linear = arrayToVector(linearVelocity);
+        twist.angular = arrayToVector(angularVelocity);
+        return twist;
+    }
+
     vector<double> getPoleInertiaMatrix() const {
         vector<double> I(9);
-        I[0] = 1 / 12.0 * MASS_DEFAULT * pow(HEIGHT_DEFAULT, 2) + 0.25 * MASS_DEFAULT * pow(RADIUS_DEFAULT, 2);
-        I[4] = 1 / 12.0 * MASS_DEFAULT * pow(HEIGHT_DEFAULT, 2) + 0.25 * MASS_DEFAULT * pow(RADIUS_DEFAULT, 2);
-        I[8] = 0.5 * MASS_DEFAULT * pow(RADIUS_DEFAULT, 2);
+        I[0] = I[4] = 1 / 12.0 * humanoidMass * pow(humanoidHeight, 2) + 0.25 * humanoidMass * pow(humanoidRadius, 2);
+        I[8] = 0.5 * humanoidMass * pow(humanoidRadius, 2);
         return I;
     }
 
     bool predict(humanoid_catching::PredictFall::Request& req,
                humanoid_catching::PredictFall::Response& res) {
       ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
+
       res.header = req.header;
 
       // Initialize ODE
@@ -363,18 +433,21 @@ private:
 
       initWorld();
 
-      ROS_INFO("Initializing humanoid with pose: %f %f %f", req.pose.position.x, req.pose.position.y, req.pose.position.z);
+      ROS_DEBUG("Initializing humanoid with pose: %f %f %f (%f %f %f %f)", req.pose.position.x, req.pose.position.y, req.pose.position.z,
+               req.pose.orientation.x, req.pose.orientation.y, req.pose.orientation.z, req.pose.orientation.w);
+
       initHumanoid(req.pose, req.velocity);
 
       initGroundJoint(req.pose);
 
       for (unsigned int i = 0; i < req.end_effectors.size(); ++i) {
-        endEffectors.push_back(initEndEffector(req.end_effectors[i]));
+        Model ee = initEndEffector(req.end_effectors[i]);
+        endEffectors.push_back(ee);
       }
 
       // Execute the simulation loop for 2 seconds
-      for (double t = 0; t <= DURATION; t += STEP_SIZE) {
-
+      bool contact = false;
+      for (t = 0; t <= DURATION && !contact; t += STEP_SIZE) {
         // Clear end effector contacts
         eeContacts.clear();
         hasEeContacts.clear();
@@ -387,24 +460,9 @@ private:
         FallPoint curr;
 
         // Get the location of the body for the current iteration
-        const dReal* position = dBodyGetPosition(humanoid.body);
-        const dReal* orientation = dBodyGetQuaternion(humanoid.body);
-        geometry_msgs::Pose pose;
-        pose.position = arrayToPoint(position);
-        pose.orientation.x = orientation[0];
-        pose.orientation.y = orientation[1];
-        pose.orientation.z = orientation[2];
-        pose.orientation.w = orientation[3];
-        curr.pose = pose;
-
+        curr.pose = getBodyPose(humanoid.body);
         curr.ground_contact = arrayToPoint(dBodyGetPosition(groundLink));
-        const dReal* linearVelocity = dBodyGetLinearVel(humanoid.body);
-        const dReal* angularVelocity = dBodyGetAngularVel(humanoid.body);
-        geometry_msgs::Twist twist;
-        twist.linear = arrayToVector(linearVelocity);
-        twist.angular = arrayToVector(angularVelocity);
-
-        curr.velocity = twist;
+        curr.velocity = getBodyTwist(humanoid.body);
         curr.time = ros::Duration(t);
 
         curr.contacts.resize(eeContacts.size());
@@ -413,18 +471,18 @@ private:
             if (hasEeContacts[i]) {
                 curr.contacts[i].position = arrayToPoint(eeContacts[i].pos);
                 curr.contacts[i].normal = arrayToVector(eeContacts[i].normal);
+                contact = true;
             }
         }
         res.points.push_back(curr);
       }
 
       // Set the mass and inertia matrix
-      res.body_mass = MASS_DEFAULT;
+      res.body_mass = humanoidMass;
       res.inertia_matrix = getPoleInertiaMatrix();
 
       // Publish the path
       if (fallVizPub.getNumSubscribers() > 0) {
-        ROS_INFO("Publishing estimated path");
         vector<geometry_msgs::Pose> points;
         for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i) {
             points.push_back(i->pose);
@@ -433,10 +491,15 @@ private:
       }
 
       if (contactVizPub.getNumSubscribers() > 0) {
-        ROS_INFO("Publishing contacts");
         for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i) {
             publishContacts(i->contacts, res.header.frame_id);
         }
+
+        vector<geometry_msgs::Pose> eePoses;
+        for (vector<Model>::const_iterator i = endEffectors.begin(); i != endEffectors.end(); ++i) {
+            eePoses.push_back(getBodyPose(i->body));
+        }
+        publishEeViz(eePoses, res.header.frame_id);
       }
 
       // Clean up

@@ -33,7 +33,8 @@ public:
         // to provide common frame with the same orientation as the models
         const ros::Time stamp = ros::Time::now();
         const string frames[] = {"r_wrist_roll_link", "r_wrist_roll_link", "r_gripper_l_finger_link", "r_gripper_l_finger_tip_link", "r_gripper_r_finger_link", "r_gripper_l_finger_tip_link"};
-        const string stls[] = {"/opt/ros/hydro/share/pr2_description/meshes/gripper_v0/gripper_palm.stl",
+        const string stls[] = {
+        "/opt/ros/hydro/share/pr2_description/meshes/gripper_v0/gripper_palm.stl",
         "/opt/ros/hydro/share/pr2_description/meshes/forearm_v0/wrist_roll_L.stl",
         "/opt/ros/hydro/share/pr2_description/meshes/gripper_v0/l_finger.stl",
         "/opt/ros/hydro/share/pr2_description/meshes/gripper_v0/l_finger_tip.stl",
