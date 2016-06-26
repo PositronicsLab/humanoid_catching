@@ -30,6 +30,6 @@
 
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="humanoid_catching" type="catching_controller" name="catching_controller"/>
-  <node pkg="humanoid_catching" type="balancer" name="balancer" output="screen"/>
+  <node pkg="humanoid_catching" type="balancer" name="balancer"/>
   <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
 </launch>

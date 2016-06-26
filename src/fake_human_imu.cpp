@@ -6,7 +6,7 @@ namespace {
 using namespace std;
 using namespace geometry_msgs;
 
-static const double FREQUENCY = 0.01;
+static const double FREQUENCY = 0.001;
 
 class FakeHumanIMU {
 private:
@@ -43,7 +43,7 @@ private:
         modelStateServ.call(modelState);
         humanoid_catching::IMU data;
         data.header.stamp = ros::Time::now();
-        data.header.frame_id = "/map";
+        data.header.frame_id = "/odom_combined";
 
         data.velocity = modelState.response.twist;
         data.pose = modelState.response.pose;

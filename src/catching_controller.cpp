@@ -86,9 +86,6 @@ private:
     void imuDataDetected(const humanoid_catching::IMUConstPtr& imuData) {
         ROS_INFO("Human IMU data received at @ %f", imuData->header.stamp.toSec());
 
-        // Stop listening for IMU data
-        humanIMUSub->unsubscribe();
-
         // Publish the viz message
         visualizeImuMsg(imuData);
         catchHuman(imuData);
@@ -104,10 +101,8 @@ private:
         actionlib::SimpleClientGoalState gs = catchHumanClient->sendGoalAndWait(goal, ros::Duration(MAX_CATCH_TIME), ros::Duration(MAX_PREEMPT_TIME));
         if (gs.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
             ROS_INFO("Human was initially caught successfully");
-            humanIMUSub->subscribe();
         } else {
             ROS_INFO("Human was not caught successfully. Failure state was %s", gs.getText().c_str());
-            humanIMUSub->subscribe();
         }
     }
 };

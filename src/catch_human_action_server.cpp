@@ -379,7 +379,7 @@ private:
         return numArmsSolved;
     }
 
-    geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base = "/map") const
+    geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base) const
     {
         tf::StampedTransform tfStampedTransform;
         tf.lookupTransform(base, tfFrame, stamp, tfStampedTransform);
@@ -433,17 +433,9 @@ private:
 
     bool endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const
     {
-        ROS_DEBUG("Waiting for wrist transforms");
-        if(!tf.waitForTransform("/map", "/l_wrist_roll_link", header.stamp, ros::Duration(1)) ||
-                !tf.waitForTransform("/map", "r_wrist_roll_link", header.stamp, ros::Duration(1)))
-        {
-            ROS_WARN("Failed to get wrist transform");
-            return false;
-        }
-
         poses.resize(2);
-        poses[0] = tfFrameToPose("/l_wrist_roll_link", header.stamp);
-        poses[1] = tfFrameToPose("/r_wrist_roll_link", header.stamp);
+        poses[0] = tfFrameToPose("/l_wrist_roll_link", ros::Time(0), "/odom_combined");
+        poses[1] = tfFrameToPose("/r_wrist_roll_link", ros::Time(0), "/odom_combined");
         return true;
     }
 
@@ -496,28 +488,14 @@ private:
             return;
         }
 
-        ROS_DEBUG("Predicting fall");
+        ROS_INFO("Predicting fall");
         if (!fallPredictor.call(predictFall))
         {
             ROS_WARN("Fall prediction failed");
             as.setAborted();
             return;
         }
-        ROS_DEBUG("Fall predicted successfully");
-
-        // Transform to the base_frame of the human (and therefore the obstacle) for IK, which is torso_lift_link
-        ROS_DEBUG("Waiting for /torso_lift_link transform");
-        if(!tf.waitForTransform(predictFall.response.header.frame_id, "/torso_lift_link", predictFall.response.header.stamp, ros::Duration(15)))
-        {
-            ROS_WARN("Failed to get transform from %s to /torso_lift_link", predictFall.response.header.frame_id.c_str());
-            as.setAborted();
-            return;
-        }
-
-        tf::StampedTransform goalToTorsoTransform;
-        tf.lookupTransform("/torso_lift_link", predictFall.response.header.frame_id, predictFall.response.header.stamp, goalToTorsoTransform);
-
-        ROS_DEBUG("Transforms acquired");
+        ROS_INFO("Fall predicted successfully");
 
         // Determine if the robot is currently in contact
         if (isRobotInContact(predictFall.response))
@@ -542,7 +520,7 @@ private:
                 calcTorques.request.body_velocity = fallPoint->velocity;
                 calcTorques.request.body_inertia_matrix = predictFall.response.inertia_matrix;
                 calcTorques.request.body_mass = predictFall.response.body_mass;
-                calcTorques.request.time_delta = ros::Duration(0.001);
+                calcTorques.request.time_delta = ros::Duration(0.01);
                 calcTorques.request.body_com = fallPoint->pose;
                 calcTorques.request.contact_position = fallPoint->contacts[i].position;
                 calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
@@ -620,6 +598,9 @@ private:
         }
         else
         {
+            tf::StampedTransform goalToTorsoTransform;
+            tf.lookupTransform("/torso_lift_link", predictFall.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
+
             // We now have a projected time/position path. Search the path for acceptable times.
             vector<Solution> solutions;
 
