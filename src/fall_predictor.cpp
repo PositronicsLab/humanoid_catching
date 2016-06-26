@@ -26,8 +26,8 @@ static const double END_EFFECTOR_WIDTH = 0.100908;
 static const double END_EFFECTOR_HEIGHT = 0.055100;
 static const double END_EFFECTOR_LENGTH = 0.244724;
 
-// Inflate the end effector to detect near contact
-static const double INFLATION_FACTOR = 0.0;
+// Deflate the end effector to fix interpenetration
+static const double DEFLATION_FACTOR = 0.01;
 
 struct Model {
     dBodyID body;  // the dynamics body
@@ -221,36 +221,37 @@ private:
             if (!contacts[i].is_in_contact) {
                 visualization_msgs::Marker deleteAll;
                 deleteAll.ns = "contacts";
+                deleteAll.id = i;
                 deleteAll.header.frame_id = frame;
                 deleteAll.header.stamp = ros::Time::now();
                 deleteAll.action = visualization_msgs::Marker::DELETE;
                 contactVizPub.publish(deleteAll);
-                continue;
             }
+            else {
+                visualization_msgs::Marker arrow;
+                arrow.header.frame_id = frame;
+                arrow.header.stamp = ros::Time::now();
+                arrow.ns = "contacts";
+                arrow.id = i;
+                arrow.type = visualization_msgs::Marker::ARROW;
+                arrow.pose.orientation = quaternionFromVector(contacts[i].normal);
+                arrow.pose.position = contacts[i].position;
+                arrow.scale.x = 0.5;
+                arrow.scale.y = 0.05;
+                arrow.scale.z = 0.05;
 
-            visualization_msgs::Marker arrow;
-            arrow.header.frame_id = frame;
-            arrow.header.stamp = ros::Time::now();
-            arrow.ns = "contacts";
-            arrow.id = i;
-            arrow.type = visualization_msgs::Marker::ARROW;
-            arrow.pose.orientation = quaternionFromVector(contacts[i].normal);
-            arrow.pose.position = contacts[i].position;
-            arrow.scale.x = 0.5;
-            arrow.scale.y = 0.05;
-            arrow.scale.z = 0.05;
-
-            // Contacts are blue
-            arrow.color.b = 1.0f;
-            if (i == 1) {
-                arrow.color.r = 1.0f;
+                // Contacts are blue or magenta
+                arrow.color.b = 1.0f;
+                if (i == 1) {
+                    arrow.color.r = 1.0f;
+                }
+                arrow.color.a = 1.0;
+                contactVizPub.publish(arrow);
             }
-            arrow.color.a = 1.0;
-            contactVizPub.publish(arrow);
         }
     }
 
-    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const string& frame) const {
+    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const vector<vector<double> >& eeSizes, const string& frame) const {
         for (unsigned int i = 0; i < ees.size(); ++i) {
             visualization_msgs::Marker box;
             box.header.frame_id = frame;
@@ -259,16 +260,16 @@ private:
             box.id = i;
             box.type = visualization_msgs::Marker::CUBE;
             box.pose = ees[i];
-            box.scale.x = END_EFFECTOR_LENGTH;
-            box.scale.y = END_EFFECTOR_WIDTH;
-            box.scale.z = END_EFFECTOR_HEIGHT;
+            box.scale.x = eeSizes[i][0];
+            box.scale.y = eeSizes[i][1];
+            box.scale.z = eeSizes[i][2];
 
             // Box is red
             box.color.r = 1.0f;
             if (i == 1) {
                 box.color.b = 1.0f;
             }
-            box.color.a = 1.0;
+            box.color.a = 0.5;
             fallVizPub.publish(box);
         }
     }
@@ -289,7 +290,7 @@ private:
 
             // Cylinder is green
             cyl.color.g = 1.0f;
-            cyl.color.a = 1.0;
+            cyl.color.a = 0.5;
             fallVizPub.publish(cyl);
         }
 
@@ -340,9 +341,9 @@ private:
                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
 
         object.geom = dCreateBox(space,
-                                    END_EFFECTOR_LENGTH * (1 + INFLATION_FACTOR),
-                                    END_EFFECTOR_WIDTH  * (1 + INFLATION_FACTOR),
-                                    END_EFFECTOR_HEIGHT * (1 + INFLATION_FACTOR));
+                                    END_EFFECTOR_LENGTH,
+                                    END_EFFECTOR_WIDTH,
+                                    END_EFFECTOR_HEIGHT);
         dGeomSetBody(object.geom, object.body);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetLinearVel(object.body, 0, 0, 0);
@@ -419,6 +420,19 @@ private:
         return I;
     }
 
+    void adjustEndEffector(Model ee) {
+        dContact contact[MAX_CONTACTS];
+        // Correct interpenetration at t=0 by reducing the size of the bounding box of the end effector.
+        while(dCollide(humanoid.geom, ee.geom, MAX_CONTACTS, &contact[0].geom, sizeof(dContact)) > 0) {
+            if (contact[0].geom.depth <= 0.001) {
+                break;
+            }
+            dVector3 boxSize;
+            dGeomBoxGetLengths(ee.geom, boxSize);
+            dGeomBoxSetLengths(ee.geom, boxSize[0] * (1 - DEFLATION_FACTOR),  boxSize[1] * (1 - DEFLATION_FACTOR),  boxSize[2] * (1 - DEFLATION_FACTOR));
+        }
+    }
+
     bool predict(humanoid_catching::PredictFall::Request& req,
                humanoid_catching::PredictFall::Response& res) {
       ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
@@ -439,6 +453,7 @@ private:
 
       for (unsigned int i = 0; i < req.end_effectors.size(); ++i) {
         Model ee = initEndEffector(req.end_effectors[i]);
+        adjustEndEffector(ee);
         endEffectors.push_back(ee);
       }
 
@@ -493,10 +508,18 @@ private:
         }
 
         vector<geometry_msgs::Pose> eePoses;
+        vector<vector<double> > eeSizes;
         for (vector<Model>::const_iterator i = endEffectors.begin(); i != endEffectors.end(); ++i) {
             eePoses.push_back(getBodyPose(i->body));
+            dVector3 boxSize;
+            dGeomBoxGetLengths(i->geom, boxSize);
+            vector<double> vecBoxSize(3);
+            vecBoxSize[0] = boxSize[0];
+            vecBoxSize[1] = boxSize[1];
+            vecBoxSize[2] = boxSize[2];
+            eeSizes.push_back(vecBoxSize);
         }
-        publishEeViz(eePoses, res.header.frame_id);
+        publishEeViz(eePoses, eeSizes, res.header.frame_id);
       }
 
       // Clean up
