@@ -221,6 +221,8 @@ private:
             if (!contacts[i].is_in_contact) {
                 visualization_msgs::Marker deleteAll;
                 deleteAll.ns = "contacts";
+                deleteAll.header.frame_id = frame;
+                deleteAll.header.stamp = ros::Time::now();
                 deleteAll.action = visualization_msgs::Marker::DELETE;
                 contactVizPub.publish(deleteAll);
                 continue;
@@ -272,18 +274,13 @@ private:
     }
 
     void publishPathViz(const vector<geometry_msgs::Pose>& path, const string& frame) const {
-        // Clear first
-        visualization_msgs::Marker deleteAll;
-        deleteAll.ns = "pole";
-        deleteAll.action = 3;
-        fallVizPub.publish(deleteAll);
 
         for (unsigned int i = 0; i < path.size(); ++i) {
             visualization_msgs::Marker cyl;
             cyl.header.frame_id = frame;
             cyl.header.stamp = ros::Time::now();
             cyl.ns = "pole";
-            cyl.id = 0; // TODO: Enable i;
+            cyl.id = 0;
             cyl.type = visualization_msgs::Marker::CYLINDER;
             cyl.pose = path[i];
             cyl.scale.x = humanoidRadius;
