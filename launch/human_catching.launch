@@ -1,35 +1,13 @@
 <launch>
   <include file="$(find pr2_machine)/$(env ROBOT).machine" />
   <include file="$(find pr2_moveit_config)/launch/planning_context.launch" />
-
-  <!-- Gazebo does not read these live
-  <param name="/r_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />
-  <param name="/l_arm_controller/joint_trajectory_action_node/constraints/goal_time" value="10.0" />
-  -->
   <include file="$(find kinematics_cache)/launch/kinematics_cache.launch" />
-
   <include file="$(find humanoid_catching)/launch/l_arm_force_controller.launch" />
   <include file="$(find humanoid_catching)/launch/r_arm_force_controller.launch" />
-
-  <!-- Mapping -->
-  <include file="$(find pr2_navigation_global)/amcl_node.xml" />
-  <node name="map_server" pkg="map_server" type="map_server" args="$(find humanoid_catching)/maps/map.yaml" />
-
-  <node pkg="humanoid_catching" type="fake_human_imu" name="fake_human_imu" >
-    <remap from="/out" to="/human/imu" />
-  </node>
-
   <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action" output="screen">
-    <param name="urdf" value="/home/jlurz/catkin_ws/src/humanoid_catching/models/pr2.urdf" />
+    <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
   </node>
-
-  <!-- Disabled due to spurious detections -->
-  <!-- <node pkg="humanoid_catching" type="simulated_fall_detector" name="fall_detector">
-    <remap from="/out" to="/human/fall" />
-  </node> -->
-
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="humanoid_catching" type="catching_controller" name="catching_controller"/>
   <node pkg="humanoid_catching" type="balancer" name="balancer"/>
-  <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
 </launch>

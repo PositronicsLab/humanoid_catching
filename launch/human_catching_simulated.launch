@@ -1,0 +1,7 @@
+<launch>
+  <include file="$(find humanoid_catching)/launch/human_catching.launch" />
+  <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
+  <node pkg="humanoid_catching" type="fake_human_imu" name="fake_human_imu" >
+    <remap from="/out" to="/human/imu" />
+  </node>
+</launch>
