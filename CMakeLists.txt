@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
     orocos_kdl
     pluginlib
     resource_retriever
+    gazebo
 )
 
 ## System dependencies are found with CMake's conventions
@@ -29,7 +30,7 @@ find_package(Ravelin REQUIRED)
 find_package(Moby REQUIRED)
 find_package(QPOASES REQUIRED)
 find_package(LibXml2 REQUIRED)
-
+find_package(gazebo REQUIRED)
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
@@ -139,7 +140,7 @@ add_definitions(-DdDOUBLE)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR})
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${GAZEBO_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(humanoid_catching
@@ -222,6 +223,10 @@ add_dependencies(calc_ee_bb ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTE
 target_link_libraries(calc_ee_bb
    ${catkin_LIBRARIES}
 )
+
+add_library(FallStatsPlugin SHARED src/fall_stats_plugin.cpp)
+target_link_libraries(FallStatsPlugin ${catkin_LIBRARIES})
+install(TARGETS FallStatsPlugin DESTINATION lib)
 
 #############
 ## Install ##
