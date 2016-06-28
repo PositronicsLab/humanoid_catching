@@ -224,9 +224,11 @@ target_link_libraries(calc_ee_bb
    ${catkin_LIBRARIES}
 )
 
-add_library(FallStatsPlugin SHARED src/fall_stats_plugin.cpp)
-target_link_libraries(FallStatsPlugin ${catkin_LIBRARIES})
-install(TARGETS FallStatsPlugin DESTINATION lib)
+add_executable(fall_stats_recorder src/fall_stats_recorder.cpp)
+add_dependencies(fall_stats_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(fall_stats_recorder
+   ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##

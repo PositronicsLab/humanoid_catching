@@ -32,6 +32,5 @@
         </geometry>
       </visual>
     </link>
-    <plugin name="fall_stats_plugin" filename="libFallStatsPlugin.so"/>
   </model>
 </sdf>

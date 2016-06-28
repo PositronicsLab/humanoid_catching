@@ -10,4 +10,5 @@
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="humanoid_catching" type="catching_controller" name="catching_controller"/>
   <node pkg="humanoid_catching" type="balancer" name="balancer"/>
+  <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder"/>
 </launch>
