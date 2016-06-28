@@ -18,9 +18,9 @@ do
   echo "Executing scenario: $i"
   export i=$i
   # Launch gazebo
-  roslaunch pr2_gazebo pr2_empty_world.launch &
+  roslaunch gazebo_ros empty_world.launch &
   sleep 15
-  roslaunch humanoid_catching human_catching_simulated.launch &
+  roslaunch humanoid_catching no_catching_simulated.launch &
   sleep 15
   echo "Starting fall"
   rosrun humanoid_catching fall_starter _random:=true _skipnotify:=true

@@ -67,7 +67,10 @@ public:
         pnh.param("delay", delay, NOTIFICATION_DELAY_DEFAULT);
         pnh.param("skipnotify", skipNotify, false);
         pnh.param("random", random, false);
-        ros::service::waitForService("/balancer/torques");
+
+        if (!skipNotify) {
+            ros::service::waitForService("/balancer/torques");
+        }
 
         if (random)
         {
