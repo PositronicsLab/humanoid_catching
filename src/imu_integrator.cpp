@@ -1,18 +1,12 @@
 #include <ros/ros.h>
 #include <humanoid_catching/IMU.h>
 #include <sensor_msgs/Imu.h>
-#include <message_filters/time_synchronizer.h>
-#include <message_filters/sync_policies/approximate_time.h>
-#include <message_filters/synchronizer.h>
 #include <message_filters/subscriber.h>
 #include <geometry_msgs/PoseStamped.h>
 
 namespace {
 using namespace std;
 using namespace geometry_msgs;
-
-typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Imu, geometry_msgs::PoseStamped> ImuPoseSyncPolicy;
-typedef message_filters::Synchronizer<ImuPoseSyncPolicy> ImuPoseSync;
 
 class ImuIntegrator {
 private:
@@ -25,30 +19,42 @@ private:
 	//! Private nh
 	ros::NodeHandle pnh;
 
-	auto_ptr<ImuPoseSync> sync;
+	//! Last observation time
+	ros::Time lastTime;
 
-    auto_ptr<message_filters::Subscriber<geometry_msgs::PoseStamped> > poseSub;
+	//! Integrated velocity
+	geometry_msgs::Twist velocity;
+
     auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > imuSub;
 public:
 	ImuIntegrator() :
 		pnh("~") {
          humanPosePub = nh.advertise<humanoid_catching::IMU>(
 				"out", 1);
-         poseSub.reset(new message_filters::Subscriber<geometry_msgs::PoseStamped>(nh, "imu/pose", 1));
          imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "imu/data", 1));
-         sync.reset(new ImuPoseSync(ImuPoseSyncPolicy(10), *imuSub, *poseSub));
-         sync->registerCallback(boost::bind(&ImuIntegrator::imuCallback, this, _1, _2));
+         imuSub->registerCallback(boost::bind(&ImuIntegrator::imuCallback, this, _1));
 	}
 
 private:
 
-    void imuCallback(sensor_msgs::ImuConstPtr data, geometry_msgs::PoseStampedConstPtr pose){
+    void imuCallback(sensor_msgs::ImuConstPtr data){
+
+        double dt = data->header.stamp.toSec() - lastTime.toSec();
+        if(lastTime.toSec() == 0){
+            dt = 0.0;
+        }
+
+        lastTime = data->header.stamp;
+        velocity.linear.x += dt * data->linear_acceleration.x;
+        velocity.linear.y += dt * data->linear_acceleration.y;
+        velocity.linear.z += dt * data->linear_acceleration.z;
 
         humanoid_catching::IMU imu;
-        imu.header = pose->header;
-        imu.pose = pose->pose;
+        imu.header =data->header;
+        imu.pose.orientation = data->orientation;
         imu.acceleration.linear = data->linear_acceleration;
         imu.velocity.angular = data->angular_velocity;
+        imu.velocity.linear = velocity.linear;
 
         // Publish the event
         ROS_DEBUG_STREAM("Publishing a human IMU event: " << imu);

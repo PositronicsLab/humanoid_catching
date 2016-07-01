@@ -46,8 +46,11 @@ private:
     //! Set random values for x-y
     bool random;
 
-    //! Do not notify robo
-    bool skipNotify;
+    //! Do not wait for robot to come online
+    bool waitForBalancer;
+
+    //! Notify only
+    bool notifyOnly;
 
     //! Notification delay
     double delay;
@@ -59,16 +62,24 @@ public:
         pnh("~")
     {
         gazeboClient = nh.serviceClient<gazebo_msgs::ApplyBodyWrench>("/gazebo/apply_body_wrench", true /* persistent */);
-        catchNotifier = nh.advertise<humanoid_catching::HumanFall>("/human/fall", 1);
+        catchNotifier = nh.advertise<humanoid_catching::HumanFall>("/human/fall", 1, true);
         pnh.param("x", x, 0.0);
         pnh.param("y", y, 0.0);
         pnh.param("z", z, 0.0);
         pnh.param("duration", duration, DURATION_DEFAULT);
         pnh.param("delay", delay, NOTIFICATION_DELAY_DEFAULT);
-        pnh.param("skipnotify", skipNotify, false);
+        pnh.param("waitForBalancer", waitForBalancer, true);
         pnh.param("random", random, false);
+        pnh.param("notifyOnly", notifyOnly, false);
 
-        if (!skipNotify) {
+        if (random && notifyOnly)
+        {
+            ROS_WARN("Cannot combine random and notify only settings");
+            random = false;
+        }
+
+        if (waitForBalancer)
+        {
             ros::service::waitForService("/balancer/torques");
         }
 
@@ -98,15 +109,15 @@ public:
             while (!found)
             {
                 // X generator
-                boost::uniform_real<double> xRange(0, 1000);
+                boost::uniform_real<double> xRange(0, 200);
                 boost::variate_generator<boost::mt19937&, boost::uniform_real<double> > genX(rng, xRange);
                 x = genX();
 
                 // Y generator
-                boost::uniform_real<double> yRange(-750, 750);
+                boost::uniform_real<double> yRange(-150, 150);
                 boost::variate_generator<boost::mt19937&, boost::uniform_real<double> > genY(rng, yRange);
                 y = genY();
-                if (fabs(x) >= 500 || fabs(y) >= 500)
+                if (fabs(x) >= 100 || fabs(y) >= 100)
                 {
                     found = true;
                 }
@@ -116,28 +127,26 @@ public:
 
     void fall()
     {
-        ROS_INFO("Initiating fall with forces [%f, %f, %f]", x, y, z);
-        gazebo_msgs::ApplyBodyWrench wrench;
-        wrench.request.body_name = "human::link";
-        wrench.request.wrench.torque.x = x;
-        wrench.request.wrench.torque.y = y;
-        wrench.request.wrench.torque.z = z;
-        wrench.request.duration = ros::Duration(duration);
-
-        if (!gazeboClient.call(wrench))
+        if (!notifyOnly)
         {
-            ROS_ERROR("Failed to apply wrench");
-            return;
+            ROS_INFO("Initiating fall with forces [%f, %f, %f]", x, y, z);
+            gazebo_msgs::ApplyBodyWrench wrench;
+            wrench.request.body_name = "human::link";
+            wrench.request.wrench.torque.x = x;
+            wrench.request.wrench.torque.y = y;
+            wrench.request.wrench.torque.z = z;
+            wrench.request.duration = ros::Duration(duration);
+
+            if (!gazeboClient.call(wrench))
+            {
+                ROS_ERROR("Failed to apply wrench");
+                return;
+            }
         }
 
-        ROS_INFO("Pausing before notifying");
-        ros::Duration(delay).sleep();
-        ROS_INFO("Notifying fall catcher");
-        if (!skipNotify)
-        {
-            catchNotifier.publish(humanoid_catching::HumanFall());
-        }
-        ROS_INFO("Fall initiation complete");
+        ROS_DEBUG("Notifying fall catcher");
+        catchNotifier.publish(humanoid_catching::HumanFall());
+        ROS_DEBUG("Fall initiation complete");
     }
 };
 }
@@ -147,4 +156,5 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "fall_starter");
     FallStarter fs;
     fs.fall();
+    ros::Duration(3.0).sleep();
 }

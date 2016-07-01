@@ -6,25 +6,30 @@
 #include <iostream>
 #include <bullet/LinearMath/btVector3.h>
 #include <tf/transform_listener.h>
+#include <tf/tf.h>
 
 namespace {
 using namespace std;
 using namespace humanoid_catching;
 
 //! Default weight in kg
-static const double MASS_DEFAULT = 5;
-static const double HEIGHT_DEFAULT = 1.5;
-static const double RADIUS_DEFAULT = 0.025; // Width of pole
+static const double MASS_DEFAULT = 0.896;
+static const double HEIGHT_DEFAULT = 1.8288;
+static const double RADIUS_DEFAULT = 0.03175;
 
 static const double STEP_SIZE = 0.001;
 static const double DURATION = 2.0;
-static const unsigned int MAX_CONTACTS = 6;
+static const int MAX_CONTACTS = 6;
 
 // Computed from models. Note that the gazebo convention for the PR2 model has the end
 // effector aligned along the z axis in the zero orientation
 static const double END_EFFECTOR_WIDTH = 0.100908;
 static const double END_EFFECTOR_HEIGHT = 0.055100;
 static const double END_EFFECTOR_LENGTH = 0.244724;
+
+static const double BASE_X_DEFAULT = 0.5;
+static const double BASE_Y_DEFAULT = 0;
+static const double BASE_Z_DEFAULT = 0;
 
 // Deflate the end effector to fix interpenetration
 static const double DEFLATION_FACTOR = 0.01;
@@ -95,12 +100,19 @@ private:
 
     //! Current time
     double t;
+
+    //! Position of base
+    geometry_msgs::Point base;
 public:
    FallPredictor() :
      pnh("~"), t(0.0) {
        pnh.param("humanoid_height", humanoidHeight, HEIGHT_DEFAULT);
        pnh.param("humanoid_radius", humanoidRadius, RADIUS_DEFAULT);
        pnh.param("humanoid_mass", humanoidMass, MASS_DEFAULT);
+
+       pnh.param("base_x", base.x, BASE_X_DEFAULT);
+       pnh.param("base_y", base.y, BASE_Y_DEFAULT);
+       pnh.param("base_z", base.z, BASE_Z_DEFAULT);
 
        fallVizPub = nh.advertise<visualization_msgs::Marker>(
          "/fall_predictor/projected_path", 1);
@@ -114,9 +126,11 @@ public:
 
 private:
     void collisionCallback(dGeomID o1, dGeomID o2) {
+
+        dContact contact[MAX_CONTACTS];
+
         dBodyID b1 = dGeomGetBody(o1);
         dBodyID b2 = dGeomGetBody(o2);
-        dContact contact[MAX_CONTACTS];
         for (int i = 0; i < MAX_CONTACTS; i++){
             contact[i].surface.mode = dContactSoftCFM;
             contact[i].surface.mu = dInfinity;
@@ -131,8 +145,8 @@ private:
 
         if (int numc = dCollide(firstObj, secondObj, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
             for (int i = 0; i < numc; i++) {
-                dJointID c = dJointCreateContact(world, contactgroup, contact + i);
-                dJointAttach(c, b1, b2);
+                // dJointID c = dJointCreateContact(world, contactgroup, &contact[i]);
+                // dJointAttach(c, b1, b2);
 
                 // Determine if this contact should be saved
                 int which = whichEndEffector(b1, b2);
@@ -171,14 +185,15 @@ private:
         dWorldSetContactSurfaceLayer(world, 0.001);
     }
 
-    void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& velocity) {
+    void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& velocity,
+                      const geometry_msgs::Twist& acceleration) {
 
         // Create the object
         humanoid.body = dBodyCreate(world);
 
         dBodySetPosition(humanoid.body, pose.position.x, pose.position.y, pose.position.z);
         dBodySetLinearVel(humanoid.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
-        dBodySetAngularVel(humanoid.body, velocity.angular.x, velocity.angular.y,velocity.angular.z);
+        dBodySetAngularVel(humanoid.body, velocity.angular.x, velocity.angular.y, velocity.angular.z);
 
         const dReal q[] = {pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w};
         dBodySetQuaternion(humanoid.body, q);
@@ -297,29 +312,12 @@ private:
         // Clear any other values
     }
 
-    void initGroundJoint(const geometry_msgs::Pose& humanPose) {
+    void initGroundJoint() {
       // Create the ground object
       groundLink = dBodyCreate(world);
       groundToBodyJG = dJointGroupCreate(0);
 
-      // Determine the intersection between the human pose and the ground plane.
-      btVector3 groundNormal(0, 0, 1);
-      btVector3 groundOrigin(0, 0, 0);
-
-      tf::Quaternion tfHumanOrientation;
-      tf::quaternionMsgToTF(humanPose.orientation, tfHumanOrientation);
-      tf::Vector3 tfHumanVector = tf::quatRotate(tfHumanOrientation, tf::Vector3(0, 0, 1));
-
-      btVector3 humanVector(tfHumanVector.x(), tfHumanVector.y(), tfHumanVector.z());
-      btVector3 humanOrigin(humanPose.position.x, humanPose.position.y, humanPose.position.z);
-
-      btScalar d = ((groundOrigin - humanOrigin).dot(groundNormal)) / (humanVector.dot(groundNormal));
-      btVector3 intersection = d * humanVector + humanOrigin;
-
-      // Assert intersection is at ground plane.
-      assert(abs(intersection.z()) < 0.001);
-
-      dBodySetPosition(groundLink, intersection.x(), intersection.y(), intersection.z());
+      dBodySetPosition(groundLink, base.x, base.y, base.z);
 
       // Set it as unresponsive to forces
       dBodySetKinematic(groundLink);
@@ -327,7 +325,7 @@ private:
       groundJoint = dJointCreateBall(world, groundToBodyJG);
       dJointAttach(groundJoint, humanoid.body, groundLink);
 
-      dJointSetBallAnchor(groundJoint, intersection.x(), intersection.y(), intersection.z());
+      dJointSetBallAnchor(groundJoint, base.x, base.y, base.z);
     }
 
     Model initEndEffector(const geometry_msgs::Pose& endEffector){
@@ -336,7 +334,7 @@ private:
         Model object;
         object.body = dBodyCreate(world);
 
-        ROS_INFO("Adding end effector @ %f %f %f (%f %f %f %f)",
+        ROS_DEBUG("Adding end effector @ %f %f %f (%f %f %f %f)",
                  endEffector.position.x, endEffector.position.y, endEffector.position.z,
                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
 
@@ -421,7 +419,16 @@ private:
     }
 
     void adjustEndEffector(Model ee) {
+
+        // Contacts
         dContact contact[MAX_CONTACTS];
+        for (int i = 0; i < MAX_CONTACTS; i++){
+            contact[i].surface.mode = dContactSoftCFM;
+            contact[i].surface.mu = dInfinity;
+            contact[i].surface.mu2 = 0;
+            contact[i].surface.soft_cfm = 0.01;
+        }
+
         // Correct interpenetration at t=0 by reducing the size of the bounding box of the end effector.
         while(dCollide(humanoid.geom, ee.geom, MAX_CONTACTS, &contact[0].geom, sizeof(dContact)) > 0) {
             if (contact[0].geom.depth <= 0.001) {
@@ -433,9 +440,35 @@ private:
         }
     }
 
+    /**
+     * Given a base position, pole length, and an orientation, compute the base position
+     */
+    geometry_msgs::Point computeCOMPosition(const geometry_msgs::Quaternion& orientation) const {
+
+        // Rotation the up vector
+        tf::Quaternion rotation(orientation.x, orientation.y, orientation.z, orientation.w);
+
+        // This assumes the IMU is orientated up
+        tf::Vector3 upVector(0, 0, 1);
+        tf::Vector3 rotatedVector = tf::quatRotate(rotation, upVector);
+
+        // Now set the height
+        rotatedVector *= humanoidHeight / 2.0;
+
+        // Now offset by the base
+        tf::Vector3 offset(base.x, base.y, base.z);
+        rotatedVector += offset;
+
+        geometry_msgs::Point result;
+        result.x = rotatedVector.x();
+        result.y = rotatedVector.y();
+        result.z = rotatedVector.z();
+        return result;
+    }
+
     bool predict(humanoid_catching::PredictFall::Request& req,
                humanoid_catching::PredictFall::Response& res) {
-      ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
+      ROS_DEBUG("Predicting fall in frame %s", req.header.frame_id.c_str());
 
       res.header = req.header;
 
@@ -444,12 +477,15 @@ private:
 
       initWorld();
 
-      ROS_DEBUG("Initializing humanoid with pose: %f %f %f (%f %f %f %f)", req.pose.position.x, req.pose.position.y, req.pose.position.z,
-               req.pose.orientation.x, req.pose.orientation.y, req.pose.orientation.z, req.pose.orientation.w);
+      ROS_DEBUG("Initializing humanoid with pose: (%f %f %f %f) and velocity: (%f %f %f)",
+               req.pose.orientation.x, req.pose.orientation.y, req.pose.orientation.z, req.pose.orientation.w,
+               req.velocity.angular.x, req.velocity.angular.y, req.velocity.angular.z);
 
-      initHumanoid(req.pose, req.velocity);
+      req.pose.position = computeCOMPosition(req.pose.orientation);
 
-      initGroundJoint(req.pose);
+      initHumanoid(req.pose, req.velocity, req.accel);
+
+      initGroundJoint();
 
       for (unsigned int i = 0; i < req.end_effectors.size(); ++i) {
         Model ee = initEndEffector(req.end_effectors[i]);
@@ -524,7 +560,7 @@ private:
 
       // Clean up
       destroyODE();
-      ROS_INFO("Completed fall prediction");
+      ROS_DEBUG("Completed fall prediction");
       return true;
     }
   };

@@ -154,7 +154,6 @@ private:
 private:
     void jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg)
     {
-        ROS_DEBUG("Received a joint states message");
         for(unsigned int i = 0; i < msg->name.size(); ++i)
         {
             jointStates[msg->name[i]] = State(msg->position[i], msg->velocity[i]);
@@ -464,7 +463,7 @@ private:
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal)
     {
 
-        ROS_INFO("Catch procedure initiated");
+        ROS_DEBUG("Catch procedure initiated");
 
         if(!as.isActive() || as.isPreemptRequested() || !ros::ok())
         {
@@ -488,14 +487,17 @@ private:
             return;
         }
 
-        ROS_INFO("Predicting fall");
+        ROS_DEBUG("Predicting fall");
         if (!fallPredictor.call(predictFall))
         {
-            ROS_WARN("Fall prediction failed");
+            ROS_DEBUG("Fall prediction failed");
             as.setAborted();
             return;
         }
-        ROS_INFO("Fall predicted successfully");
+        ROS_DEBUG("Fall predicted successfully");
+
+        ROS_INFO("Estimated position: %f %f %f", predictFall.response.points[0].pose.position.x, predictFall.response.points[0].pose.position.y,  predictFall.response.points[0].pose.position.z);
+        ROS_INFO("Estimated calculated velocity: %f %f %f", predictFall.response.points[0].velocity.linear.x, predictFall.response.points[0].velocity.linear.y,  predictFall.response.points[0].velocity.linear.z);
 
         // Determine if the robot is currently in contact
         if (isRobotInContact(predictFall.response))
@@ -730,16 +732,6 @@ private:
                 return;
             }
 
-            // Convert the obstacle to the movement frame
-            geometry_msgs::PoseStamped obstacleStamped;
-            obstacleStamped.header = goal->header;
-            obstacleStamped.pose = goal->pose;
-
-            geometry_msgs::PoseStamped obstacle;
-            obstacle.pose = applyTransform(obstacleStamped, goalToTorsoTransform);
-            obstacle.header.frame_id = "/torso_lift_link";
-            obstacle.header.stamp = goal->header.stamp;
-
             // Now move both arms to the position
             for (unsigned int i = 0; i < armCommandPubs.size(); ++i)
             {
@@ -750,8 +742,6 @@ private:
                     visualizeGoal(bestSolution->pose, i);
                     command.header = bestSolution->pose.header;
                     command.target = bestSolution->pose.pose;
-                    command.obstacle = obstacle.pose;
-                    command.has_obstacle = false;
                     command.point_at_target = true;
                     armCommandPubs[i].publish(command);
                 }
@@ -762,7 +752,7 @@ private:
             }
         }
 
-        ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
+        ROS_DEBUG("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
                  ros::Time::now().toSec() - startRosTime.toSec());
         as.setSucceeded();
     }

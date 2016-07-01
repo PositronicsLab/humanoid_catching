@@ -654,8 +654,8 @@ private:
       // Check torques
       bound = 0;
       for (bound; bound < num_effective_joints; ++bound) {
-        assert(z[bound] >= req.torque_limits[bound].minimum);
-        assert(z[bound] <= req.torque_limits[bound].maximum);
+        assert(z[bound] + EPSILON >= req.torque_limits[bound].minimum);
+        assert(z[bound] - EPSILON <= req.torque_limits[bound].maximum);
       }
 
       z.get_sub_vec(v_t_delta_robot_idx, v_t_delta_robot_idx + num_effective_joints, arm_velocities);

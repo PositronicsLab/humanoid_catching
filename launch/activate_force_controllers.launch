@@ -1,0 +1,5 @@
+<launch>
+  <include file="$(find pr2_machine)/$(env ROBOT).machine" />
+  <include file="$(find humanoid_catching)/launch/l_arm_force_controller.launch" />
+  <include file="$(find humanoid_catching)/launch/r_arm_force_controller.launch" />
+</launch>

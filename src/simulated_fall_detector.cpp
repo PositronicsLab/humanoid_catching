@@ -57,7 +57,7 @@ private:
         fall.header.stamp = ros::Time::now();
 
         // Publish the event
-        ROS_INFO("Publishing a human fall event");
+        ROS_DEBUG("Publishing a human fall event");
         fallPub.publish(fall);
       }
 };

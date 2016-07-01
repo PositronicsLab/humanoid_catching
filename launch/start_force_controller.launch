@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="pr2_controller_manager" type="pr2_controller_manager" args="start r_arm_force_controller" name="r_arm_force_controller_starter" output="screen"/>
+  <node pkg="pr2_controller_manager" type="pr2_controller_manager" args="start l_arm_force_controller" name="l_arm_force_controller_starter" output="screen"/>
+</launch>

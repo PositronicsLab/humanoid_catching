@@ -70,6 +70,7 @@ add_message_files(
    ForceControllerFeedback.msg
    Move.msg
    Limit.msg
+   Reset.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -227,6 +228,12 @@ target_link_libraries(calc_ee_bb
 add_executable(fall_stats_recorder src/fall_stats_recorder.cpp)
 add_dependencies(fall_stats_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_stats_recorder
+   ${catkin_LIBRARIES}
+)
+
+add_executable(move_arms_to_base_positions src/move_arms_to_base_positions.cpp)
+add_dependencies(move_arms_to_base_positions ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(move_arms_to_base_positions
    ${catkin_LIBRARIES}
 )
 
