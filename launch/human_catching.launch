@@ -7,7 +7,7 @@
   <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
   </node>
-  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor" output="screen"/>
+  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
   <node pkg="humanoid_catching" type="catching_controller" name="catching_controller"/>
   <node pkg="humanoid_catching" type="balancer" name="balancer"/>
   <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder"/>

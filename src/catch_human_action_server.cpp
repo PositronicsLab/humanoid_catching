@@ -496,8 +496,8 @@ private:
         }
         ROS_DEBUG("Fall predicted successfully");
 
-        ROS_INFO("Estimated position: %f %f %f", predictFall.response.points[0].pose.position.x, predictFall.response.points[0].pose.position.y,  predictFall.response.points[0].pose.position.z);
-        ROS_INFO("Estimated calculated velocity: %f %f %f", predictFall.response.points[0].velocity.linear.x, predictFall.response.points[0].velocity.linear.y,  predictFall.response.points[0].velocity.linear.z);
+        ROS_DEBUG("Estimated position: %f %f %f", predictFall.response.points[0].pose.position.x, predictFall.response.points[0].pose.position.y,  predictFall.response.points[0].pose.position.z);
+        ROS_DEBUG("Estimated calculated velocity: %f %f %f", predictFall.response.points[0].velocity.linear.x, predictFall.response.points[0].velocity.linear.y,  predictFall.response.points[0].velocity.linear.z);
 
         // Determine if the robot is currently in contact
         if (isRobotInContact(predictFall.response))

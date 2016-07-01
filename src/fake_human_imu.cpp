@@ -64,8 +64,6 @@ private:
         data.velocity = modelState.response.twist;
         data.pose = modelState.response.pose;
 
-        ROS_INFO("True position: %f %f %f", data.pose.position.x, data.pose.position.y, data.pose.position.z);
-
         // Clear fields that are not available from IMU
         data.pose.position.x = data.pose.position.y = data.pose.position.z = 0;
         return data;
