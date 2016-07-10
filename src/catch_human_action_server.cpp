@@ -1,10 +1,9 @@
 #include <ros/ros.h>
 #include <actionlib/server/simple_action_server.h>
 #include <humanoid_catching/CatchHumanAction.h>
-#include <kinematics_cache/IKQuery.h>
+#include <kinematics_cache/IKQueryv2.h>
 #include <humanoid_catching/PredictFall.h>
 #include <actionlib/client/simple_action_client.h>
-#include <humanoid_catching/Move.h>
 #include <humanoid_catching/CalculateTorques.h>
 #include <tf/transform_listener.h>
 #include <boost/timer.hpp>
@@ -22,15 +21,15 @@
 #include <Ravelin/RigidBodyd.h>
 #include <Ravelin/Jointd.h>
 #include <Ravelin/RCArticulatedBodyd.h>
+#include <operational_space_controllers_msgs/Move.h>
 
-// TODO: Validate everything is in robot frame
 namespace
 {
 using namespace std;
 using namespace humanoid_catching;
 
 typedef actionlib::SimpleActionServer<humanoid_catching::CatchHumanAction> Server;
-typedef vector<kinematics_cache::IK> IKList;
+typedef vector<kinematics_cache::IKv2> IKList;
 
 static const string ARMS[] = {"left_arm", "right_arm"};
 static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_force_controller/command"};
@@ -181,7 +180,7 @@ public:
 
         ROS_INFO("Waiting for kinematics_cache/ik service");
         ros::service::waitForService("/kinematics_cache/ik");
-        ik = nh.serviceClient<kinematics_cache::IKQuery>("/kinematics_cache/ik", true /* persistent */);
+        ik = nh.serviceClient<kinematics_cache::IKQueryv2>("/kinematics_cache/ik", true /* persistent */);
 
         ROS_INFO("Waiting for /balancer/torques service");
         ros::service::waitForService("/balancer/torques");
@@ -191,7 +190,7 @@ public:
         ROS_INFO("Initializing arm command publishers");
         for (unsigned int i = 0; i < boost::size(ARMS); ++i)
         {
-            armCommandPubs.push_back(nh.advertise<humanoid_catching::Move>(ARM_TOPICS[i], 1, false));
+            armCommandPubs.push_back(nh.advertise<operational_space_controllers_msgs::Move>(ARM_TOPICS[i], 1, false));
             goalPubs.push_back(nh.advertise<geometry_msgs::PointStamped>(ARM_GOAL_VIZ_TOPICS[i], 10, true));
         }
 
@@ -236,9 +235,17 @@ public:
             }
 
             ROS_INFO("Loading joint limits for arm %s", ARMS[k].c_str());
-            for (unsigned int i = 0; i < jointModelGroup->getActiveJointModels().size(); ++i)
+#if ROS_VERSION_MINIMUM(1, 10, 12)
+            for (unsigned int i = 0; i < jointModelGroup->getActiveJointModelNames().size(); ++i)
+#else
+            for (unsigned int i = 0; i < getActiveJointModelNames(jointModelGroup).size(); ++i)
+#endif
             {
-                const string& jointName = jointModelGroup->getActiveJointModels()[i]->getName();
+                #if ROS_VERSION_MINIMUM(1, 10, 12)
+                const string jointName = jointModelGroup->getActiveJointModelNames()[i];
+                #else
+                const string jointName = getActiveJointModelNames(jointModelGroup)[i];
+                #endif
                 jointNames[ARMS[k]].push_back(jointName);
 
                 const string prefix = "robot_description_planning/joint_limits/" + jointName + "/";
@@ -297,6 +304,24 @@ public:
     }
 
 private:
+
+    #if ROS_VERSION_MINIMUM(1, 10, 12)
+        // Method not required
+    #else
+    static vector<string> getActiveJointModelNames(const robot_model::JointModelGroup* jointModelGroup) {
+      vector<string> activeJointModels;
+      for (unsigned int i = 0; i < jointModelGroup->getJointModels().size(); ++i)
+      {
+         if (jointModelGroup->getJointModels()[i]->getMimic() != NULL) {
+           ROS_WARN("Passive joint model found");
+           continue;
+         }
+         activeJointModels.push_back(jointModelGroup->getJointModels()[i]->getName());
+
+      }
+      return activeJointModels;
+    }
+    #endif // ROS_VERSION_MINIMUM
 
     void preempt()
     {
@@ -442,7 +467,7 @@ private:
     {
         // Execute the movement
         ROS_INFO("Dispatching torque command for arm %s", ARMS[arm].c_str());
-        humanoid_catching::Move command;
+        operational_space_controllers_msgs::Move command;
         command.header.stamp = ros::Time::now();
         command.header.frame_id = "/torso_lift_link";
         command.has_torques = true;
@@ -497,7 +522,8 @@ private:
         ROS_DEBUG("Fall predicted successfully");
 
         ROS_DEBUG("Estimated position: %f %f %f", predictFall.response.points[0].pose.position.x, predictFall.response.points[0].pose.position.y,  predictFall.response.points[0].pose.position.z);
-        ROS_DEBUG("Estimated calculated velocity: %f %f %f", predictFall.response.points[0].velocity.linear.x, predictFall.response.points[0].velocity.linear.y,  predictFall.response.points[0].velocity.linear.z);
+        ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFall.response.points[0].velocity.angular.x, predictFall.response.points[0].velocity.angular.y,  predictFall.response.points[0].velocity.angular.z);
+        ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFall.response.points[0].velocity.linear.x, predictFall.response.points[0].velocity.linear.y,  predictFall.response.points[0].velocity.linear.z);
 
         // Determine if the robot is currently in contact
         if (isRobotInContact(predictFall.response))
@@ -530,7 +556,12 @@ private:
 
                 // Get the list of joints in this group
                 const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[i]);
-                const vector<string>& jointModelNames = jointModelGroup->getActiveJointModelNames();
+
+                #if ROS_VERSION_MINIMUM(1, 10, 12)
+                const vector<string> jointModelNames = jointModelGroup->getActiveJointModelNames();
+                #else
+                const vector<string> jointModelNames = getActiveJointModelNames(jointModelGroup);
+                #endif
 
                 // Update the joint positions and velocities
                 unsigned int numGeneralized = body->num_generalized_coordinates(Ravelin::DynamicBodyd::eEuler);
@@ -560,7 +591,13 @@ private:
 
                 // Get the jacobian
                 robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
+
+                #if ROS_VERSION_MINIMUM(1, 10, 12)
                 Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
+                #else
+                Eigen::MatrixXd jacobian;
+                currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getEndEffectorName(), Eigen::Vector3d(0, 0, 0), jacobian);
+                #endif
 
                 // Set current velocities
                 calcTorques.request.joint_velocity.resize(jointModelNames.size());
@@ -642,8 +679,9 @@ private:
                 }
 
                 // Lookup the IK solution
-                kinematics_cache::IKQuery ikQuery;
-                ikQuery.request.pose = transformedPose;
+                kinematics_cache::IKQueryv2 ikQuery;
+                ikQuery.request.point.point = transformedPose.pose.position;
+                ikQuery.request.point.header = transformedPose.header;
 
                 if (!ik.call(ikQuery))
                 {
@@ -662,7 +700,11 @@ private:
                     // may be another position that is not in collision.
                     // Note: The allowed collision matrix should prevent collisions between the arms
                     robot_state::RobotState currentRobotState = currentScene->getCurrentState();
+                    #if ROS_VERSION_MINIMUM(1, 10, 12)
                     currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
+                    #else
+                    currentRobotState.setStateValues(jointNames[j->group], j->positions);
+                    #endif
                     if (currentScene->isStateColliding(currentRobotState, j->group, false))
                     {
                         ROS_DEBUG("State in collision.");
@@ -737,8 +779,8 @@ private:
             {
                 if (bestSolution->armsSolved[i])
                 {
-                    ROS_INFO("Publishing command for arm %s.", ARMS[i].c_str());
-                    humanoid_catching::Move command;
+                    ROS_DEBUG("Publishing command for arm %s.", ARMS[i].c_str());
+                    operational_space_controllers_msgs::Move command;
                     visualizeGoal(bestSolution->pose, i);
                     command.header = bestSolution->pose.header;
                     command.target = bestSolution->pose.pose;

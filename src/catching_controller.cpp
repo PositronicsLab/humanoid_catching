@@ -1,12 +1,11 @@
 #include <ros/ros.h>
-#include <humanoid_catching/HumanFall.h>
+#include <std_msgs/Header.h>
 #include <humanoid_catching/CatchHumanAction.h>
 #include <actionlib/client/simple_action_client.h>
 #include <message_filters/subscriber.h>
-#include <humanoid_catching/IMU.h>
-#include <humanoid_catching/Reset.h>
 #include <visualization_msgs/Marker.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <sensor_msgs/Imu.h>
 
 namespace {
 using namespace std;
@@ -30,13 +29,13 @@ private:
     ros::Publisher imuVizPub;
 
     //! Human fall subscriber
-    auto_ptr<message_filters::Subscriber<HumanFall> > humanFallSub;
+    auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
 
     //! Reset sub
-    auto_ptr<message_filters::Subscriber<Reset> > resetSub;
+    auto_ptr<message_filters::Subscriber<std_msgs::Header> > resetSub;
 
     //! Human IMU subscriber
-    auto_ptr<message_filters::Subscriber<humanoid_catching::IMU> > humanIMUSub;
+    auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
 
     //! Catch human action client.
     auto_ptr<CatchHumanClient> catchHumanClient;
@@ -46,30 +45,28 @@ public:
 		pnh("~") {
         ROS_INFO("Initializing the catching controller");
         humanFallSub.reset(
-                new message_filters::Subscriber<HumanFall>(nh, "/human/fall", 1));
+                new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
         humanFallSub->registerCallback(boost::bind(&CatchingController::fallDetected, this, _1));
 
         resetSub.reset(
-                new message_filters::Subscriber<Reset>(nh, "/catching_controller/reset", 1));
+                new message_filters::Subscriber<std_msgs::Header>(nh, "/catching_controller/reset", 1));
         resetSub->registerCallback(boost::bind(&CatchingController::reset, this, _1));
 
         // Construct but don't initialize
         humanIMUSub.reset(
-                new message_filters::Subscriber<humanoid_catching::IMU>(nh, "/human/imu", 1));
+                new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/human/imu", 1));
         humanIMUSub->unsubscribe();
 
         ROS_DEBUG("Waiting for catch human server");
         catchHumanClient.reset(new CatchHumanClient("catch_human_action", true));
         catchHumanClient->waitForServer();
 
-        imuVizPub = nh.advertise<geometry_msgs::PoseStamped>("/catching_controller/imu_data", 1);
-
         ROS_INFO("Catching controller initialized successfully");
 	}
 
 private:
-    void fallDetected(const HumanFallConstPtr& fallingMsg) {
-        ROS_INFO("Human fall detected at @ %f", fallingMsg->header.stamp.toSec());
+    void fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
+        ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
 
         // Unsubscribe from further fall notifications
         humanFallSub->unsubscribe();
@@ -82,30 +79,18 @@ private:
         // aware of any initial velocity
     }
 
-    void visualizeImuMsg(const humanoid_catching::IMUConstPtr data) const {
-        if (imuVizPub.getNumSubscribers() > 0) {
-            geometry_msgs::PoseStamped poseStamped;
-            poseStamped.header = data->header;
-            poseStamped.pose = data->pose;
-            imuVizPub.publish(poseStamped);
-        }
-    }
-
-    void imuDataDetected(const humanoid_catching::IMUConstPtr& imuData) {
+    void imuDataDetected(const sensor_msgs::ImuConstPtr& imuData) {
         ROS_DEBUG("Human IMU data received at @ %f", imuData->header.stamp.toSec());
-
-        // Publish the viz message
-        visualizeImuMsg(imuData);
         catchHuman(imuData);
     }
 
-    void catchHuman(const humanoid_catching::IMUConstPtr& imuData) {
+    void catchHuman(const sensor_msgs::ImuConstPtr& imuData) {
         ROS_DEBUG("Beginning procedure to catch human");
         humanoid_catching::CatchHumanGoal goal;
         goal.header = imuData->header;
-        goal.velocity = imuData->velocity;
-        goal.accel = imuData->acceleration;
-        goal.pose = imuData->pose;
+        goal.velocity.angular = imuData->angular_velocity;
+        goal.accel.linear = imuData->linear_acceleration;
+        goal.pose.orientation = imuData->orientation;
         actionlib::SimpleClientGoalState gs = catchHumanClient->sendGoalAndWait(goal, ros::Duration(MAX_CATCH_TIME), ros::Duration(MAX_PREEMPT_TIME));
         if (gs.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
             ROS_DEBUG("Human was initially caught successfully");
@@ -114,7 +99,7 @@ private:
         }
     }
 
-    void reset(const humanoid_catching::ResetConstPtr& reset) {
+    void reset(const std_msgs::HeaderConstPtr& reset) {
         ROS_INFO("Resetting catching controller");
 
         // Stop the current actions

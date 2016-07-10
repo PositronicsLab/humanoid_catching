@@ -1,9 +1,0 @@
-r_arm_force_controller:
-  type: humanoid_catching/ForceControllerPlugin
-  root_name: torso_lift_link
-  tip_name: r_gripper_tool_frame
-
-l_arm_force_controller:
-  type: humanoid_catching/ForceControllerPlugin
-  root_name: torso_lift_link
-  tip_name: l_gripper_tool_frame

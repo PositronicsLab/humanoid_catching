@@ -3,11 +3,16 @@
   <node pkg="microstrain_3dm_gx3_35" name="imu_3dm_node" type="imu_driver" output="screen">
     <param name="port" value="/dev/ttyACM0"/>
     <param name="rate" value="100.0"/>
+    <param name="frame_id" value="/odom_combined" />
     <param name="publish_pose" value="false" />
     <param name="publish_gps" value="false" />
     <param name="publish_gps_as_odom" value="false" />
     <param name="publish_nav_pose" value="false" />
     <param name="publish_nav_odom" value="false" />
     <param name="publish_nav_fix" value="false" />
+  </node>
+  <node pkg="humanoid_catching" type="imu_integrator" name="imu_integrator" output="screen" >
+      <remap from="/out" to="/human/imu" />
+      <remap from="/in" to="/imu_3dm_node/imu/data" />
   </node>
 </launch>

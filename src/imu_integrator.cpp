@@ -1,70 +1,92 @@
 #include <ros/ros.h>
-#include <humanoid_catching/IMU.h>
 #include <sensor_msgs/Imu.h>
 #include <message_filters/subscriber.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <tf/tf.h>
 
-namespace {
+namespace
+{
 using namespace std;
 using namespace geometry_msgs;
+using namespace std_msgs;
 
-class ImuIntegrator {
+static const double GRAVITY = 9.80665;
+
+class ImuIntegrator
+{
 private:
     //! Publisher for the human pose
-	ros::Publisher humanPosePub;
+    ros::Publisher posePub;
 
-	//! Node handle
-	ros::NodeHandle nh;
+    //! Node handle
+    ros::NodeHandle nh;
 
-	//! Private nh
-	ros::NodeHandle pnh;
+    //! Private nh
+    ros::NodeHandle pnh;
 
-	//! Last observation time
-	ros::Time lastTime;
-
-	//! Integrated velocity
-	geometry_msgs::Twist velocity;
-
+    //! IMU subscription
     auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > imuSub;
+
+    //! Publisher for the pose visualization
+    ros::Publisher poseVizPub;
+
+    //! Publisher for the velocity visualization
+    ros::Publisher velocityVizPub;
 public:
-	ImuIntegrator() :
-		pnh("~") {
-         humanPosePub = nh.advertise<humanoid_catching::IMU>(
-				"out", 1);
-         imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "imu/data", 1));
-         imuSub->registerCallback(boost::bind(&ImuIntegrator::imuCallback, this, _1));
-	}
+    ImuIntegrator() :
+        pnh("~")
+    {
+        posePub = nh.advertise<sensor_msgs::Imu>("out", 1);
+        imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
+        imuSub->registerCallback(boost::bind(&ImuIntegrator::imuCallback, this, _1));
+
+        poseVizPub = nh.advertise<geometry_msgs::PoseStamped>("imu/pose", 1);
+        velocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>("/imu/velocity", 1);
+    }
 
 private:
 
-    void imuCallback(sensor_msgs::ImuConstPtr data){
+    void visualizePose(const Header& header, const Quaternion& orientation) {
+        PoseStamped poseStamped;
+        poseStamped.pose.orientation = orientation;
+        poseStamped.header = header;
+        poseVizPub.publish(poseStamped);
+    }
 
-        double dt = data->header.stamp.toSec() - lastTime.toSec();
-        if(lastTime.toSec() == 0){
-            dt = 0.0;
+    void visualizeVelocity(const Header& header, const Vector3& angular) {
+        WrenchStamped wrench;
+        wrench.header = header;
+        wrench.wrench.torque = angular;
+        velocityVizPub.publish(wrench);
+    }
+
+    void imuCallback(sensor_msgs::ImuConstPtr data)
+    {
+        sensor_msgs::Imu imu;
+        imu.header = data->header;
+        imu.orientation = data->orientation;
+        imu.linear_acceleration = data->linear_acceleration;
+        imu.angular_velocity = data->angular_velocity;
+
+        if (poseVizPub.getNumSubscribers() > 0) {
+            visualizePose(imu.header, imu.orientation);
         }
 
-        lastTime = data->header.stamp;
-        velocity.linear.x += dt * data->linear_acceleration.x;
-        velocity.linear.y += dt * data->linear_acceleration.y;
-        velocity.linear.z += dt * data->linear_acceleration.z;
-
-        humanoid_catching::IMU imu;
-        imu.header =data->header;
-        imu.pose.orientation = data->orientation;
-        imu.acceleration.linear = data->linear_acceleration;
-        imu.velocity.angular = data->angular_velocity;
-        imu.velocity.linear = velocity.linear;
+        if (velocityVizPub.getNumSubscribers() > 0) {
+            visualizeVelocity(imu.header, imu.angular_velocity);
+        }
 
         // Publish the event
         ROS_DEBUG_STREAM("Publishing a human IMU event: " << imu);
-        humanPosePub.publish(imu);
-      }
+        posePub.publish(imu);
+    }
 };
 }
-int main(int argc, char** argv) {
-	ros::init(argc, argv, "imu_integrator");
+int main(int argc, char** argv)
+{
+    ros::init(argc, argv, "imu_integrator");
 
-	ImuIntegrator ii;
-	ros::spin();
+    ImuIntegrator ii;
+    ros::spin();
 }

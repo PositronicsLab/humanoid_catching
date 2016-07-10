@@ -4,12 +4,16 @@
 #include <boost/filesystem.hpp>
 #include <ros/ros.h>
 #include <message_filters/subscriber.h>
-#include <humanoid_catching/IMU.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <humanoid_catching/HumanFall.h>
+#include <sensor_msgs/Imu.h>
+#include <std_msgs/Header.h>
+#include <boost/math/constants/constants.hpp>
+#include <tf/tf.h>
 
 using namespace std;
-using namespace humanoid_catching;
+
+static const double EPSILON = 0.01;
+static const double PI = boost::math::constants::pi<double>();
 
 namespace
 {
@@ -24,10 +28,10 @@ private:
     ros::NodeHandle pnh;
 
     //! Human IMU subscriber
-    auto_ptr<message_filters::Subscriber<humanoid_catching::IMU> > humanIMUSub;
+    auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
 
     //! Human fall subscriber
-    auto_ptr<message_filters::Subscriber<HumanFall> > humanFallSub;
+    auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
 
     //! Start time
     ros::Time startTime;
@@ -37,11 +41,11 @@ public:
     {
         ROS_DEBUG("Initializing the fall stats recorder");
 
-        humanFallSub.reset(new message_filters::Subscriber<HumanFall>(nh, "/human/fall", 1));
+        humanFallSub.reset(new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
         humanFallSub->registerCallback(boost::bind(&FallStatsRecorder::fallDetected, this, _1));
 
         // Don't subscribe until the fall starts
-        humanIMUSub.reset(new message_filters::Subscriber<humanoid_catching::IMU>(nh, "/human/imu", 1));
+        humanIMUSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/human/imu", 1));
         humanIMUSub->unsubscribe();
     }
 
@@ -78,8 +82,8 @@ private:
         ROS_INFO_STREAM("Printing output file complete");
     }
 
-    void fallDetected(const HumanFallConstPtr& fallingMsg) {
-        ROS_INFO("Human fall detected at @ %f", fallingMsg->header.stamp.toSec());
+    void fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
+        ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
         humanFallSub->unsubscribe();
 
         startTime = ros::Time::now();
@@ -87,13 +91,19 @@ private:
         humanIMUSub->subscribe();
     }
 
-    void worldUpdate(const humanoid_catching::IMUConstPtr& imuData)
+    bool isOnGround(const geometry_msgs::Quaternion& orientation) {
+        double roll, pitch, yaw;
+        tf::Matrix3x3(tf::Quaternion(orientation.x, orientation.y, orientation.z, orientation.w)).getRPY(roll, pitch, yaw);
+        return (pitch >= -EPSILON || pitch < -PI + EPSILON || abs(yaw) > PI / 2 - EPSILON);
+    }
+
+    void worldUpdate(const sensor_msgs::ImuConstPtr& imuData)
     {
 
         ros::Duration contactTime = ros::Time::now() - startTime;
-        if (imuData->pose.position.z <= 0.025 + 0.01 || contactTime.toSec() >= 30.0)
+        if (isOnGround(imuData->orientation) || contactTime.toSec() >= 30.0)
         {
-            ROS_INFO_STREAM("Setting contact time to: " << contactTime << ". Current z = " << imuData->pose.position.z);
+            ROS_INFO_STREAM("Setting contact time to: " << contactTime);
             printResults(contactTime);
             humanIMUSub->unsubscribe();
         }

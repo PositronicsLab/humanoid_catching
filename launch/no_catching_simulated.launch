@@ -1,7 +1,7 @@
 <launch>
   <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
   <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder"/>
-  <node pkg="humanoid_catching" type="fake_human_imu" name="fake_human_imu" >
+  <node pkg="gazebo_utils" type="fake_imu" name="fake_imu" >
     <remap from="/out" to="/human/imu" />
   </node>
 </launch>

@@ -9,19 +9,16 @@ find_package(catkin REQUIRED COMPONENTS
     moveit_ros_planning
     moveit_ros_planning_interface
     roscpp
-    gazebo_msgs
     geometry_msgs
     message_filters
     actionlib
     actionlib_msgs
-    pr2_controllers_msgs
     tf
     sensor_msgs
-    eigen
     orocos_kdl
     pluginlib
     resource_retriever
-    gazebo
+    operational_space_controllers_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -30,7 +27,7 @@ find_package(Ravelin REQUIRED)
 find_package(Moby REQUIRED)
 find_package(QPOASES REQUIRED)
 find_package(LibXml2 REQUIRED)
-find_package(gazebo REQUIRED)
+
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
@@ -63,14 +60,9 @@ find_package(gazebo REQUIRED)
 ## Generate messages in the 'msg' folder
 add_message_files(
    FILES
-   HumanFall.msg
    Contact.msg
    FallPoint.msg
-   IMU.msg
-   ForceControllerFeedback.msg
-   Move.msg
    Limit.msg
-   Reset.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -124,7 +116,6 @@ generate_messages(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES humanoid_catching
   DEPENDS system_lib
 )
 
@@ -153,33 +144,9 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXM
 ## either from message generation or dynamic reconfigure
 # add_dependencies(humanoid_catching ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_executable(fake_human_imu src/fake_human_imu.cpp)
-add_dependencies(fake_human_imu ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(fake_human_imu
-   ${catkin_LIBRARIES}
-)
-
-add_executable(announced_fall_detector src/announced_fall_detector.cpp)
-add_dependencies(announced_fall_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(announced_fall_detector
-   ${catkin_LIBRARIES}
-)
-
-add_executable(simulated_fall_detector src/simulated_fall_detector.cpp)
-add_dependencies(simulated_fall_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(simulated_fall_detector
-   ${catkin_LIBRARIES}
-)
-
 add_executable(catching_controller src/catching_controller.cpp)
 add_dependencies(catching_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(catching_controller
-   ${catkin_LIBRARIES}
-)
-
-add_executable(move_arm_fast_action_server src/move_arm_fast_action_server.cpp)
-add_dependencies(move_arm_fast_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(move_arm_fast_action_server
    ${catkin_LIBRARIES}
 )
 
@@ -198,25 +165,19 @@ target_link_libraries(fall_predictor
 add_executable(imu_integrator src/imu_integrator.cpp)
 add_dependencies(imu_integrator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(imu_integrator
-   ${catkin_LIBRARIES} ${ODE_LIBRARY}
-)
-
-add_library(force_controller src/force_controller.cpp)
-add_dependencies(force_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(force_controller
-   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+   ${catkin_LIBRARIES}
 )
 
 add_executable(fall_starter src/fall_starter.cpp)
 add_dependencies(fall_starter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_starter
-   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+   ${catkin_LIBRARIES}
 )
 
 add_executable(balancer src/balancer.cpp)
 add_dependencies(balancer ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(balancer
-   ${catkin_LIBRARIES} ${ODE_LIBRARY} ${RAVELIN_LIBRARIES} ${MOBY_LIBRARIES} ${QPOASES_LIBRARIES}
+   ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${MOBY_LIBRARIES} ${QPOASES_LIBRARIES}
 )
 
 add_executable(calc_ee_bb src/calc_ee_bb.cpp)
@@ -228,12 +189,6 @@ target_link_libraries(calc_ee_bb
 add_executable(fall_stats_recorder src/fall_stats_recorder.cpp)
 add_dependencies(fall_stats_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_stats_recorder
-   ${catkin_LIBRARIES}
-)
-
-add_executable(move_arms_to_base_positions src/move_arms_to_base_positions.cpp)
-add_dependencies(move_arms_to_base_positions ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(move_arms_to_base_positions
    ${catkin_LIBRARIES}
 )
 
@@ -250,12 +205,6 @@ target_link_libraries(move_arms_to_base_positions
 #   scripts/my_python_script
 #   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
-
-install(TARGETS fake_human_imu
-   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
 
 ## Mark cpp header files for installation
 # install(DIRECTORY include/${PROJECT_NAME}/

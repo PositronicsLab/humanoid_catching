@@ -13,7 +13,7 @@ using namespace std;
 using namespace humanoid_catching;
 using namespace Ravelin;
 
-static const double GRAVITY = -9.81;
+static const double GRAVITY = -9.80665;
 static const unsigned int POLE_DOF = 6;
 static const double EPSILON = 0.001;
 

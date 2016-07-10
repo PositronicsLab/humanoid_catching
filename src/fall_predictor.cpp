@@ -4,8 +4,9 @@
 #include <visualization_msgs/Marker.h>
 #include <ode/ode.h>
 #include <iostream>
-#include <bullet/LinearMath/btVector3.h>
 #include <tf/transform_listener.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <boost/math/constants/constants.hpp>
 #include <tf/tf.h>
 
 namespace {
@@ -20,6 +21,7 @@ static const double RADIUS_DEFAULT = 0.03175;
 static const double STEP_SIZE = 0.001;
 static const double DURATION = 2.0;
 static const int MAX_CONTACTS = 6;
+static const unsigned int MAX_CORRECTIONS = 100;
 
 // Computed from models. Note that the gazebo convention for the PR2 model has the end
 // effector aligned along the z axis in the zero orientation
@@ -34,6 +36,8 @@ static const double BASE_Z_DEFAULT = 0;
 // Deflate the end effector to fix interpenetration
 static const double DEFLATION_FACTOR = 0.01;
 
+static const double PI = boost::math::constants::pi<double>();
+
 struct Model {
     dBodyID body;  // the dynamics body
     dGeomID geom;  // geometries representing this body
@@ -46,6 +50,12 @@ private:
 
     //! Publisher for the contact visualization
     ros::Publisher contactVizPub;
+
+    //! Publisher for the initial position
+    ros::Publisher initialPoseVizPub;
+
+    //! Publisher for the initial velocity
+    ros::Publisher initialVelocityVizPub;
 
     //! Node handle
     ros::NodeHandle nh;
@@ -119,6 +129,12 @@ public:
 
        contactVizPub = nh.advertise<visualization_msgs::Marker>(
          "/fall_predictor/contacts", 1);
+
+       initialPoseVizPub = nh.advertise<geometry_msgs::PoseStamped>(
+         "/fall_predictor/initial_pose", 1);
+
+       initialVelocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>(
+         "/fall_predictor/initial_velocity", 1);
 
        fallPredictionService = nh.advertiseService("/fall_predictor/predict_fall",
             &FallPredictor::predict, this);
@@ -308,8 +324,22 @@ private:
             cyl.color.a = 0.5;
             fallVizPub.publish(cyl);
         }
+    }
 
-        // Clear any other values
+    void publishPoseAndVelocity(std_msgs::Header& header, geometry_msgs::Pose& pose, geometry_msgs::Twist& velocity) {
+        if (initialPoseVizPub.getNumSubscribers() > 0) {
+            geometry_msgs::PoseStamped ps;
+            ps.header = header;
+            ps.pose = pose;
+            initialPoseVizPub.publish(ps);
+        }
+        if (initialVelocityVizPub.getNumSubscribers() > 0) {
+            geometry_msgs::WrenchStamped ws;
+            ws.header = header;
+            ws.wrench.force = velocity.linear;
+            ws.wrench.torque = velocity.angular;
+            initialVelocityVizPub.publish(ws);
+        }
     }
 
     void initGroundJoint() {
@@ -429,28 +459,29 @@ private:
             contact[i].surface.soft_cfm = 0.01;
         }
 
+        unsigned int i = 0;
         // Correct interpenetration at t=0 by reducing the size of the bounding box of the end effector.
-        while(dCollide(humanoid.geom, ee.geom, MAX_CONTACTS, &contact[0].geom, sizeof(dContact)) > 0) {
+        while(i < MAX_CORRECTIONS && dCollide(humanoid.geom, ee.geom, MAX_CONTACTS, &contact[0].geom, sizeof(dContact)) > 0) {
             if (contact[0].geom.depth <= 0.001) {
                 break;
             }
             dVector3 boxSize;
             dGeomBoxGetLengths(ee.geom, boxSize);
             dGeomBoxSetLengths(ee.geom, boxSize[0] * (1 - DEFLATION_FACTOR),  boxSize[1] * (1 - DEFLATION_FACTOR),  boxSize[2] * (1 - DEFLATION_FACTOR));
+            ++i;
         }
     }
 
     /**
-     * Given a base position, pole length, and an orientation, compute the base position
+     * Given a base position, pole length, and an orientation, compute the COM position
      */
     geometry_msgs::Point computeCOMPosition(const geometry_msgs::Quaternion& orientation) const {
 
-        // Rotation the up vector
+        // Rotate the up vector
         tf::Quaternion rotation(orientation.x, orientation.y, orientation.z, orientation.w);
 
-        // This assumes the IMU is orientated up
-        tf::Vector3 upVector(0, 0, 1);
-        tf::Vector3 rotatedVector = tf::quatRotate(rotation, upVector);
+        tf::Vector3 initialVector(1, 0, 0);
+        tf::Vector3 rotatedVector = tf::quatRotate(rotation, initialVector);
 
         // Now set the height
         rotatedVector *= humanoidHeight / 2.0;
@@ -466,6 +497,38 @@ private:
         return result;
     }
 
+    geometry_msgs::Vector3 computeLinearVelocity(const geometry_msgs::Quaternion& orientation,
+                                                 const geometry_msgs::Vector3& angular) {
+
+        tf::Vector3 initialVector(1, 0, 0);
+        tf::Vector3 r = tf::quatRotate(tf::Quaternion(orientation.x, orientation.y, orientation.z, orientation.w), initialVector);
+
+        // Now set the height
+        r *= humanoidHeight / 2.0;
+        tf::Vector3 w(angular.x, angular.y, angular.z);
+        tf::Vector3 linear = r.cross(w);
+        geometry_msgs::Vector3 linearVelocity;
+        linearVelocity.x = linear.x();
+        linearVelocity.y = linear.y();
+        linearVelocity.z = linear.z();
+        return linearVelocity;
+    }
+
+    // Compensate for the model being initial aligned to the x axis and oriented
+    // up
+    geometry_msgs::Pose orientPose(const geometry_msgs::Pose& pose) {
+        tf::Quaternion rotation = tf::createQuaternionFromRPY(0, PI / 2.0, 0);
+        tf::Quaternion orientation(pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w);
+        orientation *= rotation;
+        geometry_msgs::Pose result;
+        result.position = pose.position;
+        result.orientation.x = orientation.x();
+        result.orientation.y = orientation.y();
+        result.orientation.z = orientation.z();
+        result.orientation.w = orientation.w();
+        return result;
+    }
+
     bool predict(humanoid_catching::PredictFall::Request& req,
                humanoid_catching::PredictFall::Response& res) {
       ROS_DEBUG("Predicting fall in frame %s", req.header.frame_id.c_str());
@@ -477,13 +540,20 @@ private:
 
       initWorld();
 
-      ROS_DEBUG("Initializing humanoid with pose: (%f %f %f %f) and velocity: (%f %f %f)",
+      ROS_INFO("Initializing humanoid with pose: (%f %f %f %f) and velocity: (%f %f %f)",
                req.pose.orientation.x, req.pose.orientation.y, req.pose.orientation.z, req.pose.orientation.w,
                req.velocity.angular.x, req.velocity.angular.y, req.velocity.angular.z);
 
       req.pose.position = computeCOMPosition(req.pose.orientation);
 
-      initHumanoid(req.pose, req.velocity, req.accel);
+      // TODO: Replace this with linear/angular fusing
+      req.velocity.linear = computeLinearVelocity(req.pose.orientation, req.velocity.angular);
+
+      geometry_msgs::Pose adjustedPose = orientPose(req.pose);
+
+      initHumanoid(adjustedPose, req.velocity, req.accel);
+
+      publishPoseAndVelocity(req.header, req.pose, req.velocity);
 
       initGroundJoint();
 
