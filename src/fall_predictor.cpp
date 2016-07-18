@@ -161,8 +161,8 @@ private:
 
         if (int numc = dCollide(firstObj, secondObj, MAX_CONTACTS, &contact[0].geom, sizeof(dContact))) {
             for (int i = 0; i < numc; i++) {
-                // dJointID c = dJointCreateContact(world, contactgroup, &contact[i]);
-                // dJointAttach(c, b1, b2);
+                dJointID c = dJointCreateContact(world, contactgroup, &contact[i]);
+                dJointAttach(c, b1, b2);
 
                 // Determine if this contact should be saved
                 int which = whichEndEffector(b1, b2);
