@@ -34,9 +34,10 @@ private:
 public:
    Balancer() :
      pnh("~") {
-
+       ROS_DEBUG("Starting the balancer service");
        balancerService = nh.advertiseService("/balancer/torques",
             &Balancer::calculateTorques, this);
+       ROS_DEBUG("Balancer service started");
 	}
 
 private:

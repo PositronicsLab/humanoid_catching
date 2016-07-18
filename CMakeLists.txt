@@ -27,6 +27,7 @@ find_package(Ravelin REQUIRED)
 find_package(Moby REQUIRED)
 find_package(QPOASES REQUIRED)
 find_package(LibXml2 REQUIRED)
+find_package(BLAS REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -177,7 +178,7 @@ target_link_libraries(fall_starter
 add_executable(balancer src/balancer.cpp)
 add_dependencies(balancer ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(balancer
-   ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${MOBY_LIBRARIES} ${QPOASES_LIBRARIES}
+   ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${BLAS_LIBRARIES} ${MOBY_LIBRARIES} ${QPOASES_LIBRARIES}
 )
 
 add_executable(calc_ee_bb src/calc_ee_bb.cpp)

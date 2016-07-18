@@ -67,7 +67,6 @@
 		<Unit filename="package.xml" />
 		<Unit filename="run_scenario.sh" />
 		<Unit filename="rviz/display.rviz" />
-		<Unit filename="src/announced_fall_detector.cpp" />
 		<Unit filename="src/balancer.cpp" />
 		<Unit filename="src/calc_ee_bb.cpp" />
 		<Unit filename="src/catch_human_action_server.cpp" />

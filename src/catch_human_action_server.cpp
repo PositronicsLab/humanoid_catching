@@ -596,7 +596,7 @@ private:
                 Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
                 #else
                 Eigen::MatrixXd jacobian;
-                currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getEndEffectorName(), Eigen::Vector3d(0, 0, 0), jacobian);
+                currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getLinkModelNames().back(), Eigen::Vector3d(0, 0, 0), jacobian);
                 #endif
 
                 // Set current velocities
