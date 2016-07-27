@@ -390,19 +390,6 @@ private:
         return ros::Duration(longestTime);
     }
 
-    static unsigned int numArmsSolved(const Solution& solution)
-    {
-        unsigned int numArmsSolved = 0;
-        for (unsigned int k = 0; k < boost::size(ARMS); ++k)
-        {
-            if (solution.armsSolved[k])
-            {
-                numArmsSolved++;
-            }
-        }
-        return numArmsSolved;
-    }
-
     geometry_msgs::Pose tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base) const
     {
         tf::StampedTransform tfStampedTransform;
@@ -750,19 +737,15 @@ private:
 
             // Select the point which is reachable most quickly
             ros::Duration highestDeltaTime = ros::Duration(-1000);
-            unsigned int highestArmsSolved = 0;
 
             vector<Solution>::iterator bestSolution = solutions.end();
             for (vector<Solution>::iterator solution = solutions.begin(); solution != solutions.end(); ++solution)
             {
-
-                // Always prefer higher armed solutions
-                if (numArmsSolved(*solution) > highestArmsSolved || numArmsSolved(*solution) == highestArmsSolved && solution->delta > highestDeltaTime)
+                if (solution->delta > highestDeltaTime)
                 {
-                    highestArmsSolved = numArmsSolved(*solution);
                     highestDeltaTime = solution->delta;
-                    ROS_DEBUG("Selected a pose with more arms solved or a higher delta time. Pose is %f %f %f, arms solved is %u, and delta is %f", solution->pose.pose.position.x,
-                              solution->pose.pose.position.y, solution->pose.pose.position.z, highestArmsSolved, highestDeltaTime.toSec());
+                    ROS_DEBUG("Selected a pose with hhigher delta time. Pose is %f %f %f and delta is %f", solution->pose.pose.position.x,
+                              solution->pose.pose.position.y, solution->pose.pose.position.z, highestDeltaTime.toSec());
                     bestSolution = solution;
                 }
             }
