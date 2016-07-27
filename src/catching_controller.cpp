@@ -54,7 +54,7 @@ public:
 
         // Construct but don't initialize
         humanIMUSub.reset(
-                new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/human/imu", 1));
+                new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
         humanIMUSub->unsubscribe();
 
         ROS_DEBUG("Waiting for catch human server");

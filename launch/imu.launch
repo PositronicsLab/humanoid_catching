@@ -10,9 +10,9 @@
     <param name="publish_nav_pose" value="false" />
     <param name="publish_nav_odom" value="false" />
     <param name="publish_nav_fix" value="false" />
+    <remap from="/imu_3dm_node/imu/data" to="/human/imu" />
   </node>
-  <node pkg="humanoid_catching" type="imu_integrator" name="imu_integrator" output="screen" >
-      <remap from="/out" to="/human/imu" />
-      <remap from="/in" to="/imu_3dm_node/imu/data" />
+  <node pkg="humanoid_catching" type="imu_visualizer" name="imu_visualizer" output="screen" >
+      <remap from="/in" to="/human/imu" />
   </node>
 </launch>

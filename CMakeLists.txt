@@ -116,7 +116,6 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  INCLUDE_DIRS include
   DEPENDS system_lib
 )
 
@@ -133,7 +132,7 @@ add_definitions(-DdDOUBLE)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${GAZEBO_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${GAZEBO_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(humanoid_catching
@@ -163,9 +162,9 @@ target_link_libraries(fall_predictor
    ${catkin_LIBRARIES} ${ODE_LIBRARY}
 )
 
-add_executable(imu_integrator src/imu_integrator.cpp)
-add_dependencies(imu_integrator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(imu_integrator
+add_executable(imu_visualizer src/imu_visualizer.cpp)
+add_dependencies(imu_visualizer ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(imu_visualizer
    ${catkin_LIBRARIES}
 )
 
@@ -190,6 +189,12 @@ target_link_libraries(calc_ee_bb
 add_executable(fall_stats_recorder src/fall_stats_recorder.cpp)
 add_dependencies(fall_stats_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_stats_recorder
+   ${catkin_LIBRARIES}
+)
+
+add_executable(imu_filter src/imu_filter.cpp)
+add_dependencies(imu_filter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(imu_filter
    ${catkin_LIBRARIES}
 )
 

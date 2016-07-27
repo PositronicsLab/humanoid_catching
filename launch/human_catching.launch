@@ -8,7 +8,16 @@
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
   </node>
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
-  <node pkg="humanoid_catching" type="catching_controller" name="catching_controller"/>
+
+  <node pkg="humanoid_catching" type="imu_filter" name="imu_filter">
+    <remap to="/human/imu" from="/in" />
+    <remap to="/human/imu_filtered" from="/out" />
+  </node>
+
+  <node pkg="humanoid_catching" type="catching_controller" name="catching_controller">
+    <remap to="/human/imu_filtered" from="/in" />
+  </node>
+
   <node pkg="humanoid_catching" type="balancer" name="balancer"/>
   <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder"/>
 </launch>

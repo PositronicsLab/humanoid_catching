@@ -40,16 +40,12 @@
 		<Unit filename="TODO" />
 		<Unit filename="action/CatchHuman.action" />
 		<Unit filename="action/MoveArmFast.action" />
-		<Unit filename="humanoid_catching.layout" />
-		<Unit filename="include/humanoid_catching/force_controller.hpp" />
 		<Unit filename="launch/activate_force_controllers.launch" />
 		<Unit filename="launch/human_catching.launch" />
 		<Unit filename="launch/human_catching_robot.launch" />
 		<Unit filename="launch/human_catching_simulated.launch" />
 		<Unit filename="launch/imu.launch" />
-		<Unit filename="launch/l_arm_force_controller.launch" />
 		<Unit filename="launch/no_catching_simulated.launch" />
-		<Unit filename="launch/r_arm_force_controller.launch" />
 		<Unit filename="launch/reset_arms.launch" />
 		<Unit filename="launch/spawn_human.launch" />
 		<Unit filename="launch/spawn_models.launch" />

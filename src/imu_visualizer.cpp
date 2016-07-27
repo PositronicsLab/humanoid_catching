@@ -3,7 +3,6 @@
 #include <message_filters/subscriber.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/WrenchStamped.h>
-#include <tf/tf.h>
 
 namespace
 {
@@ -11,14 +10,9 @@ using namespace std;
 using namespace geometry_msgs;
 using namespace std_msgs;
 
-static const double GRAVITY = 9.80665;
-
-class ImuIntegrator
+class ImuVisualizer
 {
 private:
-    //! Publisher for the human pose
-    ros::Publisher posePub;
-
     //! Node handle
     ros::NodeHandle nh;
 
@@ -34,15 +28,14 @@ private:
     //! Publisher for the velocity visualization
     ros::Publisher velocityVizPub;
 public:
-    ImuIntegrator() :
+    ImuVisualizer() :
         pnh("~")
     {
-        posePub = nh.advertise<sensor_msgs::Imu>("out", 1);
         imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
-        imuSub->registerCallback(boost::bind(&ImuIntegrator::imuCallback, this, _1));
+        imuSub->registerCallback(boost::bind(&ImuVisualizer::imuCallback, this, _1));
 
         poseVizPub = nh.advertise<geometry_msgs::PoseStamped>("imu/pose", 1);
-        velocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>("/imu/velocity", 1);
+        velocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>("imu/velocity", 1);
     }
 
 private:
@@ -76,17 +69,13 @@ private:
         if (velocityVizPub.getNumSubscribers() > 0) {
             visualizeVelocity(imu.header, imu.angular_velocity);
         }
-
-        // Publish the event
-        ROS_DEBUG_STREAM("Publishing a human IMU event: " << imu);
-        posePub.publish(imu);
     }
 };
 }
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "imu_integrator");
+    ros::init(argc, argv, "imu_visualizer");
 
-    ImuIntegrator ii;
+    ImuVisualizer ii;
     ros::spin();
 }
