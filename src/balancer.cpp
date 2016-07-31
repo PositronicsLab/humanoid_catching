@@ -676,6 +676,11 @@ private:
       J_robot.mult(arm_velocities, ee_velocity);
       ROS_INFO_STREAM("ee_velocity: " << ee_velocity);
 
+      res.ee_velocities.resize(6);
+      for (unsigned int i = 0; i < 6; ++i) {
+        res.ee_velocities[i] = ee_velocity[i];
+      }
+
       // Check forward dynamics
       // TODO: Move to function
       /*

@@ -22,6 +22,7 @@
 #include <Ravelin/Jointd.h>
 #include <Ravelin/RCArticulatedBodyd.h>
 #include <operational_space_controllers_msgs/Move.h>
+#include <geometry_msgs/WrenchStamped.h>
 
 namespace
 {
@@ -32,6 +33,7 @@ typedef actionlib::SimpleActionServer<humanoid_catching::CatchHumanAction> Serve
 typedef vector<kinematics_cache::IKv2> IKList;
 
 static const string ARMS[] = {"left_arm", "right_arm"};
+static const string ARM_EE_FRAMES[] = {"/l_wrist_roll_link", "/r_wrist_roll_link"};
 static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_force_controller/command"};
 static const string ARM_GOAL_VIZ_TOPICS[] = {"/catch_human_action_server/movement_goal/left_arm", "/catch_human_action_server/movement_goal/right_arm"};
 static const double MAX_VELOCITY = 100;
@@ -41,7 +43,7 @@ static const double MAX_EFFORT = 100;
 //! Tolerance of time to be considered in contact
 static const ros::Duration CONTACT_TIME_TOLERANCE = ros::Duration(0.1);
 
-static const ros::Duration SEARCH_RESOLUTION(0.10);
+static const ros::Duration SEARCH_RESOLUTION(0.01);
 static const double pi = boost::math::constants::pi<double>();
 
 struct Limit
@@ -123,6 +125,9 @@ private:
     //! Visualization of goals
     vector<ros::Publisher> goalPubs;
 
+    //! Visualization of velocities
+    ros::Publisher eeVelocityVizPub;
+
     //! Visualization of trials
     ros::Publisher trialGoalPub;
 
@@ -195,6 +200,7 @@ public:
         }
 
         trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
+        eeVelocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>("/catch_human_action_server/ee_velocity", 1);
 
         rdf_loader::RDFLoader rdfLoader;
         const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
@@ -348,7 +354,6 @@ private:
         return point;
     }
 
-    // TODO: This shares a lot of code with the moveit_plugin
     // TODO: Incorporate current velocity
     ros::Duration calcExecutionTime(const string& group, const vector<double>& solution)
     {
@@ -445,15 +450,32 @@ private:
     bool endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const
     {
         poses.resize(2);
-        poses[0] = tfFrameToPose("/l_wrist_roll_link", ros::Time(0), "/odom_combined");
-        poses[1] = tfFrameToPose("/r_wrist_roll_link", ros::Time(0), "/odom_combined");
+        poses[0] = tfFrameToPose(ARM_EE_FRAMES[0], ros::Time(0), "/odom_combined");
+        poses[1] = tfFrameToPose(ARM_EE_FRAMES[1], ros::Time(0), "/odom_combined");
         return true;
+    }
+
+    // TODO: Does not currently handle dual balancing
+    void visualizeEEVelocity(const unsigned int arm, const vector<double>& eeVelocity) {
+        if (eeVelocityVizPub.getNumSubscribers() > 0) {
+            // Frame is the end effector of the given arm
+            geometry_msgs::WrenchStamped wrench;
+            wrench.header.stamp = ros::Time::now();
+            wrench.header.frame_id = ARM_EE_FRAMES[arm];
+            wrench.wrench.force.x = eeVelocity[0];
+            wrench.wrench.force.y = eeVelocity[1];
+            wrench.wrench.force.z = eeVelocity[2];
+            wrench.wrench.torque.x = eeVelocity[3];
+            wrench.wrench.torque.y = eeVelocity[4];
+            wrench.wrench.torque.z = eeVelocity[5];
+            eeVelocityVizPub.publish(wrench);
+        }
     }
 
     void sendTorques(const unsigned int arm, const vector<double>& torques)
     {
         // Execute the movement
-        ROS_INFO("Dispatching torque command for arm %s", ARMS[arm].c_str());
+        ROS_DEBUG("Dispatching torque command for arm %s", ARMS[arm].c_str());
         operational_space_controllers_msgs::Move command;
         command.header.stamp = ros::Time::now();
         command.header.frame_id = "/torso_lift_link";
@@ -521,7 +543,7 @@ private:
                 const vector<FallPoint>::const_iterator fallPoint = findContact(predictFall.response, i);
                 if (fallPoint == predictFall.response.points.end())
                 {
-                    ROS_INFO("Arm %s is not in contact", ARMS[i].c_str());
+                    ROS_DEBUG("Arm %s is not in contact", ARMS[i].c_str());
                     stopArm(i);
                     continue;
                 }
@@ -619,6 +641,9 @@ private:
                     continue;
                 }
                 ROS_DEBUG("Torques calculated successfully");
+
+                // Visualize the desired velocity
+                visualizeEEVelocity(i, calcTorques.response.ee_velocities);
                 sendTorques(i, calcTorques.response.torques);
             }
         }

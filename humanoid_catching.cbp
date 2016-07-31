@@ -36,10 +36,15 @@
 		<Unit filename="CMakeModules/FindMoby.cmake" />
 		<Unit filename="CMakeModules/FindQPOASES.cmake" />
 		<Unit filename="CMakeModules/FindRavelin.cmake" />
+		<Unit filename="LICENSE" />
 		<Unit filename="README.md" />
 		<Unit filename="TODO" />
 		<Unit filename="action/CatchHuman.action" />
 		<Unit filename="action/MoveArmFast.action" />
+		<Unit filename="bags/fall1.bag" />
+		<Unit filename="bags/fall2.bag" />
+		<Unit filename="bags/fall3.bag" />
+		<Unit filename="bags/stable.bag" />
 		<Unit filename="launch/activate_force_controllers.launch" />
 		<Unit filename="launch/human_catching.launch" />
 		<Unit filename="launch/human_catching_robot.launch" />
@@ -70,7 +75,8 @@
 		<Unit filename="src/fall_predictor.cpp" />
 		<Unit filename="src/fall_starter.cpp" />
 		<Unit filename="src/fall_stats_recorder.cpp" />
-		<Unit filename="src/imu_integrator.cpp" />
+		<Unit filename="src/imu_filter.cpp" />
+		<Unit filename="src/imu_visualizer.cpp" />
 		<Unit filename="srv/CalculateTorques.srv" />
 		<Unit filename="srv/PredictFall.srv" />
 		<Extensions>

@@ -16,4 +16,5 @@ string name
 ---
 Header header
 float64[] torques
+float64[] ee_velocities
 
