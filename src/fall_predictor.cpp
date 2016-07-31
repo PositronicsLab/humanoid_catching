@@ -19,7 +19,7 @@ static const double HEIGHT_DEFAULT = 1.8288;
 static const double RADIUS_DEFAULT = 0.03175;
 
 static const double STEP_SIZE = 0.001;
-static const double DURATION = 2.0;
+static const double MAX_DURATION = 10.0;
 static const int MAX_CONTACTS = 6;
 static const unsigned int MAX_CORRECTIONS = 100;
 
@@ -563,9 +563,9 @@ private:
         endEffectors.push_back(ee);
       }
 
-      // Execute the simulation loop for 2 seconds
+      // Execute the simulation loop up to MAX_DURATION seconds
       bool contact = false;
-      for (t = 0; t <= DURATION && !contact; t += STEP_SIZE) {
+      for (t = 0; t <= MAX_DURATION && !contact; t += STEP_SIZE) {
         // Clear end effector contacts
         eeContacts.clear();
         hasEeContacts.clear();
@@ -593,6 +593,13 @@ private:
             }
         }
         res.points.push_back(curr);
+
+        // Determine if the pole is on the ground and end the simulation
+        // Check if COM is at a position with height approximately equal to the radius
+        if (curr.pose.position.z <= humanoidRadius * (1 + 0.05)) {
+            ROS_INFO("Humanoid is on the ground. Ending simulation @ [%f]s.", t);
+            break;
+        }
       }
 
       // Set the mass and inertia matrix
