@@ -358,7 +358,7 @@ private:
       dJointSetBallAnchor(groundJoint, base.x, base.y, base.z);
     }
 
-    Model initEndEffector(const geometry_msgs::Pose& endEffector){
+    Model initEndEffector(const geometry_msgs::Pose& endEffector, const geometry_msgs::Twist& velocity){
 
         // Create the object
         Model object;
@@ -374,8 +374,8 @@ private:
                                     END_EFFECTOR_HEIGHT);
         dGeomSetBody(object.geom, object.body);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
-        dBodySetLinearVel(object.body, 0, 0, 0);
-        dBodySetAngularVel(object.body, 0, 0, 0);
+        dBodySetLinearVel(object.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
+        dBodySetAngularVel(object.body, velocity.angular.x, velocity.angular.y, velocity.angular.z);
 
         const dReal q[] = {endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w};
         dBodySetQuaternion(object.body, q);
@@ -558,7 +558,7 @@ private:
       initGroundJoint();
 
       for (unsigned int i = 0; i < req.end_effectors.size(); ++i) {
-        Model ee = initEndEffector(req.end_effectors[i]);
+        Model ee = initEndEffector(req.end_effectors[i], req.end_effector_velocities[i]);
         adjustEndEffector(ee);
         endEffectors.push_back(ee);
       }
