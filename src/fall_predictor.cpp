@@ -19,7 +19,6 @@ static const double HEIGHT_DEFAULT = 1.8288;
 static const double RADIUS_DEFAULT = 0.03175;
 
 static const double STEP_SIZE = 0.001;
-static const double MAX_DURATION = 10.0;
 static const int MAX_CONTACTS = 6;
 static const unsigned int MAX_CORRECTIONS = 100;
 
@@ -565,7 +564,7 @@ private:
 
       // Execute the simulation loop up to MAX_DURATION seconds
       bool contact = false;
-      for (t = 0; t <= MAX_DURATION && !contact; t += STEP_SIZE) {
+      for (t = 0; t <= req.max_time.toSec() && !contact; t += STEP_SIZE) {
         // Clear end effector contacts
         eeContacts.clear();
         hasEeContacts.clear();

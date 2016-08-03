@@ -42,6 +42,7 @@ static const double MAX_EFFORT = 100;
 
 //! Tolerance of time to be considered in contact
 static const ros::Duration CONTACT_TIME_TOLERANCE = ros::Duration(0.1);
+static const ros::Duration MAX_DURATION = ros::Duration(10.0);
 
 static const ros::Duration SEARCH_RESOLUTION(0.05);
 static const double pi = boost::math::constants::pi<double>();
@@ -405,10 +406,6 @@ private:
     {
         for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
         {
-            if (i->time > CONTACT_TIME_TOLERANCE)
-            {
-                break;
-            }
             if (i->contacts[arm].is_in_contact)
             {
                 return i;
@@ -501,6 +498,33 @@ private:
         return result;
     }
 
+    bool predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors) {
+        predictFall.request.header = human->header;
+        predictFall.request.pose = human->pose;
+        predictFall.request.velocity = human->velocity;
+        predictFall.request.accel = human->accel;
+        predictFall.request.max_time = duration;
+
+        if (includeEndEffectors) {
+            predictFall.request.end_effector_velocities.resize(2);
+            predictFall.request.end_effector_velocities[0] = linkVelocity(ARM_EE_FRAMES[0]);
+            predictFall.request.end_effector_velocities[1] = linkVelocity(ARM_EE_FRAMES[1]);
+
+            // Wait for the wrist transforms
+            if (!endEffectorPositions(human->header, predictFall.request.end_effectors))
+            {
+                return false;
+            }
+        }
+
+        ROS_DEBUG("Predicting fall");
+        if (!fallPredictor.call(predictFall))
+        {
+            return false;
+        }
+        return true;
+    }
+
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal)
     {
 
@@ -517,24 +541,9 @@ private:
 
         updateRavelinModel();
 
-        humanoid_catching::PredictFall predictFall;
-        predictFall.request.header = goal->header;
-        predictFall.request.pose = goal->pose;
-        predictFall.request.velocity = goal->velocity;
-        predictFall.request.accel = goal->accel;
-        predictFall.request.end_effector_velocities.resize(2);
-        predictFall.request.end_effector_velocities[0] = linkVelocity(ARM_EE_FRAMES[0]);
-        predictFall.request.end_effector_velocities[1] = linkVelocity(ARM_EE_FRAMES[1]);
-
-        // Wait for the wrist transforms
-        if (!endEffectorPositions(goal->header, predictFall.request.end_effectors))
-        {
-            as.setAborted();
-            return;
-        }
-
         ROS_DEBUG("Predicting fall");
-        if (!fallPredictor.call(predictFall))
+        humanoid_catching::PredictFall predictFallObj;
+        if (!predictFall(goal, predictFallObj, CONTACT_TIME_TOLERANCE, true))
         {
             ROS_DEBUG("Fall prediction failed");
             as.setAborted();
@@ -542,24 +551,33 @@ private:
         }
         ROS_DEBUG("Fall predicted successfully");
 
-        ROS_DEBUG("Estimated position: %f %f %f", predictFall.response.points[0].pose.position.x, predictFall.response.points[0].pose.position.y,  predictFall.response.points[0].pose.position.z);
-        ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFall.response.points[0].velocity.angular.x, predictFall.response.points[0].velocity.angular.y,  predictFall.response.points[0].velocity.angular.z);
-        ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFall.response.points[0].velocity.linear.x, predictFall.response.points[0].velocity.linear.y,  predictFall.response.points[0].velocity.linear.z);
+        // Repredict without any end effectors
+        humanoid_catching::PredictFall predictFallNoEE;
+        if (!predictFall(goal, predictFallNoEE, MAX_DURATION, false))
+        {
+            ROS_DEBUG("Fall prediction failed");
+            as.setAborted();
+            return;
+        }
+
+        ROS_DEBUG("Estimated position: %f %f %f", predictFallObj.response.points[0].pose.position.x, predictFallObj.response.points[0].pose.position.y,  predictFallObj.response.points[0].pose.position.z);
+        ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
+        ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFallObj.response.points[0].velocity.linear.x, predictFallObj.response.points[0].velocity.linear.y,  predictFallObj.response.points[0].velocity.linear.z);
 
         // Determine which arms to execute balancing for.
         for (unsigned int arm = 0; arm < boost::size(ARMS); ++arm)
         {
-            const vector<FallPoint>::const_iterator fallPoint = findContact(predictFall.response, arm);
+            const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response, arm);
 
             // Determine if the robot is currently in contact
-            if (fallPoint != predictFall.response.points.end())
+            if (fallPoint != predictFallObj.response.points.end())
             {
                 ROS_INFO("Robot is in contact. Executing balancing for arm %s", ARMS[arm].c_str());
                 humanoid_catching::CalculateTorques calcTorques;
                 calcTorques.request.name = ARMS[arm];
                 calcTorques.request.body_velocity = fallPoint->velocity;
-                calcTorques.request.body_inertia_matrix = predictFall.response.inertia_matrix;
-                calcTorques.request.body_mass = predictFall.response.body_mass;
+                calcTorques.request.body_inertia_matrix = predictFallObj.response.inertia_matrix;
+                calcTorques.request.body_mass = predictFallObj.response.body_mass;
                 calcTorques.request.time_delta = ros::Duration(0.01);
                 calcTorques.request.body_com = fallPoint->pose;
                 calcTorques.request.contact_position = fallPoint->contacts[arm].position;
@@ -631,7 +649,7 @@ private:
             else
             {
                 tf::StampedTransform goalToTorsoTransform;
-                tf.lookupTransform("/torso_lift_link", predictFall.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
+                tf.lookupTransform("/torso_lift_link", predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
 
                 // We now have a projected time/position path. Search the path for acceptable times.
                 vector<Solution> solutions;
@@ -639,7 +657,7 @@ private:
                 // Epsilon causes us to always select a position in front of the fall.
                 ros::Duration lastTime;
 
-                for (vector<FallPoint>::const_iterator i = predictFall.response.points.begin(); i != predictFall.response.points.end(); ++i)
+                for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
                 {
 
                     // Determine if we should search this point.
@@ -655,12 +673,12 @@ private:
                     possibleSolution.delta = ros::Duration(-1000);
 
                     geometry_msgs::PoseStamped basePose;
-                    basePose.header = predictFall.response.header;
+                    basePose.header = predictFallNoEE.response.header;
                     basePose.pose = i->pose;
 
                     geometry_msgs::PoseStamped transformedPose;
                     transformedPose.header.frame_id = "/torso_lift_link";
-                    transformedPose.header.stamp = predictFall.response.header.stamp;
+                    transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
 
                     transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
                     possibleSolution.pose = transformedPose;
