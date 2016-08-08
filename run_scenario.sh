@@ -15,20 +15,20 @@ echo "Creating folder for baseline results: $RESULTS_FOLDER"
 mkdir -p $RESULTS_FOLDER
 export RESULTS_FOLDER=$RESULTS_FOLDER
 
-for i in `seq 1 1`;
+for i in `seq 1 100`;
 do
   echo "Executing scenario: $i"
   export i=$i
   # Launch gazebo
-  roslaunch gazebo_ros empty_world.launch &
+  roslaunch gazebo_worlds empty_world.launch gui:=false &
   sleep 15
   roslaunch humanoid_catching no_catching_simulated.launch &
   sleep 15
   echo "Starting fall"
-  rosrun humanoid_catching fall_starter _random:=true _waitForBalancer:=false
+  rosrun gazebo_utils random_torque_applier _random:=true _waitForTopic:=false
   sleep 30
-   kill $(ps -ef | grep '/usr/bin/python /opt/ros/hydro/bin/roslaunch' | grep -v grep | awk '{print $2}')
-  sleep 5
+   kill $(ps -ef | grep '/usr/bin/python /opt/ros/groovy/bin/roslaunch' | grep -v grep | awk '{print $2}')
+  sleep 30
 done
 
 # Execute control
@@ -43,13 +43,13 @@ do
   echo "Executing scenario: $i"
   export i=$i
   # Launch gazebo
-  roslaunch pr2_gazebo pr2_empty_world.launch &
-  sleep 15
+  roslaunch pr2_gazebo pr2_empty_world.launch gui:=false &
+  sleep 30
   roslaunch humanoid_catching human_catching_simulated.launch &
   sleep 15
   echo "Starting fall"
-  rosrun humanoid_catching fall_starter _random:=true _skipnotify:=false
+  rosrun gazebo_utils random_torque_applier _random:=true
   sleep 120
-  kill $(ps -ef | grep '/usr/bin/python /opt/ros/hydro/bin/roslaunch' | grep -v grep | awk '{print $2}')
-  sleep 15
+  kill $(ps -ef | grep '/usr/bin/python /opt/ros/groovy/bin/roslaunch' | grep -v grep | awk '{print $2}')
+  sleep 30
 done

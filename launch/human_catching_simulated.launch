@@ -1,4 +1,6 @@
 <launch>
+  <include file="$(find operational_space_controllers)/launch/l_arm_force_controller.launch" />
+  <include file="$(find operational_space_controllers)/launch/r_arm_force_controller.launch" />
   <include file="$(find humanoid_catching)/launch/human_catching.launch" />
   <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
   <node pkg="gazebo_utils" type="fake_imu" name="fake_imu" >

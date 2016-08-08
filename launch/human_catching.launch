@@ -1,9 +1,7 @@
 <launch>
-  <include file="$(find pr2_machine)/$(env ROBOT).machine" />
   <include file="$(find pr2_moveit_config)/launch/planning_context.launch" />
   <include file="$(find kinematics_cache)/launch/kinematics_cache.launch" />
-  <include file="$(find operational_space_controllers)/launch/l_arm_force_controller.launch" />
-  <include file="$(find operational_space_controllers)/launch/r_arm_force_controller.launch" />
+
   <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
   </node>
