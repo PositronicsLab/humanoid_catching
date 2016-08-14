@@ -131,18 +131,11 @@ find_library(
 add_definitions(-DdDOUBLE)
 
 ## Specify additional locations of header files
-## Your package locations should be listed before other locations
-include_directories(${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${GAZEBO_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${GAZEBO_INCLUDE_DIRS})
 
-## Declare a C++ library
-# add_library(humanoid_catching
-#   src/${PROJECT_NAME}/humanoid_catching.cpp
-# )
-
-## Add cmake target dependencies of the library
-## as an example, code may need to be generated before libraries
-## either from message generation or dynamic reconfigure
-# add_dependencies(humanoid_catching ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+if(CATKIN_ENABLE_TESTING)
+    add_definitions(-DCATKIN_ENABLE_TESTING)
+endif(CATKIN_ENABLE_TESTING)
 
 add_executable(catching_controller src/catching_controller.cpp)
 add_dependencies(catching_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -198,6 +191,13 @@ target_link_libraries(imu_filter
    ${catkin_LIBRARIES}
 )
 
+if(CATKIN_ENABLE_TESTING)
+    catkin_add_gtest(test_catch_human_action_server test/test_catch_human_action_server.cpp src/catch_human_action_server.cpp)
+    set_source_files_properties(test_catch_human_action_server PROPERTIES COMPILE_FLAGS "-DCATKIN_ENABLE_TESTING")
+    target_link_libraries(test_catch_human_action_server
+        ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES}
+    )
+endif(CATKIN_ENABLE_TESTING)
 #############
 ## Install ##
 #############
