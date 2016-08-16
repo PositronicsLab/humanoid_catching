@@ -45,6 +45,8 @@
 		<Unit filename="bags/fall2.bag" />
 		<Unit filename="bags/fall3.bag" />
 		<Unit filename="bags/stable.bag" />
+		<Unit filename="humanoid_catching.layout" />
+		<Unit filename="include/humanoid_catching/catch_human_action_server.h" />
 		<Unit filename="launch/activate_force_controllers.launch" />
 		<Unit filename="launch/human_catching.launch" />
 		<Unit filename="launch/human_catching_robot.launch" />
@@ -79,6 +81,7 @@
 		<Unit filename="src/imu_visualizer.cpp" />
 		<Unit filename="srv/CalculateTorques.srv" />
 		<Unit filename="srv/PredictFall.srv" />
+		<Unit filename="test/test_catch_human_action_server.cpp" />
 		<Extensions>
 			<code_completion />
 			<debugger />

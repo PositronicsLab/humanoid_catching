@@ -259,19 +259,22 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         v0 = -v0;
     }
 
+    ROS_DEBUG_NAMED("catch_human_action_server", "Calculating execution time for distance [%f]", signed_d);
+
     // Determine the max "bang-bang" distance.
-    double max_tri_t = (2.0 * limits.velocity - v0) / limits.acceleration;
+    double max_tri_t_no_v0 = 2.0 * limits.velocity / limits.acceleration;
+    double max_tri_t = max_tri_t_no_v0 - v0 / limits.acceleration;
     double t0 = fabs(v0 / limits.acceleration);
     double d0 = v0 * t0 / 2.0;
 
     // The maximum triangular distance is either:
     // - for positive v0, the triangle minus v0 * t0, because that portion is already covered
     // - for negative v0, the triangle minus -v0 * t0, because that portion must additionally be covered
-    double max_tri_distance_no_v0 = limits.velocity * max_tri_t;
+    double max_tri_distance_no_v0 = limits.velocity * max_tri_t_no_v0;
     double max_tri_distance = max_tri_distance_no_v0 - fabs(d0);
 
     ROS_DEBUG_NAMED("catch_human_action_server", "Maximum triangular distance [%f], distance adjusted [%f], time [%f] given initial_vel [%f], max_vel [%f] and max_accel [%f]",
-                   max_tri_distance_no_v0, max_tri_distance, max_tri_t, v0, limits.velocity, limits.acceleration);
+                   max_tri_distance_no_v0, max_tri_distance, max_tri_t_no_v0, v0, limits.velocity, limits.acceleration);
 
     ROS_DEBUG_NAMED("catch_human_action_server", "t0 [%f] d0 [%f]", t0, d0);
 
@@ -290,15 +293,15 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         // and we add the absolute value as the distance must be covered, and add the t0.
         if (d0 > 0)
         {
-            double t2 = sqrt((d + d0) / limits.acceleration);
+            double t2 = sqrt(2 * (d + d0) / limits.acceleration);
             ROS_DEBUG_NAMED("catch_human_action_server", "t2 %f", t2);
-            t = 2.0 * t2 - t0;
+            t = t2 - t0;
         }
         else
         {
-            double t2 = sqrt((d - d0) / limits.acceleration);
+            double t2 = sqrt(2 * (d - d0) / limits.acceleration);
             ROS_DEBUG_NAMED("catch_human_action_server", "t2 %f", t2);
-            t = 2.0 * t2 + t0;
+            t = t2 + t0;
         }
         ROS_DEBUG_NAMED("catch_human_action_server", "Triangular solution for t is %f", t);
         assert (t <= max_tri_t);
@@ -308,7 +311,7 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         // Remove acceleration and deacceleration distance and calculate the trapezoidal base distance
         double d_at_max_v = d - max_tri_distance;
         double t_at_max_v = d_at_max_v / limits.velocity;
-        t = t_at_max_v + max_tri_t;
+        t = t_at_max_v + max_tri_t_no_v0;
         if (d0 < 0) {
             t += t0;
         }
@@ -738,7 +741,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     as.setSucceeded();
 }
 
-#if !defined(CATKIN_ENABLE_TESTING)
+#if !defined(ENABLE_TESTING)
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "catch_human_action");
