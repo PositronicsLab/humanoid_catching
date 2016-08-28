@@ -92,7 +92,7 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     for (unsigned int i = 0; i < boost::size(ARMS); ++i)
     {
         armCommandPubs.push_back(nh.advertise<operational_space_controllers_msgs::Move>(ARM_TOPICS[i], 1, false));
-        goalPubs.push_back(nh.advertise<geometry_msgs::PointStamped>(ARM_GOAL_VIZ_TOPICS[i], 10, true));
+        goalPubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_GOAL_VIZ_TOPICS[i], 10, true));
     }
 
     trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
@@ -230,14 +230,14 @@ void CatchHumanActionServer::preempt()
     as.setPreempted();
 }
 
-void CatchHumanActionServer::visualizeGoal(const geometry_msgs::PoseStamped& goal, unsigned int armIndex) const
+void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header, unsigned int armIndex) const
 {
     if (goalPubs[armIndex].getNumSubscribers() > 0)
     {
-        geometry_msgs::PointStamped point;
-        point.header = goal.header;
-        point.point = goal.pose.position;
-        goalPubs[armIndex].publish(point);
+        geometry_msgs::PoseStamped pose;
+        pose.header = header;
+        pose.pose = goal;
+        goalPubs[armIndex].publish(pose);
     }
 }
 
@@ -638,7 +638,9 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
 
                 transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
-                possibleSolution.pose = transformedPose;
+                possibleSolution.polePose = transformedPose;
+                possibleSolution.position.header = transformedPose.header;
+                possibleSolution.position.point = transformedPose.pose.position;
 
                 if (trialGoalPub.getNumSubscribers() > 0)
                 {
@@ -714,8 +716,8 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 if (solution->delta > highestDeltaTime)
                 {
                     highestDeltaTime = solution->delta;
-                    ROS_DEBUG("Selected a pose with hhigher delta time. Pose is %f %f %f and delta is %f", solution->pose.pose.position.x,
-                              solution->pose.pose.position.y, solution->pose.pose.position.z, highestDeltaTime.toSec());
+                    ROS_DEBUG("Selected a pose with higher delta time. position is %f %f %f and delta is %f", solution->position.point.x,
+                              solution->position.point.y, solution->position.point.z, highestDeltaTime.toSec());
                     bestSolution = solution;
                 }
             }
@@ -728,10 +730,13 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
             ROS_DEBUG("Publishing command for arm %s.", ARMS[arm].c_str());
             operational_space_controllers_msgs::Move command;
-            visualizeGoal(bestSolution->pose, arm);
-            command.header = bestSolution->pose.header;
-            command.target = bestSolution->pose.pose;
-            command.point_at_target = true;
+
+            command.header = bestSolution->position.header;
+            command.target.position = bestSolution->position.point;
+            // TODO: Compute orientation
+
+            command.point_at_target = false;
+            visualizeGoal(command.target, command.header, arm);
             armCommandPubs[arm].publish(command);
         }
     }

@@ -50,7 +50,8 @@ typedef std::map<std::string, State> StateMapType;
 
 struct Solution
 {
-    geometry_msgs::PoseStamped pose;
+    geometry_msgs::PointStamped position;
+    geometry_msgs::PoseStamped polePose;
     ros::Duration delta;
 };
 
@@ -132,7 +133,7 @@ private:
 
     void preempt();
     void jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg);
-    void visualizeGoal(const geometry_msgs::PoseStamped& goal, unsigned int armIndex) const;
+    void visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header, unsigned int armIndex) const;
 
     static geometry_msgs::PointStamped poseToPoint(const geometry_msgs::PoseStamped pose);
 
