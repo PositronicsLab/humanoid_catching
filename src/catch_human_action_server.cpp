@@ -331,7 +331,7 @@ ros::Duration CatchHumanActionServer::calcExecutionTime(const string& group, con
         double v0 = jointStates[jointName].velocity;
 
         double signed_d = jointStates[jointName].position - solution[i];
-        ROS_INFO_NAMED("catch_human_action_server", "Distance to travel for joint %s is [%f]", jointName.c_str(), signed_d);
+        ROS_DEBUG_NAMED("catch_human_action_server", "Distance to travel for joint %s is [%f]", jointName.c_str(), signed_d);
 
         double t = calcJointExecutionTime(limits, signed_d, v0);
         longestTime = max(longestTime, t);

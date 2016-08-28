@@ -28,7 +28,7 @@ static const double END_EFFECTOR_WIDTH = 0.100908;
 static const double END_EFFECTOR_HEIGHT = 0.055100;
 static const double END_EFFECTOR_LENGTH = 0.244724;
 
-static const double BASE_X_DEFAULT = 0.5;
+static const double BASE_X_DEFAULT = 0.4;
 static const double BASE_Y_DEFAULT = 0;
 static const double BASE_Z_DEFAULT = 0;
 
