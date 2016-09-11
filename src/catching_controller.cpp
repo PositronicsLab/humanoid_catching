@@ -90,7 +90,7 @@ private:
         goal.header = imuData->header;
         goal.velocity.angular = imuData->angular_velocity;
         goal.accel.linear = imuData->linear_acceleration;
-        goal.pose.orientation = imuData->orientation;
+        goal.orientation = imuData->orientation;
         actionlib::SimpleClientGoalState gs = catchHumanClient->sendGoalAndWait(goal, ros::Duration(MAX_CATCH_TIME), ros::Duration(MAX_PREEMPT_TIME));
         if (gs.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
             ROS_DEBUG("Human was initially caught successfully");

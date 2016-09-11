@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor" output="screen"/>
+    <test pkg="humanoid_catching" type="test_fall_predictor" test-name="test_fall_predictor" />
+</launch>

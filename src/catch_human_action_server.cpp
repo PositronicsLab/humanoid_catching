@@ -32,6 +32,9 @@ static const string ARMS[] = {"left_arm", "right_arm"};
 static const string ARM_EE_FRAMES[] = {"l_wrist_roll_link", "r_wrist_roll_link"};
 static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_force_controller/command"};
 static const string ARM_GOAL_VIZ_TOPICS[] = {"/catch_human_action_server/movement_goal/left_arm", "/catch_human_action_server/movement_goal/right_arm"};
+static const string ARM_TARGET_POSES[] = {"/catch_human_action_server/left/target_pose", "/catch_human_action_server/right/target_pose"};
+static const string ARM_TARGET_VELOCITIES[] = {"/catch_human_action_server/left/target_velocity", "/catch_human_action_server/right/target_velocity"};
+
 static const double MAX_VELOCITY = 100;
 static const double MAX_ACCELERATION = 100;
 static const double MAX_EFFORT = 100;
@@ -39,9 +42,28 @@ static const double MAX_EFFORT = 100;
 //! Tolerance of time to be considered in contact
 static const ros::Duration CONTACT_TIME_TOLERANCE = ros::Duration(0.1);
 static const ros::Duration MAX_DURATION = ros::Duration(10.0);
+static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 
 static const ros::Duration SEARCH_RESOLUTION(0.05);
 static const double pi = boost::math::constants::pi<double>();
+
+static tf::Quaternion quaternionFromVector(const tf::Vector3& axisVector) {
+    tf::Vector3 upVector(0.0, 0.0, 1.0);
+    tf::Vector3 rightVector = axisVector.cross(upVector);
+    rightVector.normalize();
+    tf::Quaternion q(rightVector, -1.0 * acos(axisVector.dot(upVector)));
+    q.normalize();
+    return q;
+}
+
+static tf::Vector3 quatToVector(const geometry_msgs::Quaternion& orientationMsg) {
+    tf::Quaternion orientation;
+    tf::quaternionMsgToTF(orientationMsg, orientation);
+    tf::Transform rotation(orientation);
+    tf::Vector3 xAxis(1, 0, 0);
+    tf::Vector3 r = rotation.getBasis() * xAxis;
+    return r;
+}
 
 geometry_msgs::Pose CatchHumanActionServer::applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform)
 {
@@ -50,6 +72,18 @@ geometry_msgs::Pose CatchHumanActionServer::applyTransform(const geometry_msgs::
     tf::Pose tfGoal = transform * tfPose;
     geometry_msgs::Pose msgGoal;
     tf::poseTFToMsg(tfGoal, msgGoal);
+    return msgGoal;
+}
+
+geometry_msgs::Vector3 CatchHumanActionServer::applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform)
+{
+    tf::Stamped<tf::Vector3> tfLinear;
+
+    tf::vector3MsgToTF(linear, tfLinear);
+    tf::Vector3 tfGoal = transform * tfLinear;
+
+    geometry_msgs::Vector3 msgGoal;
+    tf::vector3TFToMsg(tfGoal, msgGoal);
     return msgGoal;
 }
 
@@ -93,6 +127,8 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     {
         armCommandPubs.push_back(nh.advertise<operational_space_controllers_msgs::Move>(ARM_TOPICS[i], 1, false));
         goalPubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_GOAL_VIZ_TOPICS[i], 10, true));
+        targetPosePubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_TARGET_POSES[i], 1));
+        targetVelocityPubs.push_back(nh.advertise<visualization_msgs::Marker>(ARM_TARGET_VELOCITIES[i], 1));
     }
 
     trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
@@ -115,11 +151,9 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
         ROS_ERROR("Failed to parse URDF: %s", urdfLocation.c_str());
     }
 
-    ROS_INFO("Creating body");
     body = boost::shared_ptr<Ravelin::RCArticulatedBodyd>(new Ravelin::RCArticulatedBodyd());
     body->set_links_and_joints(links, joints);
     body->set_floating_base(false);
-    ROS_INFO("Body created correctly");
 
     for (unsigned int k = 0; k < boost::size(ARMS); ++k)
     {
@@ -137,7 +171,7 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
             curr += joints[l]->num_dof();
         }
 
-        ROS_INFO("Loading joint limits for arm %s", ARMS[k].c_str());
+        ROS_DEBUG("Loading joint limits for arm %s", ARMS[k].c_str());
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)
         const vector<string> jointModelNames = jointModelGroup->getActiveJointModelNames();
@@ -193,12 +227,12 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
         }
     }
 
-    ROS_INFO("Completed initializing the joint limits");
+    ROS_DEBUG("Completed initializing the joint limits");
 
     jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 5));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanActionServer::jointStatesCallback, this, _1));
 
-    ROS_INFO("Starting the action server");
+    ROS_DEBUG("Starting the action server");
     as.registerPreemptCallback(boost::bind(&CatchHumanActionServer::preempt, this));
     as.start();
     ROS_INFO("Catch human action server initialized successfully");
@@ -230,7 +264,10 @@ void CatchHumanActionServer::preempt()
     as.setPreempted();
 }
 
-void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header, unsigned int armIndex) const
+void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
+                                           unsigned int armIndex, geometry_msgs::PoseStamped targetPose,
+                                           geometry_msgs::TwistStamped targetVelocity,
+                                           double humanoidRadius, double humanoidHeight) const
 {
     if (goalPubs[armIndex].getNumSubscribers() > 0)
     {
@@ -238,6 +275,32 @@ void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, cons
         pose.header = header;
         pose.pose = goal;
         goalPubs[armIndex].publish(pose);
+    }
+    if (targetPosePubs[armIndex].getNumSubscribers() > 0) {
+        targetPosePubs[armIndex].publish(targetPose);
+    }
+
+    if (targetVelocityPubs[armIndex].getNumSubscribers() > 0)
+    {
+        visualization_msgs::Marker arrow;
+        arrow.header = targetVelocity.header;
+        arrow.ns = "pole_velocity";
+        arrow.id = armIndex;
+        arrow.type = visualization_msgs::Marker::ARROW;
+        arrow.points.resize(2);
+        arrow.points[0] = arrow.points[1] = targetPose.pose.position;
+        arrow.points[1].x += targetVelocity.twist.linear.x;
+        arrow.points[1].y += targetVelocity.twist.linear.y;
+        arrow.points[1].z += targetVelocity.twist.linear.z;
+
+        arrow.scale.x = 0.02;
+
+        // arrow is yellow
+        arrow.color.r = 1.0f;
+        arrow.color.g = 1.0f;
+        arrow.color.a = 0.5;
+
+        targetVelocityPubs[armIndex].publish(arrow);
     }
 }
 
@@ -367,11 +430,11 @@ const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(cons
     return fall.points.end();
 }
 
-bool CatchHumanActionServer::endEffectorPositions(const std_msgs::Header& header, vector<geometry_msgs::Pose>& poses) const
+bool CatchHumanActionServer::endEffectorPositions(const string& frame, vector<geometry_msgs::Pose>& poses) const
 {
     poses.resize(2);
-    poses[0] = tfFrameToPose(ARM_EE_FRAMES[0], ros::Time(0), "/odom_combined");
-    poses[1] = tfFrameToPose(ARM_EE_FRAMES[1], ros::Time(0), "/odom_combined");
+    poses[0] = tfFrameToPose(ARM_EE_FRAMES[0], ros::Time(0), frame);
+    poses[1] = tfFrameToPose(ARM_EE_FRAMES[1], ros::Time(0), frame);
     return true;
 }
 
@@ -453,14 +516,15 @@ geometry_msgs::Twist CatchHumanActionServer::linkVelocity(const string& linkName
     return result;
 }
 
-bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors)
+bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
 {
     predictFall.request.header = human->header;
-    predictFall.request.pose = human->pose;
+    predictFall.request.orientation = human->orientation;
     predictFall.request.velocity = human->velocity;
     predictFall.request.accel = human->accel;
     predictFall.request.max_time = duration;
-
+    predictFall.request.step_size = STEP_SIZE;
+    predictFall.request.visualize = visualize;
     if (includeEndEffectors)
     {
         predictFall.request.end_effector_velocities.resize(2);
@@ -468,7 +532,7 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
         predictFall.request.end_effector_velocities[1] = linkVelocity(ARM_EE_FRAMES[1]);
 
         // Wait for the wrist transforms
-        if (!endEffectorPositions(human->header, predictFall.request.end_effectors))
+        if (!endEffectorPositions(human->header.frame_id, predictFall.request.end_effectors))
         {
             return false;
         }
@@ -479,6 +543,7 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
     {
         return false;
     }
+    ROS_DEBUG("Fall predicted");
     return true;
 }
 
@@ -500,7 +565,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
     ROS_DEBUG("Predicting fall");
     humanoid_catching::PredictFall predictFallObj;
-    if (!predictFall(goal, predictFallObj, CONTACT_TIME_TOLERANCE, true))
+    if (!predictFall(goal, predictFallObj, CONTACT_TIME_TOLERANCE, true, false))
     {
         ROS_DEBUG("Fall prediction failed");
         as.setAborted();
@@ -510,7 +575,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
     // Repredict without any end effectors
     humanoid_catching::PredictFall predictFallNoEE;
-    if (!predictFall(goal, predictFallNoEE, MAX_DURATION, false))
+    if (!predictFall(goal, predictFallNoEE, MAX_DURATION, false, true))
     {
         ROS_DEBUG("Fall prediction failed");
         as.setAborted();
@@ -520,6 +585,9 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     ROS_DEBUG("Estimated position: %f %f %f", predictFallObj.response.points[0].pose.position.x, predictFallObj.response.points[0].pose.position.y,  predictFallObj.response.points[0].pose.position.z);
     ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
     ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFallObj.response.points[0].velocity.linear.x, predictFallObj.response.points[0].velocity.linear.y,  predictFallObj.response.points[0].velocity.linear.z);
+
+    vector<geometry_msgs::Pose> eePoses;
+    endEffectorPositions("torso_lift_link", eePoses);
 
     // Determine which arms to execute balancing for.
     for (unsigned int arm = 0; arm < boost::size(ARMS); ++arm)
@@ -626,8 +694,10 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 lastTime = i->time;
 
                 Solution possibleSolution;
+
                 // Initialize to a large negative number.
                 possibleSolution.delta = ros::Duration(-1000);
+                possibleSolution.time = i->time;
 
                 geometry_msgs::PoseStamped basePose;
                 basePose.header = predictFallNoEE.response.header;
@@ -638,7 +708,11 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
 
                 transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
-                possibleSolution.polePose = transformedPose;
+                possibleSolution.targetPose = transformedPose;
+
+                possibleSolution.targetVelocity.twist.linear = applyTransform(i->velocity.linear, goalToTorsoTransform);
+                possibleSolution.targetVelocity.header = transformedPose.header;
+
                 possibleSolution.position.header = transformedPose.header;
                 possibleSolution.position.point = transformedPose.pose.position;
 
@@ -728,22 +802,87 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 continue;
             }
 
-            ROS_DEBUG("Publishing command for arm %s.", ARMS[arm].c_str());
+            ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
+                     ARMS[arm].c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
+                     bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
+                     bestSolution->time.toSec());
+
             operational_space_controllers_msgs::Move command;
 
             command.header = bestSolution->position.header;
             command.target.position = bestSolution->position.point;
-            // TODO: Compute orientation
-
+            command.target.orientation = computeOrientation(*bestSolution, eePoses[arm]);
             command.point_at_target = false;
-            visualizeGoal(command.target, command.header, arm);
+            visualizeGoal(command.target, command.header, arm, bestSolution->targetPose, bestSolution->targetVelocity, predictFallNoEE.response.radius,
+                          predictFallNoEE.response.height);
             armCommandPubs[arm].publish(command);
         }
     }
 
-    ROS_DEBUG("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
+    ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
               ros::Time::now().toSec() - startRosTime.toSec());
     as.setSucceeded();
+}
+
+geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose) const {
+
+    tf::Quaternion qPole;
+    tf::quaternionMsgToTF(solution.targetPose.pose.orientation, qPole);
+
+    tf::Quaternion qHand;
+    tf::quaternionMsgToTF(currentPose.orientation, qHand);
+
+    // Create a quaternion representing the linear velocity
+    tf::Vector3 l(solution.targetVelocity.twist.linear.x, solution.targetVelocity.twist.linear.y, solution.targetVelocity.twist.linear.z);
+    if (l.length() == 0) {
+        l.setX(tfScalar(1));
+    }
+    l.normalize();
+
+    tf::Quaternion qL = quaternionFromVector(l);
+    qL.normalize();
+
+    // Rotate to a vector orthoganal to the velocity.
+
+    // Create the vector representing the direction from the end effector to pole
+    // COM
+    tf::Vector3 pointAt(solution.targetPose.pose.position.x - currentPose.position.x,
+                        solution.targetPose.pose.position.y - currentPose.position.y,
+                        solution.targetPose.pose.position.z - currentPose.position.z);
+    pointAt.normalize();
+    tf::Quaternion qAt = quaternionFromVector(pointAt);
+
+    tf::Quaternion qYaw;
+    qYaw.setRPY(0, 0, pi / 2);
+
+    tf::Quaternion qYawNegative;
+    qYawNegative.setRPY(0, 0, -pi / 2);
+
+    if (qAt.angleShortestPath(qL * qYaw) < qAt.angleShortestPath(qL * qYawNegative)) {
+        qL *= qYaw;
+    }
+    else {
+        qL *= qYawNegative;
+    }
+
+    // Rotate so larger contact surface contacts pole. Determine the shortest rotation.
+    tf::Quaternion qRoll;
+    qRoll.setRPY(pi / 2, 0, 0);
+
+    tf::Quaternion qRollNegative;
+    qRollNegative.setRPY(-pi / 2, 0, 0);
+
+    if (qHand.angleShortestPath(qL * qRoll) < qHand.angleShortestPath(qL * qRollNegative)) {
+        qL *= qRoll;
+    }
+    else {
+        qL *= qRollNegative;
+    }
+    qL.normalize();
+
+    geometry_msgs::Quaternion orientation;
+    tf::quaternionTFToMsg(qL, orientation);
+    return orientation;
 }
 
 #if !defined(ENABLE_TESTING)

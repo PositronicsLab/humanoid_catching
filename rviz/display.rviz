@@ -9,13 +9,17 @@ Panels:
         - /Predicted Path1
         - /IK Cache1
         - /IMU1
-        - /Goal Left1
         - /Goal Trials1
-        - /Goal Right1
         - /Initial Pose1
         - /Initial Velocity1
         - /Effort1
         - /EE Velocity1
+        - /Goal Left1
+        - /Goal Right1
+        - /Target Velocity Left1
+        - /Target Pose Left1
+        - /Target Pose Right1
+        - /Goal Right2
       Splitter Ratio: 0.5
     Tree Height: 407
   - Class: rviz/Selection
@@ -64,7 +68,7 @@ Visualization Manager:
       Name: Predicted Path
       Namespaces:
         {}
-      Queue Size: 100
+      Queue Size: 1000
       Value: false
     - Class: rviz/Marker
       Enabled: false
@@ -78,7 +82,7 @@ Visualization Manager:
       Axes Length: 1
       Axes Radius: 0.1
       Class: rviz/Pose
-      Color: 255; 25; 0
+      Color: 0; 85; 255
       Enabled: false
       Head Length: 0.3
       Head Radius: 0.1
@@ -90,31 +94,13 @@ Visualization Manager:
       Value: false
     - Alpha: 1
       Class: rviz/PointStamped
-      Color: 204; 41; 204
-      Enabled: true
-      History Length: 1
-      Name: Goal Left
-      Radius: 0.1
-      Topic: /catch_human_action_server/movement_goal/left_arm
-      Value: true
-    - Alpha: 1
-      Class: rviz/PointStamped
-      Color: 85; 170; 255
+      Color: 255; 0; 255
       Enabled: false
       History Length: 50
       Name: Goal Trials
       Radius: 0.1
       Topic: /catch_human_action_server/movement_goal_trials
       Value: false
-    - Alpha: 1
-      Class: rviz/PointStamped
-      Color: 85; 255; 255
-      Enabled: true
-      History Length: 4
-      Name: Goal Right
-      Radius: 0.1
-      Topic: /catch_human_action_server/movement_goal/left_arm
-      Value: true
     - Alpha: 1
       Class: rviz/RobotModel
       Collision Enabled: false
@@ -572,7 +558,7 @@ Visualization Manager:
       Axes Radius: 0.1
       Class: rviz/Pose
       Color: 85; 0; 255
-      Enabled: true
+      Enabled: false
       Head Length: 0.3
       Head Radius: 0.1
       Name: Initial Pose
@@ -580,7 +566,7 @@ Visualization Manager:
       Shaft Radius: 0.05
       Shape: Arrow
       Topic: /fall_predictor/initial_pose
-      Value: true
+      Value: false
     - Alpha: 1
       Arrow Scale: 2
       Arrow Width: 0.5
@@ -594,7 +580,7 @@ Visualization Manager:
       Value: false
     - Alpha: 1
       Class: rviz/Effort
-      Enabled: true
+      Enabled: false
       History Length: 1
       Joints:
         {}
@@ -602,60 +588,96 @@ Visualization Manager:
       Robot Description: robot_description
       Scale: 1
       Topic: /joint_states
-      Value: true
+      Value: false
       Width: 0.02
-      head_pan_joint:
-        Value: false
-      head_tilt_joint:
-        Value: false
-      l_elbow_flex_joint:
-        Value: true
-      l_gripper_l_finger_joint:
-        Value: false
-      l_gripper_l_finger_tip_joint:
-        Value: false
-      l_gripper_r_finger_joint:
-        Value: false
-      l_gripper_r_finger_tip_joint:
-        Value: false
-      l_shoulder_lift_joint:
-        Value: true
-      l_shoulder_pan_joint:
-        Value: true
-      l_upper_arm_roll_joint:
-        Value: true
-      l_wrist_flex_joint:
-        Value: true
-      laser_tilt_mount_joint:
-        Value: false
-      r_elbow_flex_joint:
-        Value: true
-      r_gripper_l_finger_joint:
-        Value: false
-      r_gripper_l_finger_tip_joint:
-        Value: false
-      r_gripper_r_finger_joint:
-        Value: false
-      r_gripper_r_finger_tip_joint:
-        Value: false
-      r_shoulder_lift_joint:
-        Value: true
-      r_shoulder_pan_joint:
-        Value: true
-      r_upper_arm_roll_joint:
-        Value: true
-      r_wrist_flex_joint:
-        Value: true
     - Alpha: 1
       Arrow Scale: 2
       Arrow Width: 0.5
       Class: rviz/WrenchStamped
-      Enabled: true
+      Enabled: false
       Force Color: 255; 255; 0
       History Length: 1
       Name: EE Velocity
       Topic: /catch_human_action_server/ee_velocity
       Torque Color: 204; 204; 51
+      Value: false
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: Goal Left
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /catch_human_action_server/movement_goal/left_arm
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 85; 0
+      Enabled: false
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: Goal Right
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /catch_human_action_server/movement_goal/right_arm
+      Value: false
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /catch_human_action_server/left/target_velocity
+      Name: Target Velocity Left
+      Namespaces:
+        pole_velocity: true
+      Queue Size: 100
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 255; 0
+      Enabled: false
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: Target Pose Left
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /catch_human_action_server/left/target_pose
+      Value: false
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 255; 0
+      Enabled: false
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: Target Pose Right
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /catch_human_action_server/right/target_pose
+      Value: false
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 170; 0
+      Enabled: true
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: Goal Right
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /catch_human_action_server/movement_goal/right_arm
       Value: true
   Enabled: true
   Global Options:
@@ -680,17 +702,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 4.79646
+      Distance: 4.42187
       Focal Point:
         X: 0
         Y: 0
         Z: 0
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.6198
+      Pitch: 0.9748
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.53737
+      Yaw: 5.77918
     Saved: ~
 Window Geometry:
   Displays:

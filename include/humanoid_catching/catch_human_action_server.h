@@ -51,8 +51,10 @@ typedef std::map<std::string, State> StateMapType;
 struct Solution
 {
     geometry_msgs::PointStamped position;
-    geometry_msgs::PoseStamped polePose;
+    geometry_msgs::PoseStamped targetPose;
+    geometry_msgs::TwistStamped targetVelocity;
     ros::Duration delta;
+    ros::Duration time;
 };
 
 class CatchHumanActionServer
@@ -95,6 +97,12 @@ private:
     //! Visualization of trials
     ros::Publisher trialGoalPub;
 
+    //! Visualization of target pose
+    std::vector<ros::Publisher> targetPosePubs;
+
+    //! Visualization of target velocity
+    std::vector<ros::Publisher> targetVelocityPubs;
+
     //! Current joint states
     StateMapType jointStates;
 
@@ -133,17 +141,22 @@ private:
 
     void preempt();
     void jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg);
-    void visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header, unsigned int armIndex) const;
+    void visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header, unsigned int armIndex,
+                       geometry_msgs::PoseStamped targetPose, geometry_msgs::TwistStamped targetVelocity,
+                       double humanoidRadius, double humanoidHeight) const;
 
     static geometry_msgs::PointStamped poseToPoint(const geometry_msgs::PoseStamped pose);
 
     ros::Duration calcExecutionTime(const std::string& group, const std::vector<double>& solution);
     static geometry_msgs::Pose applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform);
+    static geometry_msgs::Vector3 applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform);
+
     geometry_msgs::Pose tfFrameToPose(const std::string& tfFrame, const ros::Time& stamp, const std::string& base) const;
 
-    const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall, unsigned int arm) const;
+    const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall,
+                                                                                unsigned int arm) const;
 
-    bool endEffectorPositions(const std_msgs::Header& header, std::vector<geometry_msgs::Pose>& poses) const;
+    bool endEffectorPositions(const std::string& frame, std::vector<geometry_msgs::Pose>& poses) const;
 
     // TODO: Does not currently handle dual balancing
     void visualizeEEVelocity(const unsigned int arm, const std::vector<double>& eeVelocity);
@@ -160,7 +173,10 @@ private:
 
     geometry_msgs::Twist linkVelocity(const std::string& linkName);
 
-    bool predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors);
+    bool predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall,
+                     ros::Duration duration, bool includeEndEffectors, bool visualize);
 
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal);
+
+    geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose) const;
 };

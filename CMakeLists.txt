@@ -21,6 +21,10 @@ find_package(catkin REQUIRED COMPONENTS
     operational_space_controllers_msgs
 )
 
+if (CATKIN_ENABLE_TESTING)
+find_package(rostest REQUIRED)
+endif (CATKIN_ENABLE_TESTING)
+
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(Ravelin REQUIRED)
@@ -76,7 +80,6 @@ add_service_files(
 ## Generate actions in the 'action' folder
 add_action_files(
    FILES
-   MoveArmFast.action
    CatchHuman.action
  )
 
@@ -192,11 +195,14 @@ target_link_libraries(imu_filter
 )
 
 if(CATKIN_ENABLE_TESTING)
-    catkin_add_gtest(test_catch_human_action_server test/test_catch_human_action_server.cpp src/catch_human_action_server.cpp)
-    set_source_files_properties(test_catch_human_action_server PROPERTIES COMPILE_FLAGS "-DENABLE_TESTING")
-    target_link_libraries(test_catch_human_action_server
-        ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES}
-    )
+    # catkin_add_gtest(test_catch_human_action_server test/test_catch_human_action_server.cpp src/catch_human_action_server.cpp)
+    # set_source_files_properties(test_catch_human_action_server PROPERTIES COMPILE_FLAGS "-DENABLE_TESTING")
+    # target_link_libraries(test_catch_human_action_server
+    #    ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES}
+    #)
+    add_rostest_gtest(test_fall_predictor test/test_fall_predictor.test test/test_fall_predictor.cpp)
+    target_link_libraries(test_fall_predictor ${catkin_LIBRARIES})
+
 endif(CATKIN_ENABLE_TESTING)
 #############
 ## Install ##

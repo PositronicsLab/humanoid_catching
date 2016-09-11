@@ -1,6 +1,0 @@
-# Define the goal target
-float64[] joint_positions
-duration goal_time
----
----
-

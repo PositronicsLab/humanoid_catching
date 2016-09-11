@@ -1,13 +1,21 @@
 Header header
-geometry_msgs/Pose pose
+geometry_msgs/Quaternion orientation
 geometry_msgs/Twist velocity
 geometry_msgs/Twist accel
 geometry_msgs/Pose[] end_effectors
 geometry_msgs/Twist[] end_effector_velocities
 duration max_time
+duration step_size
+bool visualize
+
 ---
 Header header
+geometry_msgs/Pose initial
+geometry_msgs/Twist initial_velocity
+geometry_msgs/Point base
 humanoid_catching/FallPoint[] points
 float64[] inertia_matrix
 float64 body_mass
+float64 radius
+float64 height
 
