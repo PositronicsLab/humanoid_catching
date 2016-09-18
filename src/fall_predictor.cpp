@@ -146,7 +146,8 @@ private:
     void collisionCallback(dGeomID o1, dGeomID o2)
     {
         // Ignore ground contacts
-        if (o1 == ground || o2 == ground) {
+        if (o1 == ground || o2 == ground)
+        {
             ROS_DEBUG("Ignoring ground contact");
             return;
         }
@@ -638,6 +639,7 @@ private:
 
         // Execute the simulation loop up to MAX_DURATION seconds
         bool contact = false;
+        ros::Duration lastTime;
         for (t = 0; t <= req.max_time.toSec() && !contact; t += req.step_size.toSec())
         {
             // Clear end effector contacts
@@ -649,18 +651,27 @@ private:
             // Step forward
             simLoop(req.step_size.toSec());
 
+            geometry_msgs::Pose bodyPose = getBodyPose(humanoid.body);
+
+            // Only record results for requested steps
+            if (t != 0 && ros::Duration(t) - lastTime < req.result_step_size)
+            {
+                continue;
+            }
+
+            lastTime = ros::Duration(t);
             FallPoint curr;
 
             // Get the location of the body for the current iteration
-            curr.pose = getBodyPose(humanoid.body);
+            curr.pose = bodyPose;
             curr.pose.orientation = orientPose(curr.pose.orientation, true);
             curr.ground_contact = arrayToPoint(dBodyGetPosition(groundLink));
             curr.velocity = getBodyTwist(humanoid.body);
             curr.time = ros::Duration(t);
 
             ROS_DEBUG("Pose @ time %f position (%f %f %f) orientation (%f %f %f %f)",
-                     curr.time.toSec(), curr.pose.position.x, curr.pose.position.y, curr.pose.position.z,
-                     curr.pose.orientation.x, curr.pose.orientation.y, curr.pose.orientation.z, curr.pose.orientation.w);
+                      curr.time.toSec(), curr.pose.position.x, curr.pose.position.y, curr.pose.position.z,
+                      curr.pose.orientation.x, curr.pose.orientation.y, curr.pose.orientation.z, curr.pose.orientation.w);
 
             curr.contacts.resize(eeContacts.size());
             for (unsigned int i = 0; i < eeContacts.size(); ++i)
@@ -677,7 +688,7 @@ private:
 
             // Determine if the pole is on the ground and end the simulation
             // Check if COM is at a position with height approximately equal to the radius
-            if (curr.pose.position.z <= humanoidRadius * (1 + 0.05))
+            if (bodyPose.position.z <= humanoidRadius * (1 + 0.05))
             {
                 ROS_INFO("Humanoid is on the ground. Ending simulation @ [%f]s.", t);
                 break;

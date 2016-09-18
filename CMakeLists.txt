@@ -19,6 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
     pluginlib
     resource_retriever
     operational_space_controllers_msgs
+    kinematics_cache
 )
 
 if (CATKIN_ENABLE_TESTING)
@@ -149,7 +150,7 @@ target_link_libraries(catching_controller
 add_executable(catch_human_action_server src/catch_human_action_server.cpp)
 add_dependencies(catch_human_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(catch_human_action_server
-   ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES}
+   ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES} kinematics_cache
 )
 
 add_executable(fall_predictor src/fall_predictor.cpp)

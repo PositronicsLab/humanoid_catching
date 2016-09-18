@@ -15,7 +15,7 @@ echo "Creating folder for baseline results: $RESULTS_FOLDER"
 mkdir -p $RESULTS_FOLDER
 export RESULTS_FOLDER=$RESULTS_FOLDER
 
-for i in `seq 1 100`;
+for i in `seq 1 25`;
 do
   echo "Executing scenario: $i"
   export i=$i
@@ -38,7 +38,7 @@ echo "Creating folder for control results: $RESULTS_FOLDER"
 mkdir -p $RESULTS_FOLDER
 export RESULTS_FOLDER=$RESULTS_FOLDER
 
-for i in `seq 1 100`;
+for i in `seq 1 25`;
 do
   echo "Executing scenario: $i"
   export i=$i

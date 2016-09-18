@@ -20,6 +20,7 @@ static humanoid_catching::PredictFall callFallPredictor(const geometry_msgs::Qua
     predictFall.request.orientation = orientation;
     predictFall.request.velocity.angular = angularVelocity;
     predictFall.request.max_time = ros::Duration(5.0);
+    predictFall.request.result_step_size = ros::Duration(0.1);
     predictFall.request.step_size = ros::Duration(0.01);
 
     predictFall.request.visualize = false;
@@ -47,7 +48,7 @@ TEST(TestSuite, testVerticalPosition)
     EXPECT_DOUBLE_EQ(fall.response.base.z + fall.response.height / 2.0, fall.response.initial.position.z);
 
     // Check that the results are the correct size
-    EXPECT_EQ(501, fall.response.points.size());
+    EXPECT_EQ(50, fall.response.points.size());
 
     // Check that the first point has the correct pose
     // Initial orientation should be the same as passed in

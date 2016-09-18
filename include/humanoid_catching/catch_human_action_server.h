@@ -23,6 +23,7 @@
 #include <Ravelin/RCArticulatedBodyd.h>
 #include <operational_space_controllers_msgs/Move.h>
 #include <geometry_msgs/WrenchStamped.h>
+#include <kinematics_cache/kinematics_cache.h>
 
 typedef actionlib::SimpleActionServer<humanoid_catching::CatchHumanAction> Server;
 typedef std::vector<kinematics_cache::IKv2> IKList;
@@ -73,8 +74,8 @@ private:
     //! Cached fall prediction client
     ros::ServiceClient fallPredictor;
 
-    //! Cached IK client.
-    ros::ServiceClient ik;
+    //! IK Cache
+    std::auto_ptr<kinematics_cache::KinematicsCache> ik;
 
     //! Cached balancing client
     ros::ServiceClient balancer;

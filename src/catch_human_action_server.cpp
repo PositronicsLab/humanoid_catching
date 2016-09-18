@@ -24,6 +24,7 @@
 #include <Ravelin/RCArticulatedBodyd.h>
 #include <operational_space_controllers_msgs/Move.h>
 #include <geometry_msgs/WrenchStamped.h>
+#include <kinematics_cache/kinematics_cache.h>
 
 using namespace std;
 using namespace humanoid_catching;
@@ -47,7 +48,8 @@ static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 static const ros::Duration SEARCH_RESOLUTION(0.05);
 static const double pi = boost::math::constants::pi<double>();
 
-static tf::Quaternion quaternionFromVector(const tf::Vector3& axisVector) {
+static tf::Quaternion quaternionFromVector(const tf::Vector3& axisVector)
+{
     tf::Vector3 upVector(0.0, 0.0, 1.0);
     tf::Vector3 rightVector = axisVector.cross(upVector);
     rightVector.normalize();
@@ -56,7 +58,8 @@ static tf::Quaternion quaternionFromVector(const tf::Vector3& axisVector) {
     return q;
 }
 
-static tf::Vector3 quatToVector(const geometry_msgs::Quaternion& orientationMsg) {
+static tf::Vector3 quatToVector(const geometry_msgs::Quaternion& orientationMsg)
+{
     tf::Quaternion orientation;
     tf::quaternionMsgToTF(orientationMsg, orientation);
     tf::Transform rotation(orientation);
@@ -113,9 +116,19 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     ros::service::waitForService("/fall_predictor/predict_fall");
     fallPredictor = nh.serviceClient<humanoid_catching::PredictFall>("/fall_predictor/predict_fall", true /* persistent */);
 
-    ROS_INFO("Waiting for kinematics_cache/ik service");
-    ros::service::waitForService("/kinematics_cache/ik");
-    ik = nh.serviceClient<kinematics_cache::IKQueryv2>("/kinematics_cache/ik", true /* persistent */);
+    double maxDistance;
+    pnh.param("max_distance", maxDistance, 0.821000);
+
+    string baseFrame;
+    pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
+
+    string leftArmDataName;
+    pnh.param<string>("left_arm_data", leftArmDataName, "./octree/left_arm.ot");
+
+    string rightArmDataName;
+    pnh.param<string>("right_arm_data", rightArmDataName, "./octree/right_arm.ot");
+
+    ik.reset(new kinematics_cache::KinematicsCache(maxDistance, baseFrame, leftArmDataName, rightArmDataName));
 
     ROS_INFO("Waiting for /balancer/torques service");
     ros::service::waitForService("/balancer/torques");
@@ -265,9 +278,9 @@ void CatchHumanActionServer::preempt()
 }
 
 void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
-                                           unsigned int armIndex, geometry_msgs::PoseStamped targetPose,
-                                           geometry_msgs::TwistStamped targetVelocity,
-                                           double humanoidRadius, double humanoidHeight) const
+        unsigned int armIndex, geometry_msgs::PoseStamped targetPose,
+        geometry_msgs::TwistStamped targetVelocity,
+        double humanoidRadius, double humanoidHeight) const
 {
     if (goalPubs[armIndex].getNumSubscribers() > 0)
     {
@@ -276,7 +289,8 @@ void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, cons
         pose.pose = goal;
         goalPubs[armIndex].publish(pose);
     }
-    if (targetPosePubs[armIndex].getNumSubscribers() > 0) {
+    if (targetPosePubs[armIndex].getNumSubscribers() > 0)
+    {
         targetPosePubs[armIndex].publish(targetPose);
     }
 
@@ -337,7 +351,7 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
     double max_tri_distance = max_tri_distance_no_v0 - fabs(d0);
 
     ROS_DEBUG_NAMED("catch_human_action_server", "Maximum triangular distance [%f], distance adjusted [%f], time [%f] given initial_vel [%f], max_vel [%f] and max_accel [%f]",
-                   max_tri_distance_no_v0, max_tri_distance, max_tri_t_no_v0, v0, limits.velocity, limits.acceleration);
+                    max_tri_distance_no_v0, max_tri_distance, max_tri_t_no_v0, v0, limits.velocity, limits.acceleration);
 
     ROS_DEBUG_NAMED("catch_human_action_server", "t0 [%f] d0 [%f]", t0, d0);
 
@@ -375,7 +389,8 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         double d_at_max_v = d - max_tri_distance;
         double t_at_max_v = d_at_max_v / limits.velocity;
         t = t_at_max_v + max_tri_t_no_v0;
-        if (d0 < 0) {
+        if (d0 < 0)
+        {
             t += t0;
         }
         ROS_DEBUG_NAMED("catch_human_action_server", "Trapezoidal solution for t is %f", t);
@@ -524,6 +539,7 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
     predictFall.request.accel = human->accel;
     predictFall.request.max_time = duration;
     predictFall.request.step_size = STEP_SIZE;
+    predictFall.request.result_step_size = SEARCH_RESOLUTION;
     predictFall.request.visualize = visualize;
     if (includeEndEffectors)
     {
@@ -679,20 +695,8 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
             // We now have a projected time/position path. Search the path for acceptable times.
             vector<Solution> solutions;
 
-            // Epsilon causes us to always select a position in front of the fall.
-            ros::Duration lastTime;
-
             for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
             {
-
-                // Determine if we should search this point.
-                if (lastTime != ros::Duration(0) && i->time - lastTime < SEARCH_RESOLUTION)
-                {
-                    continue;
-                }
-
-                lastTime = i->time;
-
                 Solution possibleSolution;
 
                 // Initialize to a large negative number.
@@ -722,12 +726,12 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 }
 
                 // Lookup the IK solution
-                kinematics_cache::IKQueryv2 ikQuery;
-                ikQuery.request.point.point = transformedPose.pose.position;
-                ikQuery.request.point.header = transformedPose.header;
-                ikQuery.request.group = ARMS[arm];
+                geometry_msgs::PointStamped point;
+                point.point = transformedPose.pose.position;
+                point.header = transformedPose.header;
 
-                if (!ik.call(ikQuery))
+                IKList results;
+                if (!ik->query(ARMS[arm], point, results))
                 {
                     ROS_DEBUG("Failed to find IK solution for arm [%s]", ARMS[arm].c_str());
                     continue;
@@ -736,9 +740,9 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 // Check for self-collision with this solution
                 planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
 
-                ROS_DEBUG("Received %lu results from IK query", ikQuery.response.results.size());
+                ROS_DEBUG("Received %lu results from IK query", results.size());
                 bool feasable = false;
-                for (IKList::iterator j = ikQuery.response.results.begin(); j != ikQuery.response.results.end(); ++j)
+                for (IKList::iterator j = results.begin(); j != results.end(); ++j)
                 {
 
                     // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
@@ -820,11 +824,12 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     }
 
     ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
-              ros::Time::now().toSec() - startRosTime.toSec());
+             ros::Time::now().toSec() - startRosTime.toSec());
     as.setSucceeded();
 }
 
-geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose) const {
+geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose) const
+{
 
     tf::Quaternion qPole;
     tf::quaternionMsgToTF(solution.targetPose.pose.orientation, qPole);
@@ -834,7 +839,8 @@ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solut
 
     // Create a quaternion representing the linear velocity
     tf::Vector3 l(solution.targetVelocity.twist.linear.x, solution.targetVelocity.twist.linear.y, solution.targetVelocity.twist.linear.z);
-    if (l.length() == 0) {
+    if (l.length() == 0)
+    {
         l.setX(tfScalar(1));
     }
     l.normalize();
@@ -858,10 +864,12 @@ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solut
     tf::Quaternion qYawNegative;
     qYawNegative.setRPY(0, 0, -pi / 2);
 
-    if (qAt.angleShortestPath(qL * qYaw) < qAt.angleShortestPath(qL * qYawNegative)) {
+    if (qAt.angleShortestPath(qL * qYaw) < qAt.angleShortestPath(qL * qYawNegative))
+    {
         qL *= qYaw;
     }
-    else {
+    else
+    {
         qL *= qYawNegative;
     }
 
@@ -872,10 +880,12 @@ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solut
     tf::Quaternion qRollNegative;
     qRollNegative.setRPY(-pi / 2, 0, 0);
 
-    if (qHand.angleShortestPath(qL * qRoll) < qHand.angleShortestPath(qL * qRollNegative)) {
+    if (qHand.angleShortestPath(qL * qRoll) < qHand.angleShortestPath(qL * qRollNegative))
+    {
         qL *= qRoll;
     }
-    else {
+    else
+    {
         qL *= qRollNegative;
     }
     qL.normalize();

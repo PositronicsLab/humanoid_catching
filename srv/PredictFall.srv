@@ -6,6 +6,7 @@ geometry_msgs/Pose[] end_effectors
 geometry_msgs/Twist[] end_effector_velocities
 duration max_time
 duration step_size
+duration result_step_size
 bool visualize
 
 ---
