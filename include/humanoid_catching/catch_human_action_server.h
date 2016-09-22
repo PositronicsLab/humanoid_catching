@@ -179,5 +179,6 @@ private:
 
     void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal);
 
-    geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose) const;
+public:
+    static geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose);
 };

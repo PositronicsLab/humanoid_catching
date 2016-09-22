@@ -48,14 +48,18 @@ static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 static const ros::Duration SEARCH_RESOLUTION(0.05);
 static const double pi = boost::math::constants::pi<double>();
 
-static tf::Quaternion quaternionFromVector(const tf::Vector3& axisVector)
+static tf::Quaternion quaternionFromVector(const tf::Vector3& v)
 {
-    tf::Vector3 upVector(0.0, 0.0, 1.0);
-    tf::Vector3 rightVector = axisVector.cross(upVector);
-    rightVector.normalize();
-    tf::Quaternion q(rightVector, -1.0 * acos(axisVector.dot(upVector)));
-    q.normalize();
-    return q;
+    tf::Vector3 u(1.0, 0.0, 0.0);
+
+    if (u.x() == v.x() && u.y() == v.y() && u.z() == v.z()) {
+        return tf::Quaternion::getIdentity();
+    }
+
+    float cos_theta = u.normalized().dot(v.normalized());
+    float angle = acos(cos_theta);
+    tf::Vector3 w = u.normalized().cross(v.normalized()).normalized();
+    return tf::Quaternion(w, angle);
 }
 
 static tf::Vector3 quatToVector(const geometry_msgs::Quaternion& orientationMsg)
@@ -828,7 +832,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     as.setSucceeded();
 }
 
-geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose) const
+/* static */ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)
 {
 
     tf::Quaternion qPole;
@@ -856,6 +860,7 @@ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solut
                         solution.targetPose.pose.position.y - currentPose.position.y,
                         solution.targetPose.pose.position.z - currentPose.position.z);
     pointAt.normalize();
+
     tf::Quaternion qAt = quaternionFromVector(pointAt);
 
     tf::Quaternion qYaw;
@@ -864,7 +869,7 @@ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solut
     tf::Quaternion qYawNegative;
     qYawNegative.setRPY(0, 0, -pi / 2);
 
-    if (qAt.angleShortestPath(qL * qYaw) < qAt.angleShortestPath(qL * qYawNegative))
+    if (qAt.angleShortestPath(qL * qYaw) <= qAt.angleShortestPath(qL * qYawNegative))
     {
         qL *= qYaw;
     }
@@ -880,7 +885,7 @@ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solut
     tf::Quaternion qRollNegative;
     qRollNegative.setRPY(-pi / 2, 0, 0);
 
-    if (qHand.angleShortestPath(qL * qRoll) < qHand.angleShortestPath(qL * qRollNegative))
+    if (qHand.angleShortestPath(qL * qRoll) <= qHand.angleShortestPath(qL * qRollNegative))
     {
         qL *= qRoll;
     }

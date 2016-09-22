@@ -3,6 +3,168 @@
 
 using namespace humanoid_catching;
 
+static const double pi = boost::math::constants::pi<double>();
+
+TEST(TestSuite, testPoleXVelocityLeftOfEE) {
+
+  Solution solution;
+  solution.targetPose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  solution.targetPose.pose.position.x = 0;
+  solution.targetPose.pose.position.y = 1;
+  solution.targetPose.pose.position.z = 0;
+
+  solution.targetVelocity.twist.linear.x = 1;
+
+  geometry_msgs::Pose currentEEPose;
+  currentEEPose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  currentEEPose.position.x = 0;
+  currentEEPose.position.y = 0;
+  currentEEPose.position.z = 0;
+
+  geometry_msgs::Quaternion result = CatchHumanActionServer::computeOrientation(solution, currentEEPose);
+
+  // Orientation should be pointing towards the pole
+  geometry_msgs::Quaternion expected = tf::createQuaternionMsgFromRollPitchYaw(pi / 2.0, 0.0, pi / 2.0);
+
+  EXPECT_NEAR(expected.x, result.x, 0.0001);
+  EXPECT_NEAR(expected.y, result.y, 0.0001);
+  EXPECT_NEAR(expected.z, result.z, 0.0001);
+  EXPECT_NEAR(expected.w, result.w, 0.0001);
+}
+
+TEST(TestSuite, testPoleXVelocityLeftOfEERoll) {
+
+  Solution solution;
+  solution.targetPose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  solution.targetPose.pose.position.x = 0;
+  solution.targetPose.pose.position.y = 1;
+  solution.targetPose.pose.position.z = 0;
+
+  solution.targetVelocity.twist.linear.x = 1;
+
+  geometry_msgs::Pose currentEEPose;
+  currentEEPose.orientation = tf::createQuaternionMsgFromRollPitchYaw(-pi / 4.0, 0, 0);
+  currentEEPose.position.x = 0;
+  currentEEPose.position.y = 0;
+  currentEEPose.position.z = 0;
+
+  geometry_msgs::Quaternion result = CatchHumanActionServer::computeOrientation(solution, currentEEPose);
+
+  // Orientation should be pointing towards the pole
+  geometry_msgs::Quaternion expected = tf::createQuaternionMsgFromRollPitchYaw(-pi / 2.0, 0.0, pi / 2.0);
+
+  EXPECT_NEAR(expected.x, result.x, 0.0001);
+  EXPECT_NEAR(expected.y, result.y, 0.0001);
+  EXPECT_NEAR(expected.z, result.z, 0.0001);
+  EXPECT_NEAR(expected.w, result.w, 0.0001);
+}
+
+TEST(TestSuite, testPoleXVelocityLeftOfEERollBack) {
+
+  Solution solution;
+  solution.targetPose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  solution.targetPose.pose.position.x = 0;
+  solution.targetPose.pose.position.y = 1;
+  solution.targetPose.pose.position.z = 0;
+
+  solution.targetVelocity.twist.linear.x = 1;
+
+  geometry_msgs::Pose currentEEPose;
+  currentEEPose.orientation = tf::createQuaternionMsgFromRollPitchYaw(pi / 4.0, 0, 0);
+  currentEEPose.position.x = 0;
+  currentEEPose.position.y = 0;
+  currentEEPose.position.z = 0;
+
+  geometry_msgs::Quaternion result = CatchHumanActionServer::computeOrientation(solution, currentEEPose);
+
+  // Orientation should be pointing towards the pole
+  geometry_msgs::Quaternion expected = tf::createQuaternionMsgFromRollPitchYaw(pi / 2.0, 0.0, pi / 2.0);
+
+  EXPECT_NEAR(expected.x, result.x, 0.0001);
+  EXPECT_NEAR(expected.y, result.y, 0.0001);
+  EXPECT_NEAR(expected.z, result.z, 0.0001);
+  EXPECT_NEAR(expected.w, result.w, 0.0001);
+}
+
+TEST(TestSuite, testPoleXVelocityRightOfEE) {
+
+  Solution solution;
+  solution.targetPose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  solution.targetPose.pose.position.x = 0;
+  solution.targetPose.pose.position.y = -1;
+  solution.targetPose.pose.position.z = 0;
+
+  solution.targetVelocity.twist.linear.x = 1;
+
+  geometry_msgs::Pose currentEEPose;
+  currentEEPose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  currentEEPose.position.x = 0;
+  currentEEPose.position.y = 0;
+  currentEEPose.position.z = 0;
+
+  geometry_msgs::Quaternion result = CatchHumanActionServer::computeOrientation(solution, currentEEPose);
+
+  // Orientation should be pointing towards the pole
+  geometry_msgs::Quaternion expected = tf::createQuaternionMsgFromRollPitchYaw(pi / 2.0, 0.0, -pi / 2.0);
+
+  EXPECT_NEAR(expected.x, result.x, 0.0001);
+  EXPECT_NEAR(expected.y, result.y, 0.0001);
+  EXPECT_NEAR(expected.z, result.z, 0.0001);
+  EXPECT_NEAR(expected.w, result.w, 0.0001);
+}
+
+TEST(TestSuite, testPoleYVelocityLeftOfEE) {
+
+  Solution solution;
+  solution.targetPose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  solution.targetPose.pose.position.x = 0;
+  solution.targetPose.pose.position.y = 1;
+  solution.targetPose.pose.position.z = 0;
+
+  solution.targetVelocity.twist.linear.y = 1;
+
+  geometry_msgs::Pose currentEEPose;
+  currentEEPose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  currentEEPose.position.x = 0;
+  currentEEPose.position.y = 0;
+  currentEEPose.position.z = 0;
+
+  geometry_msgs::Quaternion resultMsg = CatchHumanActionServer::computeOrientation(solution, currentEEPose);
+  tf::Quaternion result;
+  tf::quaternionMsgToTF(resultMsg, result);
+
+  // Orientation should be pointing towards the pole
+  tf::Quaternion expected = tf::createQuaternionFromRPY(pi / 2.0, 0.0, -pi);
+
+  EXPECT_NEAR(expected.angleShortestPath(result), 0.0, 0.0001);
+}
+
+TEST(TestSuite, testPoleYVelocityRightOfEE) {
+
+  Solution solution;
+  solution.targetPose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  solution.targetPose.pose.position.x = 0;
+  solution.targetPose.pose.position.y = -1;
+  solution.targetPose.pose.position.z = 0;
+
+  solution.targetVelocity.twist.linear.y = 1;
+
+  geometry_msgs::Pose currentEEPose;
+  currentEEPose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+  currentEEPose.position.x = 0;
+  currentEEPose.position.y = 0;
+  currentEEPose.position.z = 0;
+
+  geometry_msgs::Quaternion resultMsg = CatchHumanActionServer::computeOrientation(solution, currentEEPose);
+  tf::Quaternion result;
+  tf::quaternionMsgToTF(resultMsg, result);
+
+  // Orientation should be pointing towards the pole
+  tf::Quaternion expected = tf::createQuaternionFromRPY(pi / 2.0, 0.0, -pi);
+
+  EXPECT_NEAR(expected.angleShortestPath(result), 0.0, 0.0001);
+}
+
 TEST(TestSuite, testZeroNoVelocity)
 {
     Limits limit;
