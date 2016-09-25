@@ -164,12 +164,6 @@ private:
 
     void sendTorques(const unsigned int arm, const std::vector<double>& torques);
 
-    /**
-     * Instruct the specified arm to stop moving.
-     * @param arm Arm to stop
-     */
-    void stopArm(const unsigned int arm);
-
     void updateRavelinModel();
 
     geometry_msgs::Twist linkVelocity(const std::string& linkName);

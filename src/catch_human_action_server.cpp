@@ -48,6 +48,8 @@ static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 static const ros::Duration SEARCH_RESOLUTION(0.05);
 static const double pi = boost::math::constants::pi<double>();
 
+#define ENABLE_EXECUTION_TIME_DEBUGGING 0
+
 static tf::Quaternion quaternionFromVector(const tf::Vector3& v)
 {
     tf::Vector3 u(1.0, 0.0, 0.0);
@@ -148,8 +150,8 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
         targetVelocityPubs.push_back(nh.advertise<visualization_msgs::Marker>(ARM_TARGET_VELOCITIES[i], 1));
     }
 
-    trialGoalPub = nh.advertise<geometry_msgs::PointStamped>("/catch_human_action_server/movement_goal_trials", 1);
-    eeVelocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>("/catch_human_action_server/ee_velocity", 1);
+    trialGoalPub = pnh.advertise<geometry_msgs::PointStamped>("/movement_goal_trials", 1);
+    eeVelocityVizPub = pnh.advertise<geometry_msgs::WrenchStamped>("/ee_velocity", 1);
 
     rdf_loader::RDFLoader rdfLoader;
     const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
@@ -246,7 +248,7 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
 
     ROS_DEBUG("Completed initializing the joint limits");
 
-    jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 5));
+    jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanActionServer::jointStatesCallback, this, _1));
 
     ROS_DEBUG("Starting the action server");
@@ -340,7 +342,9 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         v0 = -v0;
     }
 
+    #if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Calculating execution time for distance [%f]", signed_d);
+    #endif // ENABLE_EXECUTION_TIME_DEBUGGING
 
     // Determine the max "bang-bang" distance.
     double max_tri_t_no_v0 = 2.0 * limits.velocity / limits.acceleration;
@@ -354,10 +358,12 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
     double max_tri_distance_no_v0 = limits.velocity * max_tri_t_no_v0;
     double max_tri_distance = max_tri_distance_no_v0 - fabs(d0);
 
+    #if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Maximum triangular distance [%f], distance adjusted [%f], time [%f] given initial_vel [%f], max_vel [%f] and max_accel [%f]",
                     max_tri_distance_no_v0, max_tri_distance, max_tri_t_no_v0, v0, limits.velocity, limits.acceleration);
 
     ROS_DEBUG_NAMED("catch_human_action_server", "t0 [%f] d0 [%f]", t0, d0);
+    #endif // ENABLE_EXECUTION_TIME_DEBUGGING
 
     double t;
 
@@ -365,7 +371,9 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
     if (d <= d0)
     {
         t = t0;
+        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Minimum solution for t is %f", t);
+        #endif
     }
     else if (d <= max_tri_distance)
     {
@@ -375,16 +383,22 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         if (d0 > 0)
         {
             double t2 = sqrt(2 * (d + d0) / limits.acceleration);
+            #if (ENABLE_EXECUTION_TIME_DEBUGGING)
             ROS_DEBUG_NAMED("catch_human_action_server", "t2 %f", t2);
+            #endif
             t = t2 - t0;
         }
         else
         {
             double t2 = sqrt(2 * (d - d0) / limits.acceleration);
+            #if (ENABLE_EXECUTION_TIME_DEBUGGING)
             ROS_DEBUG_NAMED("catch_human_action_server", "t2 %f", t2);
+            #endif
             t = t2 + t0;
         }
+        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Triangular solution for t is %f", t);
+        #endif
         assert (t <= max_tri_t);
     }
     else
@@ -397,7 +411,9 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         {
             t += t0;
         }
+        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Trapezoidal solution for t is %f", t);
+        #endif
         assert(t > max_tri_t);
     }
     return t;
@@ -413,13 +429,16 @@ ros::Duration CatchHumanActionServer::calcExecutionTime(const string& group, con
         double v0 = jointStates[jointName].velocity;
 
         double signed_d = jointStates[jointName].position - solution[i];
+        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Distance to travel for joint %s is [%f]", jointName.c_str(), signed_d);
-
+        #endif
         double t = calcJointExecutionTime(limits, signed_d, v0);
         longestTime = max(longestTime, t);
     }
 
+    #if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Execution time is %f", longestTime);
+    #endif
     return ros::Duration(longestTime);
 }
 
@@ -449,6 +468,7 @@ const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(cons
     return fall.points.end();
 }
 
+// TODO: This should only be for this arm
 bool CatchHumanActionServer::endEffectorPositions(const string& frame, vector<geometry_msgs::Pose>& poses) const
 {
     poses.resize(2);
@@ -488,17 +508,6 @@ void CatchHumanActionServer::sendTorques(const unsigned int arm, const vector<do
     armCommandPubs[arm].publish(command);
 }
 
-/**
- * Instruct the specified arm to stop moving.
- * @param arm Arm to stop
- */
-void CatchHumanActionServer::stopArm(const unsigned int arm)
-{
-    vector<double> zeroTorques;
-    zeroTorques.resize(7);
-    sendTorques(arm, zeroTorques);
-}
-
 void CatchHumanActionServer::updateRavelinModel()
 {
     // Update the joint positions and velocities
@@ -530,8 +539,6 @@ geometry_msgs::Twist CatchHumanActionServer::linkVelocity(const string& linkName
     result.angular.x = v.get_angular().x();
     result.angular.y = v.get_angular().y();
     result.angular.z = v.get_angular().z();
-    ROS_DEBUG("Calculated velocity linear: [%f %f %f] angular: [%f %f %f] for arm %s", result.linear.x, result.linear.y, result.linear.z,
-              result.angular.x, result.angular.y, result.angular.z, linkName.c_str());
     return result;
 }
 
@@ -608,6 +615,10 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
     vector<geometry_msgs::Pose> eePoses;
     endEffectorPositions("torso_lift_link", eePoses);
+
+    // Check for self-collision with this solution
+    planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
+    robot_state::RobotState currentRobotState = currentScene->getCurrentState();
 
     // Determine which arms to execute balancing for.
     for (unsigned int arm = 0; arm < boost::size(ARMS); ++arm)
@@ -697,7 +708,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
             tf.lookupTransform("/torso_lift_link", predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
 
             // We now have a projected time/position path. Search the path for acceptable times.
-            vector<Solution> solutions;
+            boost::optional<Solution> bestSolution;
 
             for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
             {
@@ -741,18 +752,21 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                     continue;
                 }
 
-                // Check for self-collision with this solution
-                planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
-
                 ROS_DEBUG("Received %lu results from IK query", results.size());
-                bool feasable = false;
                 for (IKList::iterator j = results.begin(); j != results.end(); ++j)
                 {
+                    // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
+                    // down and give the second arm time to arrive.
+                    ros::Duration executionTime = ros::Duration(i->time) - calcExecutionTime(j->group, j->positions);
+                    if (bestSolution && executionTime < bestSolution->delta) {
+                        continue;
+                    }
+
+                    possibleSolution.delta = executionTime;
 
                     // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
                     // may be another position that is not in collision.
                     // Note: The allowed collision matrix should prevent collisions between the arms
-                    robot_state::RobotState currentRobotState = currentScene->getCurrentState();
 #if ROS_VERSION_MINIMUM(1, 10, 12)
                     currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
 #else
@@ -764,49 +778,13 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                         continue;
                     }
 
-                    feasable = true;
-
-                    // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
-                    // down and give the second arm time to arrive.
-                    possibleSolution.delta = max(possibleSolution.delta, ros::Duration(i->time) - calcExecutionTime(j->group, j->positions));
-                }
-
-                if (feasable)
-                {
-                    solutions.push_back(possibleSolution);
-                }
-                else
-                {
-                    ROS_DEBUG("Solution was not feasible");
+                    bestSolution = possibleSolution;
                 }
             }
 
-            if (solutions.empty())
+            if (!bestSolution)
             {
                 ROS_WARN("No possible catch positions for arm [%s]", ARMS[arm].c_str());
-                continue;
-            }
-
-            ROS_INFO("Selecting optimal position from %lu poses", solutions.size());
-
-            // Select the point which is reachable most quickly
-            ros::Duration highestDeltaTime = ros::Duration(-1000);
-
-            vector<Solution>::iterator bestSolution = solutions.end();
-            for (vector<Solution>::iterator solution = solutions.begin(); solution != solutions.end(); ++solution)
-            {
-                if (solution->delta > highestDeltaTime)
-                {
-                    highestDeltaTime = solution->delta;
-                    ROS_DEBUG("Selected a pose with higher delta time. position is %f %f %f and delta is %f", solution->position.point.x,
-                              solution->position.point.y, solution->position.point.z, highestDeltaTime.toSec());
-                    bestSolution = solution;
-                }
-            }
-
-            if (bestSolution == solutions.end())
-            {
-                ROS_WARN("No solutions found for arm [%s]", ARMS[arm].c_str());
                 continue;
             }
 
