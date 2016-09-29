@@ -12,6 +12,7 @@ using namespace std;
 using namespace humanoid_catching;
 
 static const double MAX_CATCH_TIME = 5.0;
+static const double PREEMPT_TIMEOUT = 1.0;
 
 typedef actionlib::SimpleActionClient<humanoid_catching::CatchHumanAction> CatchHumanClient;
 
@@ -88,34 +89,44 @@ private:
         catchHuman(imuData);
     }
 
+    void waitForResult(CatchHumanClient* client, ros::Duration timeout) {
+        if (!client->waitForResult(ros::Duration(MAX_CATCH_TIME))) {
+            client->cancelGoal();
+
+            // Now wait again and see if it finishes
+            if (client->waitForResult(ros::Duration(PREEMPT_TIMEOUT))) {
+                ROS_DEBUG("Preempt finished within specified preempt_timeout [%.2f]", PREEMPT_TIMEOUT);
+            } else {
+                ROS_WARN("actionlib", "Preempt didn't finish specified preempt_timeout [%.2f]", PREEMPT_TIMEOUT);
+            }
+        }
+
+        actionlib::SimpleClientGoalState gsl = client->getState();
+        if (gsl.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
+            ROS_DEBUG("Action was dispatched successfully");
+        } else {
+            ROS_INFO("Action was not dispatched successfully. Failure state was %s", gsl.getText().c_str());
+        }
+    }
+
     void catchHuman(const sensor_msgs::ImuConstPtr& imuData) {
         ROS_DEBUG("Beginning procedure to catch human");
-        humanoid_catching::CatchHumanGoal goal;
-        goal.header = imuData->header;
-        goal.velocity.angular = imuData->angular_velocity;
-        goal.accel.linear = imuData->linear_acceleration;
-        goal.orientation = imuData->orientation;
+
+        humanoid_catching::CatchHumanGoal goalLeft, goalRight;
+        goalRight.header = goalLeft.header = imuData->header;
+        goalRight.velocity.angular = goalLeft.velocity.angular = imuData->angular_velocity;
+        goalRight.accel.linear = goalLeft.accel.linear = imuData->linear_acceleration;
+        goalRight.orientation = goalLeft.orientation = imuData->orientation;
 
         // Dispatch goals to both arms and then wait to see if both executed. This does not wait on arm movement,
         // only calculation
-        catchHumanLeftClient->sendGoal(goal);
-        catchHumanRightClient->sendGoal(goal);
+        catchHumanLeftClient->sendGoal(goalLeft);
+        catchHumanRightClient->sendGoal(goalRight);
 
-        catchHumanLeftClient->waitForResult(ros::Duration(MAX_CATCH_TIME));
-        actionlib::SimpleClientGoalState gsl = catchHumanLeftClient->getState();
-        if (gsl.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
-            ROS_INFO("Action was dispatched successfully by left arm");
-        } else {
-            ROS_INFO("Action was not dispatched successfully by left arm. Failure state was %s", gsl.getText().c_str());
-        }
+        waitForResult(catchHumanLeftClient.get(), ros::Duration(MAX_CATCH_TIME));
 
         // Already have waited on left arm, do not wait further
-        actionlib::SimpleClientGoalState gsr = catchHumanRightClient->getState();
-        if (gsr.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
-            ROS_INFO("Action was dispatched successfully by right arm");
-        } else {
-            ROS_INFO("Action was not dispatched successfully by right arm. Failure state was %s", gsr.getText().c_str());
-        }
+        waitForResult(catchHumanRightClient.get(), ros::Duration(0.1));
     }
 
     void reset(const std_msgs::HeaderConstPtr& reset) {
