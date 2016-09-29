@@ -29,13 +29,6 @@
 using namespace std;
 using namespace humanoid_catching;
 
-static const string ARMS[] = {"left_arm", "right_arm"};
-static const string ARM_EE_FRAMES[] = {"l_wrist_roll_link", "r_wrist_roll_link"};
-static const string ARM_TOPICS[] = {"l_arm_force_controller/command", "r_arm_force_controller/command"};
-static const string ARM_GOAL_VIZ_TOPICS[] = {"/catch_human_action_server/movement_goal/left_arm", "/catch_human_action_server/movement_goal/right_arm"};
-static const string ARM_TARGET_POSES[] = {"/catch_human_action_server/left/target_pose", "/catch_human_action_server/right/target_pose"};
-static const string ARM_TARGET_VELOCITIES[] = {"/catch_human_action_server/left/target_velocity", "/catch_human_action_server/right/target_velocity"};
-
 static const double MAX_VELOCITY = 100;
 static const double MAX_ACCELERATION = 100;
 static const double MAX_EFFORT = 100;
@@ -54,7 +47,8 @@ static tf::Quaternion quaternionFromVector(const tf::Vector3& v)
 {
     tf::Vector3 u(1.0, 0.0, 0.0);
 
-    if (u.x() == v.x() && u.y() == v.y() && u.z() == v.z()) {
+    if (u.x() == v.x() && u.y() == v.y() && u.z() == v.z())
+    {
         return tf::Quaternion::getIdentity();
     }
 
@@ -96,6 +90,7 @@ geometry_msgs::Vector3 CatchHumanActionServer::applyTransform(const geometry_msg
     return msgGoal;
 }
 
+// TODO: Consider moving this to separate node so callback isn't starved
 void CatchHumanActionServer::jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
     for(unsigned int i = 0; i < msg->name.size(); ++i)
@@ -128,30 +123,40 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     string baseFrame;
     pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
 
-    string leftArmDataName;
-    pnh.param<string>("left_arm_data", leftArmDataName, "./octree/left_arm.ot");
+    if (!pnh.getParam("arm", arm)) {
+        ROS_ERROR("Arm name must be specified");
+    }
 
-    string rightArmDataName;
-    pnh.param<string>("right_arm_data", rightArmDataName, "./octree/right_arm.ot");
+    if (!pnh.getParam("ee_frame", eeFrame)) {
+        ROS_ERROR("ee_frame must be specified");
+    }
 
-    ik.reset(new kinematics_cache::KinematicsCache(maxDistance, baseFrame, leftArmDataName, rightArmDataName));
+    string armCommandTopic;
+    if (!pnh.getParam("command_topic", armCommandTopic)) {
+        ROS_ERROR("command_topic must be specified");
+    }
+
+    string cacheDataName;
+    if (!pnh.getParam("cache_data_name", cacheDataName)) {
+        ROS_ERROR("cache_data_name must be specified");
+    }
+
+    ik.reset(new kinematics_cache::KinematicsCache(maxDistance, baseFrame, cacheDataName));
 
     ROS_INFO("Waiting for /balancer/torques service");
     ros::service::waitForService("/balancer/torques");
     balancer = nh.serviceClient<humanoid_catching::CalculateTorques>("/balancer/torques", true /* persistent */);
 
     // Initialize arm clients
-    ROS_INFO("Initializing arm command publishers");
-    for (unsigned int i = 0; i < boost::size(ARMS); ++i)
-    {
-        armCommandPubs.push_back(nh.advertise<operational_space_controllers_msgs::Move>(ARM_TOPICS[i], 1, false));
-        goalPubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_GOAL_VIZ_TOPICS[i], 10, true));
-        targetPosePubs.push_back(nh.advertise<geometry_msgs::PoseStamped>(ARM_TARGET_POSES[i], 1));
-        targetVelocityPubs.push_back(nh.advertise<visualization_msgs::Marker>(ARM_TARGET_VELOCITIES[i], 1));
-    }
+    ROS_INFO("Initializing arm command publisher");
+    armCommandPub = nh.advertise<operational_space_controllers_msgs::Move>(armCommandTopic, 1, false);
 
-    trialGoalPub = pnh.advertise<geometry_msgs::PointStamped>("/movement_goal_trials", 1);
-    eeVelocityVizPub = pnh.advertise<geometry_msgs::WrenchStamped>("/ee_velocity", 1);
+    // Initialize visualization publishers
+    goalPub = pnh.advertise<geometry_msgs::PoseStamped>("movement_goal", 10, true);
+    targetPosePub = pnh.advertise<geometry_msgs::PoseStamped>("target_pose", 1);
+    targetVelocityPub = pnh.advertise<visualization_msgs::Marker>("target_velocity", 1);
+    trialGoalPub = pnh.advertise<geometry_msgs::PointStamped>("movement_goal_trials", 1);
+    eeVelocityVizPub = pnh.advertise<geometry_msgs::WrenchStamped>("ee_velocity", 1);
 
     rdf_loader::RDFLoader rdfLoader;
     const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
@@ -174,76 +179,73 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     body->set_links_and_joints(links, joints);
     body->set_floating_base(false);
 
-    for (unsigned int k = 0; k < boost::size(ARMS); ++k)
+    const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(arm);
+
+    // Determine the indexes for the arms within the body joints in Ravelin
+    int curr = 0;
+    for (int l = 0; l < joints.size(); ++l)
     {
-        const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(ARMS[k]);
-
-        // Determine the indexes for the arms within the body joints in Ravelin
-        int curr = 0;
-        for (int l = 0; l < joints.size(); ++l)
+        // Only record joints that represent generalized coordinates
+        if (joints[l]->num_dof() > 0)
         {
-            // Only record joints that represent generalized coordinates
-            if (joints[l]->num_dof() > 0)
-            {
-                jointIndices[joints[l]->joint_id] = curr;
-            }
-            curr += joints[l]->num_dof();
+            jointIndices[joints[l]->joint_id] = curr;
         }
+        curr += joints[l]->num_dof();
+    }
 
-        ROS_DEBUG("Loading joint limits for arm %s", ARMS[k].c_str());
+    ROS_DEBUG("Loading joint limits for arm %s", arm.c_str());
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)
-        const vector<string> jointModelNames = jointModelGroup->getActiveJointModelNames();
+    const vector<string> jointModelNames = jointModelGroup->getActiveJointModelNames();
 #else
-        const vector<string> jointModelNames = getActiveJointModelNames(jointModelGroup);
+    const vector<string> jointModelNames = getActiveJointModelNames(jointModelGroup);
 #endif
 
-        for (unsigned int i = 0; i < jointModelNames.size(); ++i)
+    for (unsigned int i = 0; i < jointModelNames.size(); ++i)
+    {
+        jointNames.push_back(jointModelNames[i]);
+
+        const string prefix = "robot_description_planning/joint_limits/" + jointModelNames[i] + "/";
+        ROS_DEBUG_NAMED("catch_human_action_server", "Loading velocity and acceleration limits for joint %s", jointModelNames[i].c_str());
+
+        bool has_vel_limits;
+        double max_velocity;
+        if (nh.getParam(prefix + "has_velocity_limits", has_vel_limits) && has_vel_limits && nh.getParam(prefix + "max_velocity", max_velocity))
         {
-            jointNames[ARMS[k]].push_back(jointModelNames[i]);
-
-            const string prefix = "robot_description_planning/joint_limits/" + jointModelNames[i] + "/";
-            ROS_DEBUG_NAMED("catch_human_action_server", "Loading velocity and acceleration limits for joint %s", jointModelNames[i].c_str());
-
-            bool has_vel_limits;
-            double max_velocity;
-            if (nh.getParam(prefix + "has_velocity_limits", has_vel_limits) && has_vel_limits && nh.getParam(prefix + "max_velocity", max_velocity))
-            {
-                ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to %f", max_velocity);
-            }
-            else
-            {
-                ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to default");
-                max_velocity = MAX_VELOCITY;
-            }
-
-            bool has_acc_limits;
-            double max_acc;
-            if (nh.getParam(prefix + "has_acceleration_limits", has_acc_limits) && has_acc_limits && nh.getParam(prefix + "max_acceleration", max_acc))
-            {
-                ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to %f", max_acc);
-            }
-            else
-            {
-                ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to default");
-                max_acc = MAX_ACCELERATION;
-            }
-
-            // Fetch the effort from the urdf
-            double max_effort;
-            const urdf::Joint* ujoint = urdfModel->getJoint(jointModelNames[i]).get();
-            if (ujoint != NULL && ujoint->limits)
-            {
-                max_effort = ujoint->limits->effort;
-                ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointModelNames[i].c_str());
-            }
-            else
-            {
-                ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
-                max_effort = MAX_EFFORT;
-            }
-            jointLimits[jointModelNames[i]] = Limits(max_velocity, max_acc, max_effort);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to %f", max_velocity);
         }
+        else
+        {
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to default");
+            max_velocity = MAX_VELOCITY;
+        }
+
+        bool has_acc_limits;
+        double max_acc;
+        if (nh.getParam(prefix + "has_acceleration_limits", has_acc_limits) && has_acc_limits && nh.getParam(prefix + "max_acceleration", max_acc))
+        {
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to %f", max_acc);
+        }
+        else
+        {
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to default");
+            max_acc = MAX_ACCELERATION;
+        }
+
+        // Fetch the effort from the urdf
+        double max_effort;
+        const urdf::Joint* ujoint = urdfModel->getJoint(jointModelNames[i]).get();
+        if (ujoint != NULL && ujoint->limits)
+        {
+            max_effort = ujoint->limits->effort;
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointModelNames[i].c_str());
+        }
+        else
+        {
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
+            max_effort = MAX_EFFORT;
+        }
+        jointLimits[jointModelNames[i]] = Limits(max_velocity, max_acc, max_effort);
     }
 
     ROS_DEBUG("Completed initializing the joint limits");
@@ -279,33 +281,33 @@ vector<string> CatchHumanActionServer::getActiveJointModelNames(const robot_mode
 
 void CatchHumanActionServer::preempt()
 {
-    // Currently no way to cancel force controllers.
-    as.setPreempted();
+    ROS_WARN("Preempt request received");
+    // Preemption is not supported
 }
 
 void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
-        unsigned int armIndex, geometry_msgs::PoseStamped targetPose,
+        geometry_msgs::PoseStamped targetPose,
         geometry_msgs::TwistStamped targetVelocity,
         double humanoidRadius, double humanoidHeight) const
 {
-    if (goalPubs[armIndex].getNumSubscribers() > 0)
+    if (goalPub.getNumSubscribers() > 0)
     {
         geometry_msgs::PoseStamped pose;
         pose.header = header;
         pose.pose = goal;
-        goalPubs[armIndex].publish(pose);
+        goalPub.publish(pose);
     }
-    if (targetPosePubs[armIndex].getNumSubscribers() > 0)
+    if (targetPosePub.getNumSubscribers() > 0)
     {
-        targetPosePubs[armIndex].publish(targetPose);
+        targetPosePub.publish(targetPose);
     }
 
-    if (targetVelocityPubs[armIndex].getNumSubscribers() > 0)
+    if (targetVelocityPub.getNumSubscribers() > 0)
     {
         visualization_msgs::Marker arrow;
         arrow.header = targetVelocity.header;
         arrow.ns = "pole_velocity";
-        arrow.id = armIndex;
+        arrow.id = 0;
         arrow.type = visualization_msgs::Marker::ARROW;
         arrow.points.resize(2);
         arrow.points[0] = arrow.points[1] = targetPose.pose.position;
@@ -320,7 +322,7 @@ void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, cons
         arrow.color.g = 1.0f;
         arrow.color.a = 0.5;
 
-        targetVelocityPubs[armIndex].publish(arrow);
+        targetVelocityPub.publish(arrow);
     }
 }
 
@@ -342,9 +344,9 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         v0 = -v0;
     }
 
-    #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Calculating execution time for distance [%f]", signed_d);
-    #endif // ENABLE_EXECUTION_TIME_DEBUGGING
+#endif // ENABLE_EXECUTION_TIME_DEBUGGING
 
     // Determine the max "bang-bang" distance.
     double max_tri_t_no_v0 = 2.0 * limits.velocity / limits.acceleration;
@@ -358,12 +360,12 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
     double max_tri_distance_no_v0 = limits.velocity * max_tri_t_no_v0;
     double max_tri_distance = max_tri_distance_no_v0 - fabs(d0);
 
-    #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Maximum triangular distance [%f], distance adjusted [%f], time [%f] given initial_vel [%f], max_vel [%f] and max_accel [%f]",
                     max_tri_distance_no_v0, max_tri_distance, max_tri_t_no_v0, v0, limits.velocity, limits.acceleration);
 
     ROS_DEBUG_NAMED("catch_human_action_server", "t0 [%f] d0 [%f]", t0, d0);
-    #endif // ENABLE_EXECUTION_TIME_DEBUGGING
+#endif // ENABLE_EXECUTION_TIME_DEBUGGING
 
     double t;
 
@@ -371,9 +373,9 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
     if (d <= d0)
     {
         t = t0;
-        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Minimum solution for t is %f", t);
-        #endif
+#endif
     }
     else if (d <= max_tri_distance)
     {
@@ -383,22 +385,22 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         if (d0 > 0)
         {
             double t2 = sqrt(2 * (d + d0) / limits.acceleration);
-            #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
             ROS_DEBUG_NAMED("catch_human_action_server", "t2 %f", t2);
-            #endif
+#endif
             t = t2 - t0;
         }
         else
         {
             double t2 = sqrt(2 * (d - d0) / limits.acceleration);
-            #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
             ROS_DEBUG_NAMED("catch_human_action_server", "t2 %f", t2);
-            #endif
+#endif
             t = t2 + t0;
         }
-        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Triangular solution for t is %f", t);
-        #endif
+#endif
         assert (t <= max_tri_t);
     }
     else
@@ -411,34 +413,34 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
         {
             t += t0;
         }
-        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Trapezoidal solution for t is %f", t);
-        #endif
+#endif
         assert(t > max_tri_t);
     }
     return t;
 }
 
-ros::Duration CatchHumanActionServer::calcExecutionTime(const string& group, const vector<double>& solution)
+ros::Duration CatchHumanActionServer::calcExecutionTime(const vector<double>& solution)
 {
     double longestTime = 0.0;
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
-        const string& jointName = jointNames[group][i];
+        const string& jointName = jointNames[i];
         Limits& limits = jointLimits[jointName];
         double v0 = jointStates[jointName].velocity;
 
         double signed_d = jointStates[jointName].position - solution[i];
-        #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Distance to travel for joint %s is [%f]", jointName.c_str(), signed_d);
-        #endif
+#endif
         double t = calcJointExecutionTime(limits, signed_d, v0);
         longestTime = max(longestTime, t);
     }
 
-    #if (ENABLE_EXECUTION_TIME_DEBUGGING)
+#if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Execution time is %f", longestTime);
-    #endif
+#endif
     return ros::Duration(longestTime);
 }
 
@@ -456,11 +458,11 @@ geometry_msgs::Pose CatchHumanActionServer::tfFrameToPose(const string& tfFrame,
     return pose;
 }
 
-const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(const humanoid_catching::PredictFall::Response& fall, unsigned int arm) const
+const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(const humanoid_catching::PredictFall::Response& fall) const
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
-        if (i->contacts[arm].is_in_contact)
+        if (i->contacts[0].is_in_contact)
         {
             return i;
         }
@@ -468,24 +470,19 @@ const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(cons
     return fall.points.end();
 }
 
-// TODO: This should only be for this arm
-bool CatchHumanActionServer::endEffectorPositions(const string& frame, vector<geometry_msgs::Pose>& poses) const
+geometry_msgs::Pose CatchHumanActionServer::endEffectorPosition(const string& frame) const
 {
-    poses.resize(2);
-    poses[0] = tfFrameToPose(ARM_EE_FRAMES[0], ros::Time(0), frame);
-    poses[1] = tfFrameToPose(ARM_EE_FRAMES[1], ros::Time(0), frame);
-    return true;
+    return tfFrameToPose(eeFrame, ros::Time(0), frame);
 }
 
-// TODO: Does not currently handle dual balancing
-void CatchHumanActionServer::visualizeEEVelocity(const unsigned int arm, const vector<double>& eeVelocity)
+void CatchHumanActionServer::visualizeEEVelocity(const vector<double>& eeVelocity)
 {
     if (eeVelocityVizPub.getNumSubscribers() > 0)
     {
         // Frame is the end effector of the given arm
         geometry_msgs::WrenchStamped wrench;
         wrench.header.stamp = ros::Time::now();
-        wrench.header.frame_id = ARM_EE_FRAMES[arm];
+        wrench.header.frame_id = eeFrame;
         wrench.wrench.force.x = eeVelocity[0];
         wrench.wrench.force.y = eeVelocity[1];
         wrench.wrench.force.z = eeVelocity[2];
@@ -496,16 +493,16 @@ void CatchHumanActionServer::visualizeEEVelocity(const unsigned int arm, const v
     }
 }
 
-void CatchHumanActionServer::sendTorques(const unsigned int arm, const vector<double>& torques)
+void CatchHumanActionServer::sendTorques(const vector<double>& torques)
 {
     // Execute the movement
-    ROS_DEBUG("Dispatching torque command for arm %s", ARMS[arm].c_str());
+    ROS_DEBUG("Dispatching torque command for arm %s", arm.c_str());
     operational_space_controllers_msgs::Move command;
     command.header.stamp = ros::Time::now();
     command.header.frame_id = "/torso_lift_link";
     command.has_torques = true;
     command.torques = torques;
-    armCommandPubs[arm].publish(command);
+    armCommandPub.publish(command);
 }
 
 void CatchHumanActionServer::updateRavelinModel()
@@ -554,23 +551,17 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
     predictFall.request.visualize = visualize;
     if (includeEndEffectors)
     {
-        predictFall.request.end_effector_velocities.resize(2);
-        predictFall.request.end_effector_velocities[0] = linkVelocity(ARM_EE_FRAMES[0]);
-        predictFall.request.end_effector_velocities[1] = linkVelocity(ARM_EE_FRAMES[1]);
+        predictFall.request.end_effector_velocities.resize(1);
+        predictFall.request.end_effector_velocities[0] = linkVelocity(eeFrame);
 
-        // Wait for the wrist transforms
-        if (!endEffectorPositions(human->header.frame_id, predictFall.request.end_effectors))
-        {
-            return false;
-        }
+        predictFall.request.end_effectors.resize(1);
+        predictFall.request.end_effectors[0] = endEffectorPosition(human->header.frame_id);
     }
 
-    ROS_DEBUG("Predicting fall");
     if (!fallPredictor.call(predictFall))
     {
         return false;
     }
-    ROS_DEBUG("Fall predicted");
     return true;
 }
 
@@ -582,6 +573,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     if(!as.isActive() || as.isPreemptRequested() || !ros::ok())
     {
         ROS_INFO("Catch human action canceled before started");
+        as.setPreempted();
         return;
     }
 
@@ -594,13 +586,14 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     humanoid_catching::PredictFall predictFallObj;
     if (!predictFall(goal, predictFallObj, CONTACT_TIME_TOLERANCE, true, false))
     {
-        ROS_DEBUG("Fall prediction failed");
+        ROS_INFO("Fall prediction failed");
         as.setAborted();
         return;
     }
     ROS_DEBUG("Fall predicted successfully");
 
     // Repredict without any end effectors
+    ROS_DEBUG("Predicting fall without contact");
     humanoid_catching::PredictFall predictFallNoEE;
     if (!predictFall(goal, predictFallNoEE, MAX_DURATION, false, true))
     {
@@ -608,206 +601,203 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
         as.setAborted();
         return;
     }
+    ROS_DEBUG("Fall predicted without contact successfully");
 
     ROS_DEBUG("Estimated position: %f %f %f", predictFallObj.response.points[0].pose.position.x, predictFallObj.response.points[0].pose.position.y,  predictFallObj.response.points[0].pose.position.z);
     ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
     ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFallObj.response.points[0].velocity.linear.x, predictFallObj.response.points[0].velocity.linear.y,  predictFallObj.response.points[0].velocity.linear.z);
 
-    vector<geometry_msgs::Pose> eePoses;
-    endEffectorPositions("torso_lift_link", eePoses);
+    geometry_msgs::Pose eePose = endEffectorPosition("torso_lift_link");
 
     // Check for self-collision with this solution
     planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
     robot_state::RobotState currentRobotState = currentScene->getCurrentState();
 
-    // Determine which arms to execute balancing for.
-    for (unsigned int arm = 0; arm < boost::size(ARMS); ++arm)
+    // Determine whether to execute balancing.
+    const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response);
+
+    // Determine if the robot is currently in contact
+    if (fallPoint != predictFallObj.response.points.end())
     {
-        const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response, arm);
+        ROS_INFO("Robot is in contact. Executing balancing for arm %s", arm.c_str());
+        humanoid_catching::CalculateTorques calcTorques;
+        calcTorques.request.name = arm;
+        calcTorques.request.body_velocity = fallPoint->velocity;
+        calcTorques.request.body_inertia_matrix = predictFallObj.response.inertia_matrix;
+        calcTorques.request.body_mass = predictFallObj.response.body_mass;
+        calcTorques.request.time_delta = ros::Duration(0.01);
+        calcTorques.request.body_com = fallPoint->pose;
+        calcTorques.request.contact_position = fallPoint->contacts[0].position;
+        calcTorques.request.contact_normal = fallPoint->contacts[0].normal;
+        calcTorques.request.ground_contact = fallPoint->ground_contact;
 
-        // Determine if the robot is currently in contact
-        if (fallPoint != predictFallObj.response.points.end())
-        {
-            ROS_INFO("Robot is in contact. Executing balancing for arm %s", ARMS[arm].c_str());
-            humanoid_catching::CalculateTorques calcTorques;
-            calcTorques.request.name = ARMS[arm];
-            calcTorques.request.body_velocity = fallPoint->velocity;
-            calcTorques.request.body_inertia_matrix = predictFallObj.response.inertia_matrix;
-            calcTorques.request.body_mass = predictFallObj.response.body_mass;
-            calcTorques.request.time_delta = ros::Duration(0.01);
-            calcTorques.request.body_com = fallPoint->pose;
-            calcTorques.request.contact_position = fallPoint->contacts[arm].position;
-            calcTorques.request.contact_normal = fallPoint->contacts[arm].normal;
-            calcTorques.request.ground_contact = fallPoint->ground_contact;
+        // Get the list of joints in this group
+        const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(arm);
 
-            // Get the list of joints in this group
-            const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(ARMS[arm]);
+        // Get the inertia matrix
+        Ravelin::MatrixNd robotInertiaMatrix;
+        body->get_generalized_inertia(robotInertiaMatrix);
+        Ravelin::MatrixNd armMatrix;
+        robotInertiaMatrix.get_sub_mat(jointIndices[jointNames[0]], jointIndices[jointNames.back()] + 1,
+                                       jointIndices[jointNames[0]], jointIndices[jointNames.back()] + 1, armMatrix);
 
-            const vector<string>& jointModelNames = jointNames[ARMS[arm]];
+        calcTorques.request.robot_inertia_matrix = vector<double>(armMatrix.data(), armMatrix.data() + armMatrix.size());
 
-            // Get the inertia matrix
-            Ravelin::MatrixNd robotInertiaMatrix;
-            body->get_generalized_inertia(robotInertiaMatrix);
-            Ravelin::MatrixNd armMatrix;
-            robotInertiaMatrix.get_sub_mat(jointIndices[jointModelNames[0]], jointIndices[jointModelNames.back()] + 1,
-                                           jointIndices[jointModelNames[0]], jointIndices[jointModelNames.back()] + 1, armMatrix);
-
-            calcTorques.request.robot_inertia_matrix = vector<double>(armMatrix.data(), armMatrix.data() + armMatrix.size());
-
-            // Get the jacobian
-            robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
+        // Get the jacobian
+        robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)
-            Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
+        Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
 #else
-            Eigen::MatrixXd jacobian;
-            currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getLinkModelNames().back(), Eigen::Vector3d(0, 0, 0), jacobian);
+        Eigen::MatrixXd jacobian;
+        currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getLinkModelNames().back(), Eigen::Vector3d(0, 0, 0), jacobian);
 #endif
 
-            // Set current velocities
-            calcTorques.request.joint_velocity.resize(jointModelNames.size());
-            for (unsigned int j = 0; j < jointModelNames.size(); ++j)
+        // Set current velocities
+        calcTorques.request.joint_velocity.resize(jointNames.size());
+        for (unsigned int j = 0; j < jointNames.size(); ++j)
+        {
+            calcTorques.request.joint_velocity[j] = jointStates[jointNames[j]].velocity;
+        }
+
+        // Convert to raw type
+        calcTorques.request.jacobian_matrix.resize(jacobian.rows() * jacobian.cols());
+        Eigen::Map<Eigen::MatrixXd>(&calcTorques.request.jacobian_matrix[0], jacobian.rows(), jacobian.cols()) = jacobian;
+
+        // Set the joint limits
+        calcTorques.request.torque_limits.resize(jointNames.size());
+        calcTorques.request.velocity_limits.resize(jointNames.size());
+        for (unsigned int j = 0; j < jointNames.size(); ++j)
+        {
+            double maxEffort = jointLimits[jointNames[j]].effort;
+            calcTorques.request.torque_limits[j].minimum = -maxEffort;
+            calcTorques.request.torque_limits[j].maximum = maxEffort;
+
+            double maxVelocity = jointLimits[jointNames[j]].velocity;
+            calcTorques.request.velocity_limits[j].minimum = -maxVelocity;
+            calcTorques.request.velocity_limits[j].maximum = maxVelocity;
+        }
+
+        ROS_DEBUG("Calculating torques");
+        if (!balancer.call(calcTorques))
+        {
+            ROS_WARN("Calculating torques failed");
+            as.setAborted();
+            return;
+        }
+        ROS_DEBUG("Torques calculated successfully");
+
+        // Visualize the desired velocity
+        visualizeEEVelocity(calcTorques.response.ee_velocities);
+        sendTorques(calcTorques.response.torques);
+    }
+    else
+    {
+        tf::StampedTransform goalToTorsoTransform;
+        tf.lookupTransform("/torso_lift_link", predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
+
+        // We now have a projected time/position path. Search the path for acceptable times.
+        boost::optional<Solution> bestSolution;
+
+        for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
+        {
+            Solution possibleSolution;
+
+            // Initialize to a large negative number.
+            possibleSolution.delta = ros::Duration(-1000);
+            possibleSolution.time = i->time;
+
+            geometry_msgs::PoseStamped basePose;
+            basePose.header = predictFallNoEE.response.header;
+            basePose.pose = i->pose;
+
+            geometry_msgs::PoseStamped transformedPose;
+            transformedPose.header.frame_id = "/torso_lift_link";
+            transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
+
+            transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
+            possibleSolution.targetPose = transformedPose;
+
+            possibleSolution.targetVelocity.twist.linear = applyTransform(i->velocity.linear, goalToTorsoTransform);
+            possibleSolution.targetVelocity.header = transformedPose.header;
+
+            possibleSolution.position.header = transformedPose.header;
+            possibleSolution.position.point = transformedPose.pose.position;
+
+            if (trialGoalPub.getNumSubscribers() > 0)
             {
-                calcTorques.request.joint_velocity[j] = jointStates[jointModelNames[j]].velocity;
+                trialGoalPub.publish(poseToPoint(transformedPose));
             }
 
-            // Convert to raw type
-            calcTorques.request.jacobian_matrix.resize(jacobian.rows() * jacobian.cols());
-            Eigen::Map<Eigen::MatrixXd>(&calcTorques.request.jacobian_matrix[0], jacobian.rows(), jacobian.cols()) = jacobian;
+            // Lookup the IK solution
+            geometry_msgs::PointStamped point;
+            point.point = transformedPose.pose.position;
+            point.header = transformedPose.header;
 
-            // Set the joint limits
-            calcTorques.request.torque_limits.resize(jointModelNames.size());
-            calcTorques.request.velocity_limits.resize(jointModelNames.size());
-            for (unsigned int j = 0; j < jointModelNames.size(); ++j)
+            IKList results;
+            if (!ik->query(point, results))
             {
-                double maxEffort = jointLimits[jointModelNames[j]].effort;
-                calcTorques.request.torque_limits[j].minimum = -maxEffort;
-                calcTorques.request.torque_limits[j].maximum = maxEffort;
-
-                double maxVelocity = jointLimits[jointModelNames[j]].velocity;
-                calcTorques.request.velocity_limits[j].minimum = -maxVelocity;
-                calcTorques.request.velocity_limits[j].maximum = maxVelocity;
-            }
-
-            ROS_DEBUG("Calculating torques");
-            if (!balancer.call(calcTorques))
-            {
-                ROS_WARN("Calculating torques failed");
-                // Continue using current torques
+                ROS_DEBUG("Failed to find IK solution for arm [%s]", arm.c_str());
                 continue;
             }
-            ROS_DEBUG("Torques calculated successfully");
 
-            // Visualize the desired velocity
-            visualizeEEVelocity(arm, calcTorques.response.ee_velocities);
-            sendTorques(arm, calcTorques.response.torques);
-        }
-        else
-        {
-            tf::StampedTransform goalToTorsoTransform;
-            tf.lookupTransform("/torso_lift_link", predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
-
-            // We now have a projected time/position path. Search the path for acceptable times.
-            boost::optional<Solution> bestSolution;
-
-            for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
+            ROS_DEBUG("Received %lu results from IK query", results.size());
+            for (IKList::iterator j = results.begin(); j != results.end(); ++j)
             {
-                Solution possibleSolution;
-
-                // Initialize to a large negative number.
-                possibleSolution.delta = ros::Duration(-1000);
-                possibleSolution.time = i->time;
-
-                geometry_msgs::PoseStamped basePose;
-                basePose.header = predictFallNoEE.response.header;
-                basePose.pose = i->pose;
-
-                geometry_msgs::PoseStamped transformedPose;
-                transformedPose.header.frame_id = "/torso_lift_link";
-                transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
-
-                transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
-                possibleSolution.targetPose = transformedPose;
-
-                possibleSolution.targetVelocity.twist.linear = applyTransform(i->velocity.linear, goalToTorsoTransform);
-                possibleSolution.targetVelocity.header = transformedPose.header;
-
-                possibleSolution.position.header = transformedPose.header;
-                possibleSolution.position.point = transformedPose.pose.position;
-
-                if (trialGoalPub.getNumSubscribers() > 0)
+                // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
+                // down and give the second arm time to arrive.
+                ros::Duration executionTimeDelta = ros::Duration(i->time) - calcExecutionTime(j->positions);
+                if (bestSolution && executionTimeDelta < bestSolution->delta)
                 {
-                    trialGoalPub.publish(poseToPoint(transformedPose));
-                }
-
-                // Lookup the IK solution
-                geometry_msgs::PointStamped point;
-                point.point = transformedPose.pose.position;
-                point.header = transformedPose.header;
-
-                IKList results;
-                if (!ik->query(ARMS[arm], point, results))
-                {
-                    ROS_DEBUG("Failed to find IK solution for arm [%s]", ARMS[arm].c_str());
                     continue;
                 }
 
-                ROS_DEBUG("Received %lu results from IK query", results.size());
-                for (IKList::iterator j = results.begin(); j != results.end(); ++j)
-                {
-                    // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
-                    // down and give the second arm time to arrive.
-                    ros::Duration executionTime = ros::Duration(i->time) - calcExecutionTime(j->group, j->positions);
-                    if (bestSolution && executionTime < bestSolution->delta) {
-                        continue;
-                    }
+                possibleSolution.delta = executionTimeDelta;
 
-                    possibleSolution.delta = executionTime;
-
-                    // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
-                    // may be another position that is not in collision.
-                    // Note: The allowed collision matrix should prevent collisions between the arms
+                // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
+                // may be another position that is not in collision.
+                // Note: The allowed collision matrix should prevent collisions between the arms
 #if ROS_VERSION_MINIMUM(1, 10, 12)
-                    currentRobotState.setVariablePositions(jointNames[j->group], j->positions);
+                currentRobotState.setVariablePositions(jointNames, j->positions);
 #else
-                    currentRobotState.setStateValues(jointNames[j->group], j->positions);
+                currentRobotState.setStateValues(jointNames, j->positions);
 #endif
-                    if (currentScene->isStateColliding(currentRobotState, j->group, false))
-                    {
-                        ROS_DEBUG("State in collision.");
-                        continue;
-                    }
-
-                    bestSolution = possibleSolution;
+                if (currentScene->isStateColliding(currentRobotState, j->group, false))
+                {
+                    ROS_DEBUG("State in collision.");
+                    continue;
                 }
+
+                bestSolution = possibleSolution;
             }
-
-            if (!bestSolution)
-            {
-                ROS_WARN("No possible catch positions for arm [%s]", ARMS[arm].c_str());
-                continue;
-            }
-
-            ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
-                     ARMS[arm].c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
-                     bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
-                     bestSolution->time.toSec());
-
-            operational_space_controllers_msgs::Move command;
-
-            command.header = bestSolution->position.header;
-            command.target.position = bestSolution->position.point;
-            command.target.orientation = computeOrientation(*bestSolution, eePoses[arm]);
-            command.point_at_target = false;
-            visualizeGoal(command.target, command.header, arm, bestSolution->targetPose, bestSolution->targetVelocity, predictFallNoEE.response.radius,
-                          predictFallNoEE.response.height);
-            armCommandPubs[arm].publish(command);
         }
+
+        if (!bestSolution)
+        {
+            ROS_WARN("No possible catch positions for arm [%s]", arm.c_str());
+            as.setAborted();
+            return;
+        }
+
+        ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
+                 arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
+                 bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
+                 bestSolution->time.toSec());
+
+        operational_space_controllers_msgs::Move command;
+
+        command.header = bestSolution->position.header;
+        command.target.position = bestSolution->position.point;
+        command.target.orientation = computeOrientation(*bestSolution, eePose);
+        command.point_at_target = false;
+        visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallNoEE.response.radius,
+                      predictFallNoEE.response.height);
+        armCommandPub.publish(command);
     }
 
     ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
              ros::Time::now().toSec() - startRosTime.toSec());
-    as.setSucceeded();
+    as.setSucceeded(result);
 }
 
 /* static */ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)

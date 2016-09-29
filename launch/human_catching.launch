@@ -1,11 +1,24 @@
 <launch>
   <include file="$(find pr2_moveit_config)/launch/planning_context.launch" />
 
-  <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action">
+  <remap from="/left/l_arm_force_controller/command" to="/l_arm_force_controller/command" />
+  <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action" ns="left">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
     <param name="max_distance" value="0.821000"/>
-    <param name="left_arm_data" value="$(find kinematics_cache)/octree/left_arm.ot" />
-    <param name="right_arm_data" value="$(find kinematics_cache)/octree/right_arm.ot" />
+    <param name="cache_data_name" value="$(find kinematics_cache)/octree/left_arm.ot" />
+    <param name="arm" value="left_arm" />
+    <param name="command_topic" value="l_arm_force_controller/command" />
+    <param name="ee_frame" value="l_wrist_roll_link" />
+  </node>
+
+  <remap from="/right/r_arm_force_controller/command" to="/r_arm_force_controller/command" />
+  <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action" ns="right">
+    <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
+    <param name="max_distance" value="0.821000"/>
+    <param name="cache_data_name" value="$(find kinematics_cache)/octree/right_arm.ot" />
+    <param name="arm" value="right_arm" />
+    <param name="command_topic" value="r_arm_force_controller/command" />
+    <param name="ee_frame" value="r_wrist_roll_link" />
   </node>
 
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>

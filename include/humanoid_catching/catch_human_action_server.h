@@ -83,14 +83,14 @@ private:
     //! Subscriber for joint state updates
     std::auto_ptr<message_filters::Subscriber<sensor_msgs::JointState> > jointStatesSub;
 
-    //! Arm clients
-    std::vector<ros::Publisher> armCommandPubs;
+    //! Arm client
+    ros::Publisher armCommandPub;
 
     //! TF listener
     tf::TransformListener tf;
 
     //! Visualization of goals
-    std::vector<ros::Publisher> goalPubs;
+    ros::Publisher goalPub;
 
     //! Visualization of velocities
     ros::Publisher eeVelocityVizPub;
@@ -99,10 +99,10 @@ private:
     ros::Publisher trialGoalPub;
 
     //! Visualization of target pose
-    std::vector<ros::Publisher> targetPosePubs;
+    ros::Publisher targetPosePub;
 
     //! Visualization of target velocity
-    std::vector<ros::Publisher> targetVelocityPubs;
+    ros::Publisher targetVelocityPub;
 
     //! Current joint states
     StateMapType jointStates;
@@ -111,7 +111,7 @@ private:
     LimitMapType jointLimits;
 
     //! Joint names
-    std::map<std::string, std::vector<std::string> > jointNames;
+    std::vector<std::string> jointNames;
 
     //! Planning scene
     boost::shared_ptr<planning_scene_monitor::PlanningSceneMonitor> planningScene;
@@ -124,6 +124,12 @@ private:
 
     //! Record the indexes into the body for the two sets of arm joints
     std::map<std::string, int> jointIndices;
+
+    //! Arm name
+    std::string arm;
+
+    //! EE Frame
+    std::string eeFrame;
 
     //! Create messages that are used to published feedback/result
     humanoid_catching::CatchHumanFeedback feedback;
@@ -142,27 +148,25 @@ private:
 
     void preempt();
     void jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg);
-    void visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header, unsigned int armIndex,
+    void visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
                        geometry_msgs::PoseStamped targetPose, geometry_msgs::TwistStamped targetVelocity,
                        double humanoidRadius, double humanoidHeight) const;
 
     static geometry_msgs::PointStamped poseToPoint(const geometry_msgs::PoseStamped pose);
 
-    ros::Duration calcExecutionTime(const std::string& group, const std::vector<double>& solution);
+    ros::Duration calcExecutionTime(const std::vector<double>& solution);
     static geometry_msgs::Pose applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform);
     static geometry_msgs::Vector3 applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform);
 
     geometry_msgs::Pose tfFrameToPose(const std::string& tfFrame, const ros::Time& stamp, const std::string& base) const;
 
-    const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall,
-                                                                                unsigned int arm) const;
+    const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall) const;
 
-    bool endEffectorPositions(const std::string& frame, std::vector<geometry_msgs::Pose>& poses) const;
+    geometry_msgs::Pose endEffectorPosition(const std::string& frame) const;
 
-    // TODO: Does not currently handle dual balancing
-    void visualizeEEVelocity(const unsigned int arm, const std::vector<double>& eeVelocity);
+    void visualizeEEVelocity(const std::vector<double>& eeVelocity);
 
-    void sendTorques(const unsigned int arm, const std::vector<double>& torques);
+    void sendTorques(const std::vector<double>& torques);
 
     void updateRavelinModel();
 
