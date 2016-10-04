@@ -81,6 +81,8 @@
 		<Unit filename="srv/CalculateTorques.srv" />
 		<Unit filename="srv/PredictFall.srv" />
 		<Unit filename="test/test_catch_human_action_server.cpp" />
+		<Unit filename="test/test_fall_predictor.cpp" />
+		<Unit filename="test/test_fall_predictor.test" />
 		<Extensions>
 			<code_completion />
 			<debugger />

@@ -20,7 +20,7 @@ do
   echo "Executing scenario: $i"
   export i=$i
   # Launch gazebo
-  roslaunch gazebo_worlds empty_world.launch gui:=false &
+  roslaunch gazebo_worlds empty_world.launch gui:=false debug:=true &
   sleep 15
   roslaunch humanoid_catching no_catching_simulated.launch &
   sleep 15
@@ -43,7 +43,7 @@ do
   echo "Executing scenario: $i"
   export i=$i
   # Launch gazebo
-  roslaunch pr2_gazebo pr2_empty_world.launch gui:=false &
+  roslaunch pr2_gazebo pr2_empty_world.launch gui:=false debug:=true &
   sleep 30
   roslaunch humanoid_catching human_catching_simulated.launch &
   sleep 15

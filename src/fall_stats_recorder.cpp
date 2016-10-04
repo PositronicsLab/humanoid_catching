@@ -36,10 +36,15 @@ private:
     //! Start time
     ros::Time startTime;
 
+    //! Whether the result was written
+    bool resultsWritten;
+
 public:
     FallStatsRecorder() : pnh("~")
     {
         ROS_DEBUG("Initializing the fall stats recorder");
+
+        resultsWritten = false;
 
         humanFallSub.reset(new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
         humanFallSub->registerCallback(boost::bind(&FallStatsRecorder::fallDetected, this, _1));
@@ -49,10 +54,17 @@ public:
         humanIMUSub->unsubscribe();
     }
 
+    ~FallStatsRecorder() {
+        if(!resultsWritten) {
+            ros::Duration contactTime = ros::Time::now() - startTime;
+            printResults(contactTime);
+        }
+    }
+
 private:
     void writeHeader(ofstream& outputCSV)
     {
-        outputCSV << "Ground Contact Time(s)" << endl;
+        outputCSV << "Scenario Number, Ground Contact Time(s)" << endl;
     }
 
     void printResults(const ros::Duration& contactTime)
@@ -63,6 +75,13 @@ private:
         {
             cout << "Results folder not set. Using current directory." << endl;
             resultsFolder = "";
+        }
+
+        const char* scenarioNumberStr = std::getenv("i");
+        if(scenarioNumberStr == NULL)
+        {
+            cout << "Scenario number not set. Using 0." << endl;
+            scenarioNumberStr = "0";
         }
 
         const string resultsFileName = boost::filesystem::current_path().string() + "/" + string(resultsFolder) + "/" + "results.csv";
@@ -77,7 +96,7 @@ private:
             writeHeader(outputCSV);
         }
 
-        outputCSV << contactTime.toSec() << ", " << endl;
+        outputCSV << scenarioNumberStr << ", " << contactTime.toSec() << ", " << endl;
         outputCSV.close();
         ROS_INFO_STREAM("Printing output file complete");
     }
@@ -106,6 +125,7 @@ private:
             ROS_INFO_STREAM("Setting contact time to: " << contactTime);
             printResults(contactTime);
             humanIMUSub->unsubscribe();
+            resultsWritten = true;
         }
     }
 };
