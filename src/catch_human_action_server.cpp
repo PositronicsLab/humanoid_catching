@@ -55,16 +55,15 @@ static tf::Quaternion quaternionFromVector(const tf::Vector3& v)
     float cos_theta = u.normalized().dot(v.normalized());
     float angle = acos(cos_theta);
     tf::Vector3 w = u.normalized().cross(v.normalized()).normalized();
-    return tf::Quaternion(w, angle);
+    return tf::Quaternion(w, angle).normalized();
 }
 
-static tf::Vector3 quatToVector(const geometry_msgs::Quaternion& orientationMsg)
+static tf::Vector3 quatToVector(const tf::Quaternion& orientation)
 {
-    tf::Quaternion orientation;
-    tf::quaternionMsgToTF(orientationMsg, orientation);
     tf::Transform rotation(orientation);
     tf::Vector3 xAxis(1, 0, 0);
     tf::Vector3 r = rotation.getBasis() * xAxis;
+    r.normalize();
     return r;
 }
 
@@ -803,11 +802,26 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 /* static */ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)
 {
 
+    ROS_DEBUG("q_pole: %f %f %f %f", solution.targetPose.pose.orientation.x,
+             solution.targetPose.pose.orientation.y,
+             solution.targetPose.pose.orientation.z,
+             solution.targetPose.pose.orientation.w);
+
     tf::Quaternion qPole;
     tf::quaternionMsgToTF(solution.targetPose.pose.orientation, qPole);
 
+    ROS_DEBUG("q_hand: %f %f %f %f", currentPose.orientation.x,
+             currentPose.orientation.y,
+             currentPose.orientation.z,
+             currentPose.orientation.w);
+
     tf::Quaternion qHand;
     tf::quaternionMsgToTF(currentPose.orientation, qHand);
+
+    ROS_DEBUG("v_pole: %f %f %f",
+             solution.targetVelocity.twist.linear.x,
+             solution.targetVelocity.twist.linear.y,
+             solution.targetVelocity.twist.linear.z);
 
     // Create a quaternion representing the linear velocity
     tf::Vector3 l(solution.targetVelocity.twist.linear.x, solution.targetVelocity.twist.linear.y, solution.targetVelocity.twist.linear.z);
@@ -816,10 +830,17 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
         l.setX(tfScalar(1));
     }
     l.normalize();
+    tf::Quaternion qL(quaternionFromVector(l));
 
-    tf::Quaternion qL = quaternionFromVector(l);
-    qL.normalize();
+    ROS_DEBUG("pose_target: %f %f %f",
+             solution.targetPose.pose.position.x,
+             solution.targetPose.pose.position.y,
+             solution.targetPose.pose.position.z);
 
+     ROS_DEBUG("pose_current: %f %f %f",
+             currentPose.position.x,
+             currentPose.position.y,
+             currentPose.position.z);
     // Rotate to a vector orthoganal to the velocity.
 
     // Create the vector representing the direction from the end effector to pole
@@ -827,9 +848,12 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     tf::Vector3 pointAt(solution.targetPose.pose.position.x - currentPose.position.x,
                         solution.targetPose.pose.position.y - currentPose.position.y,
                         solution.targetPose.pose.position.z - currentPose.position.z);
+
+    ROS_DEBUG("p_at: %f %f %f", pointAt.x(), pointAt.y(), pointAt.z());
+
     pointAt.normalize();
 
-    tf::Quaternion qAt = quaternionFromVector(pointAt);
+    ROS_INFO("p_at: %f %f %f", pointAt.x(), pointAt.y(), pointAt.z());
 
     tf::Quaternion qYaw;
     qYaw.setRPY(0, 0, pi / 2);
@@ -837,7 +861,14 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     tf::Quaternion qYawNegative;
     qYawNegative.setRPY(0, 0, -pi / 2);
 
-    if (qAt.angleShortestPath(qL * qYaw) <= qAt.angleShortestPath(qL * qYawNegative))
+    tf::Vector3 pos = quatToVector(qL * qYaw);
+    ROS_DEBUG("Positive rotation %f %f %f", pos.x(), pos.y(), pos.z());
+
+    tf::Vector3 neg = quatToVector(qL * qYawNegative);
+    ROS_DEBUG("Negative rotation %f %f %f", neg.x(), neg.y(), neg.z());
+
+    ROS_DEBUG("Distance positive %f Distance negative %f", pointAt.distance2(quatToVector(qL * qYaw)), pointAt.distance2(quatToVector(qL * qYawNegative)));
+    if (pointAt.distance2(quatToVector(qL * qYaw)) <= pointAt.distance2(quatToVector(qL * qYawNegative)))
     {
         qL *= qYaw;
     }
@@ -853,6 +884,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     tf::Quaternion qRollNegative;
     qRollNegative.setRPY(-pi / 2, 0, 0);
 
+    // TODO: QL is wrong base?
     if (qHand.angleShortestPath(qL * qRoll) <= qHand.angleShortestPath(qL * qRollNegative))
     {
         qL *= qRoll;
