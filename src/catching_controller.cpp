@@ -60,10 +60,10 @@ public:
         humanIMUSub->unsubscribe();
 
         ROS_DEBUG("Waiting for catch human servers");
-        catchHumanLeftClient.reset(new CatchHumanClient("/left/catch_human_action", true));
+        catchHumanLeftClient.reset(new CatchHumanClient("catch_human_action_left", true));
         catchHumanLeftClient->waitForServer();
 
-        catchHumanRightClient.reset(new CatchHumanClient("/right/catch_human_action", true));
+        catchHumanRightClient.reset(new CatchHumanClient("catch_human_action_right", true));
         catchHumanRightClient->waitForServer();
 
         ROS_INFO("Catching controllers initialized successfully");

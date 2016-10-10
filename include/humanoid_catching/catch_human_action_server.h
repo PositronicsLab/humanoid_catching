@@ -110,6 +110,18 @@ private:
     //! Joint limits
     LimitMapType jointLimits;
 
+    //! Base frame
+    std::string baseFrame;
+
+    //! Queue for the joint state messages
+    ros::CallbackQueue jointStateMessagesQueue;
+
+    //! Joint states lock
+    boost::shared_mutex jointStatesAccess;
+
+    //! Spinner
+    std::auto_ptr<ros::AsyncSpinner> jointStateMessagesSpinner;
+
     //! Joint names
     std::vector<std::string> jointNames;
 

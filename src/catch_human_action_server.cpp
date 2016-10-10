@@ -25,6 +25,7 @@
 #include <operational_space_controllers_msgs/Move.h>
 #include <geometry_msgs/WrenchStamped.h>
 #include <kinematics_cache/kinematics_cache.h>
+#include <ros/spinner.h>
 
 using namespace std;
 using namespace humanoid_catching;
@@ -89,13 +90,17 @@ geometry_msgs::Vector3 CatchHumanActionServer::applyTransform(const geometry_msg
     return msgGoal;
 }
 
-// TODO: Consider moving this to separate node so callback isn't starved
 void CatchHumanActionServer::jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
+    ROS_DEBUG("Updating joint states");
+
+    // Take read lock for the entire update.
+    boost::unique_lock<boost::shared_mutex> lock(jointStatesAccess);
     for(unsigned int i = 0; i < msg->name.size(); ++i)
     {
         jointStates[msg->name[i]] = State(msg->position[i], msg->velocity[i]);
     }
+    ROS_DEBUG("Updated joint states");
 }
 
 CatchHumanActionServer::CatchHumanActionServer(const string& name) :
@@ -119,7 +124,6 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     double maxDistance;
     pnh.param("max_distance", maxDistance, 0.821000);
 
-    string baseFrame;
     pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
 
     if (!pnh.getParam("arm", arm)) {
@@ -249,8 +253,12 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
 
     ROS_DEBUG("Completed initializing the joint limits");
 
-    jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1));
+    jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1, ros::TransportHints(), &jointStateMessagesQueue));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanActionServer::jointStatesCallback, this, _1));
+
+    // Spin a separate thread
+    jointStateMessagesSpinner.reset(new ros::AsyncSpinner(1, &jointStateMessagesQueue));
+    jointStateMessagesSpinner->start();
 
     ROS_DEBUG("Starting the action server");
     as.registerPreemptCallback(boost::bind(&CatchHumanActionServer::preempt, this));
@@ -427,9 +435,13 @@ ros::Duration CatchHumanActionServer::calcExecutionTime(const vector<double>& so
     {
         const string& jointName = jointNames[i];
         Limits& limits = jointLimits[jointName];
-        double v0 = jointStates[jointName].velocity;
 
+        // Take the read lock
+        boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+        double v0 = jointStates[jointName].velocity;
         double signed_d = jointStates[jointName].position - solution[i];
+        lock.unlock();
+
 #if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Distance to travel for joint %s is [%f]", jointName.c_str(), signed_d);
 #endif
@@ -498,7 +510,7 @@ void CatchHumanActionServer::sendTorques(const vector<double>& torques)
     ROS_DEBUG("Dispatching torque command for arm %s", arm.c_str());
     operational_space_controllers_msgs::Move command;
     command.header.stamp = ros::Time::now();
-    command.header.frame_id = "/torso_lift_link";
+    command.header.frame_id = baseFrame;
     command.has_torques = true;
     command.torques = torques;
     armCommandPub.publish(command);
@@ -515,27 +527,18 @@ void CatchHumanActionServer::updateRavelinModel()
     Ravelin::VectorNd currentVelocities(numGeneralized);
     currentVelocities.set_zero();
 
-    for(map<string, int>::iterator it = jointIndices.begin(); it != jointIndices.end(); ++it)
+    // Lock scope
     {
-        currentPositions[it->second] = jointStates[it->first].position;
-        currentVelocities[it->second] = jointStates[it->first].velocity;
+        boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+        for(map<string, int>::iterator it = jointIndices.begin(); it != jointIndices.end(); ++it)
+        {
+            currentPositions[it->second] = jointStates[it->first].position;
+            currentVelocities[it->second] = jointStates[it->first].velocity;
+        }
     }
 
     body->set_generalized_coordinates_euler(currentPositions);
     body->set_generalized_velocity(Ravelin::DynamicBodyd::eEuler, currentVelocities);
-}
-
-geometry_msgs::Twist CatchHumanActionServer::linkVelocity(const string& linkName)
-{
-    Ravelin::SVelocityd v = body->find_link(linkName)->get_velocity();
-    geometry_msgs::Twist result;
-    result.linear.x = v.get_linear().x();
-    result.linear.y = v.get_linear().y();
-    result.linear.z = v.get_linear().z();
-    result.angular.x = v.get_angular().x();
-    result.angular.y = v.get_angular().y();
-    result.angular.z = v.get_angular().z();
-    return result;
 }
 
 bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
@@ -551,7 +554,6 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
     if (includeEndEffectors)
     {
         predictFall.request.end_effector_velocities.resize(1);
-        predictFall.request.end_effector_velocities[0] = linkVelocity(eeFrame);
 
         predictFall.request.end_effectors.resize(1);
         predictFall.request.end_effectors[0] = endEffectorPosition(human->header.frame_id);
@@ -579,8 +581,6 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
 
-    updateRavelinModel();
-
     ROS_DEBUG("Predicting fall");
     humanoid_catching::PredictFall predictFallObj;
     if (!predictFall(goal, predictFallObj, CONTACT_TIME_TOLERANCE, true, false))
@@ -606,7 +606,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
     ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFallObj.response.points[0].velocity.linear.x, predictFallObj.response.points[0].velocity.linear.y,  predictFallObj.response.points[0].velocity.linear.z);
 
-    geometry_msgs::Pose eePose = endEffectorPosition("torso_lift_link");
+    geometry_msgs::Pose eePose = endEffectorPosition(baseFrame);
 
     // Check for self-collision with this solution
     planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
@@ -619,6 +619,9 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     if (fallPoint != predictFallObj.response.points.end())
     {
         ROS_INFO("Robot is in contact. Executing balancing for arm %s", arm.c_str());
+
+        updateRavelinModel();
+
         humanoid_catching::CalculateTorques calcTorques;
         calcTorques.request.name = arm;
         calcTorques.request.body_velocity = fallPoint->velocity;
@@ -654,9 +657,13 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
         // Set current velocities
         calcTorques.request.joint_velocity.resize(jointNames.size());
-        for (unsigned int j = 0; j < jointNames.size(); ++j)
+        // Lock scope
         {
-            calcTorques.request.joint_velocity[j] = jointStates[jointNames[j]].velocity;
+            boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+            for (unsigned int j = 0; j < jointNames.size(); ++j)
+            {
+                calcTorques.request.joint_velocity[j] = jointStates[jointNames[j]].velocity;
+            }
         }
 
         // Convert to raw type
@@ -693,7 +700,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     else
     {
         tf::StampedTransform goalToTorsoTransform;
-        tf.lookupTransform("/torso_lift_link", predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
+        tf.lookupTransform(baseFrame, predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
 
         // We now have a projected time/position path. Search the path for acceptable times.
         boost::optional<Solution> bestSolution;
@@ -711,7 +718,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
             basePose.pose = i->pose;
 
             geometry_msgs::PoseStamped transformedPose;
-            transformedPose.header.frame_id = "/torso_lift_link";
+            transformedPose.header.frame_id = baseFrame;
             transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
 
             transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
