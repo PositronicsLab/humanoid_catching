@@ -608,10 +608,6 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
     geometry_msgs::Pose eePose = endEffectorPosition(baseFrame);
 
-    // Check for self-collision with this solution
-    planning_scene::PlanningScenePtr currentScene = planningScene->getPlanningScene();
-    robot_state::RobotState currentRobotState = currentScene->getCurrentState();
-
     // Determine whether to execute balancing.
     const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response);
 
@@ -759,21 +755,6 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
                 }
 
                 possibleSolution.delta = executionTimeDelta;
-
-                // We estimate that the robot will move to the position in the cache. This may be innaccurate and there
-                // may be another position that is not in collision.
-                // Note: The allowed collision matrix should prevent collisions between the arms
-#if ROS_VERSION_MINIMUM(1, 10, 12)
-                currentRobotState.setVariablePositions(jointNames, j->positions);
-#else
-                currentRobotState.setStateValues(jointNames, j->positions);
-#endif
-                if (currentScene->isStateColliding(currentRobotState, j->group, false))
-                {
-                    ROS_DEBUG("State in collision.");
-                    continue;
-                }
-
                 bestSolution = possibleSolution;
             }
         }
