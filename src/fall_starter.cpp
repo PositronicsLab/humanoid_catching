@@ -39,6 +39,7 @@ public:
         pnh("~")
     {
         catchNotifier = nh.advertise<std_msgs::Header>("/human/fall", 1, true);
+        // TODO: Stop catching controller here
         stopLeftNotifier = nh.advertise<operational_space_controllers_msgs::Move>("l_arm_force_controller/command", 1, true);
         stopRightNotifier = nh.advertise<operational_space_controllers_msgs::Move>("r_arm_force_controller/command", 1, true);
     }
@@ -56,10 +57,11 @@ public:
     {
         ROS_DEBUG("Stopping fall catcher");
 
-        // Send a blank move command
+        // Send a stop move command
         operational_space_controllers_msgs::Move command;
         command.header.frame_id = "torso_lift_link";
         command.header.stamp = ros::Time::now();
+        command.stop = true;
         stopLeftNotifier.publish(command);
         stopRightNotifier.publish(command);
 

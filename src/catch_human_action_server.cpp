@@ -841,7 +841,7 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
     pointAt.normalize();
 
-    ROS_INFO("p_at: %f %f %f", pointAt.x(), pointAt.y(), pointAt.z());
+    ROS_DEBUG("p_at: %f %f %f", pointAt.x(), pointAt.y(), pointAt.z());
 
     tf::Quaternion qYaw;
     qYaw.setRPY(0, 0, pi / 2);

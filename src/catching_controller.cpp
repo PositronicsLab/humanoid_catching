@@ -25,9 +25,6 @@ private:
 	//! Private nh
 	ros::NodeHandle pnh;
 
-    //! Visualization of imu data
-    ros::Publisher imuVizPub;
-
     //! Human fall subscriber
     auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
 
@@ -42,9 +39,13 @@ private:
 
     //! Catch human right arm action client.
     auto_ptr<CatchHumanClient> catchHumanRightClient;
+
+    //! Whether the controller is active
+    bool active;
+
 public:
 	CatchingController() :
-		pnh("~") {
+		pnh("~"), active(false) {
         ROS_INFO("Initializing the catching controller");
         humanFallSub.reset(
                 new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
@@ -54,10 +55,9 @@ public:
                 new message_filters::Subscriber<std_msgs::Header>(nh, "/catching_controller/reset", 1));
         resetSub->registerCallback(boost::bind(&CatchingController::reset, this, _1));
 
-        // Construct but don't initialize
         humanIMUSub.reset(
                 new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
-        humanIMUSub->unsubscribe();
+        humanIMUSub->registerCallback(boost::bind(&CatchingController::imuDataDetected, this, _1));
 
         ROS_DEBUG("Waiting for catch human servers");
         catchHumanLeftClient.reset(new CatchHumanClient("catch_human_action_left", true));
@@ -73,20 +73,18 @@ private:
     void fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
         ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
 
+        // Set catching as active
+        active = true;
+
         // Unsubscribe from further fall notifications
         humanFallSub->unsubscribe();
-
-        // Begin listening for IMU notifications
-        humanIMUSub->subscribe();
-        humanIMUSub->registerCallback(boost::bind(&CatchingController::imuDataDetected, this, _1));
-
-        // Wait to receive a IMU notification to take action so we are
-        // aware of any initial velocity
     }
 
     void imuDataDetected(const sensor_msgs::ImuConstPtr& imuData) {
         ROS_DEBUG("Human IMU data received at @ %f", imuData->header.stamp.toSec());
-        catchHuman(imuData);
+        if (active) {
+            catchHuman(imuData);
+        }
     }
 
     void waitForResult(CatchHumanClient* client, ros::Duration timeout) {
@@ -132,8 +130,7 @@ private:
     void reset(const std_msgs::HeaderConstPtr& reset) {
         ROS_INFO("Resetting catching controller");
 
-        // Stop the current actions
-        humanIMUSub->unsubscribe();
+        active = false;
 
         // Begin listening for IMU notifications
         humanFallSub->subscribe();
