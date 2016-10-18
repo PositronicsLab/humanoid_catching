@@ -28,20 +28,15 @@ private:
     //! Catching controller notifier
     ros::Publisher catchNotifier;
 
-    //! Left arm movement stopping notifier
-    ros::Publisher stopLeftNotifier;
-
-    //! Right arm movement stopping notifier
-    ros::Publisher stopRightNotifier;
+    //! Controller stopping notifier
+    ros::Publisher stopNotifier;
 
 public:
     FallStarter() :
         pnh("~")
     {
         catchNotifier = nh.advertise<std_msgs::Header>("/human/fall", 1, true);
-        // TODO: Stop catching controller here
-        stopLeftNotifier = nh.advertise<operational_space_controllers_msgs::Move>("l_arm_force_controller/command", 1, true);
-        stopRightNotifier = nh.advertise<operational_space_controllers_msgs::Move>("r_arm_force_controller/command", 1, true);
+        stopNotifier = nh.advertise<std_msgs::Header>("/catching_controller/reset", 1, true);
     }
 
     void fall()
@@ -57,13 +52,9 @@ public:
     {
         ROS_DEBUG("Stopping fall catcher");
 
-        // Send a stop move command
-        operational_space_controllers_msgs::Move command;
-        command.header.frame_id = "torso_lift_link";
-        command.header.stamp = ros::Time::now();
-        command.stop = true;
-        stopLeftNotifier.publish(command);
-        stopRightNotifier.publish(command);
+        std_msgs::Header header;
+        header.stamp = ros::Time::now();
+        stopNotifier.publish(header);
 
         ROS_DEBUG("Fall stopping complete");
     }

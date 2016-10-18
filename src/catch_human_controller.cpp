@@ -322,6 +322,13 @@ void CatchHumanActionServer::reset(const std_msgs::HeaderConstPtr& reset) {
 
     // Begin listening for IMU notifications
     humanFallSub->subscribe();
+
+    // Stop the arm
+    operational_space_controllers_msgs::Move command;
+    command.header.frame_id = "torso_lift_link";
+    command.header.stamp = ros::Time::now();
+    command.stop = true;
+    armCommandPub.publish(command);
 }
 
 void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
