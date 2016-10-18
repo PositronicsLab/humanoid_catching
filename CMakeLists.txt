@@ -79,10 +79,9 @@ add_service_files(
 )
 
 ## Generate actions in the 'action' folder
-add_action_files(
-   FILES
-   CatchHuman.action
- )
+#add_action_files(
+#   FILES
+# )
 
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
@@ -140,12 +139,6 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${LIBXM
 if(CATKIN_ENABLE_TESTING)
     add_definitions(-DCATKIN_ENABLE_TESTING)
 endif(CATKIN_ENABLE_TESTING)
-
-add_executable(catching_controller src/catching_controller.cpp)
-add_dependencies(catching_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(catching_controller
-   ${catkin_LIBRARIES}
-)
 
 add_executable(catch_human_action_server src/catch_human_action_server.cpp)
 add_dependencies(catch_human_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})

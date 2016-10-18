@@ -103,12 +103,11 @@ void CatchHumanActionServer::jointStatesCallback(const sensor_msgs::JointState::
     ROS_DEBUG("Updated joint states");
 }
 
-CatchHumanActionServer::CatchHumanActionServer(const string& name) :
+CatchHumanActionServer::CatchHumanActionServer() :
     pnh("~"),
-    as(nh, name, boost::bind(&CatchHumanActionServer::execute, this, _1), false),
-    planningScene(new planning_scene_monitor::PlanningSceneMonitor("robot_description"))
+    planningScene(new planning_scene_monitor::PlanningSceneMonitor("robot_description")),
+    active(false)
 {
-
     ROS_INFO("Initializing the catch human action");
 
     // Configure the planning scene
@@ -126,23 +125,39 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
 
     pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
 
-    if (!pnh.getParam("arm", arm)) {
+    if (!pnh.getParam("arm", arm))
+    {
         ROS_ERROR("Arm name must be specified");
     }
 
-    if (!pnh.getParam("ee_frame", eeFrame)) {
+    if (!pnh.getParam("ee_frame", eeFrame))
+    {
         ROS_ERROR("ee_frame must be specified");
     }
 
     string armCommandTopic;
-    if (!pnh.getParam("command_topic", armCommandTopic)) {
+    if (!pnh.getParam("command_topic", armCommandTopic))
+    {
         ROS_ERROR("command_topic must be specified");
     }
 
     string cacheDataName;
-    if (!pnh.getParam("cache_data_name", cacheDataName)) {
+    if (!pnh.getParam("cache_data_name", cacheDataName))
+    {
         ROS_ERROR("cache_data_name must be specified");
     }
+
+    humanFallSub.reset(
+        new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
+    humanFallSub->registerCallback(boost::bind(&CatchHumanActionServer::fallDetected, this, _1));
+
+    resetSub.reset(
+        new message_filters::Subscriber<std_msgs::Header>(nh, "/catching_controller/reset", 1));
+    resetSub->registerCallback(boost::bind(&CatchHumanActionServer::reset, this, _1));
+
+    humanIMUSub.reset(
+        new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
+    humanIMUSub->registerCallback(boost::bind(&CatchHumanActionServer::imuDataDetected, this, _1));
 
     ik.reset(new kinematics_cache::KinematicsCache(maxDistance, baseFrame, cacheDataName));
 
@@ -260,9 +275,6 @@ CatchHumanActionServer::CatchHumanActionServer(const string& name) :
     jointStateMessagesSpinner.reset(new ros::AsyncSpinner(1, &jointStateMessagesQueue));
     jointStateMessagesSpinner->start();
 
-    ROS_DEBUG("Starting the action server");
-    as.registerPreemptCallback(boost::bind(&CatchHumanActionServer::preempt, this));
-    as.start();
     ROS_INFO("Catch human action server initialized successfully");
 }
 
@@ -286,10 +298,30 @@ vector<string> CatchHumanActionServer::getActiveJointModelNames(const robot_mode
 }
 #endif // ROS_VERSION_MINIMUM
 
-void CatchHumanActionServer::preempt()
-{
-    ROS_WARN("Preempt request received");
-    // Preemption is not supported
+void CatchHumanActionServer::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
+    ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
+
+    // Set catching as active
+    active = true;
+
+    // Unsubscribe from further fall notifications
+    humanFallSub->unsubscribe();
+}
+
+void CatchHumanActionServer::imuDataDetected(const sensor_msgs::ImuConstPtr& imuData) {
+    ROS_DEBUG("Human IMU data received at @ %f", imuData->header.stamp.toSec());
+    if (active) {
+        execute(imuData);
+    }
+}
+
+void CatchHumanActionServer::reset(const std_msgs::HeaderConstPtr& reset) {
+    ROS_INFO("Resetting catching controller");
+
+    active = false;
+
+    // Begin listening for IMU notifications
+    humanFallSub->subscribe();
 }
 
 void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
@@ -541,12 +573,12 @@ void CatchHumanActionServer::updateRavelinModel()
     body->set_generalized_velocity(Ravelin::DynamicBodyd::eEuler, currentVelocities);
 }
 
-bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
+bool CatchHumanActionServer::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
 {
-    predictFall.request.header = human->header;
-    predictFall.request.orientation = human->orientation;
-    predictFall.request.velocity = human->velocity;
-    predictFall.request.accel = human->accel;
+    predictFall.request.header = imuData->header;
+    predictFall.request.orientation = imuData->orientation;
+    predictFall.request.velocity.angular = imuData->angular_velocity;
+    predictFall.request.accel.linear = imuData->linear_acceleration;
     predictFall.request.max_time = duration;
     predictFall.request.step_size = STEP_SIZE;
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
@@ -556,7 +588,7 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
         predictFall.request.end_effector_velocities.resize(1);
 
         predictFall.request.end_effectors.resize(1);
-        predictFall.request.end_effectors[0] = endEffectorPosition(human->header.frame_id);
+        predictFall.request.end_effectors[0] = endEffectorPosition(imuData->header.frame_id);
     }
 
     if (!fallPredictor.call(predictFall))
@@ -566,27 +598,19 @@ bool CatchHumanActionServer::predictFall(const humanoid_catching::CatchHumanGoal
     return true;
 }
 
-void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalConstPtr& goal)
+void CatchHumanActionServer::execute(const sensor_msgs::ImuConstPtr imuData)
 {
 
     ROS_DEBUG("Catch procedure initiated");
-
-    if(!as.isActive() || as.isPreemptRequested() || !ros::ok())
-    {
-        ROS_INFO("Catch human action canceled before started");
-        as.setPreempted();
-        return;
-    }
 
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
 
     ROS_DEBUG("Predicting fall");
     humanoid_catching::PredictFall predictFallObj;
-    if (!predictFall(goal, predictFallObj, CONTACT_TIME_TOLERANCE, true, false))
+    if (!predictFall(imuData, predictFallObj, CONTACT_TIME_TOLERANCE, true, false))
     {
         ROS_INFO("Fall prediction failed");
-        as.setAborted();
         return;
     }
     ROS_DEBUG("Fall predicted successfully");
@@ -594,10 +618,9 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     // Repredict without any end effectors
     ROS_DEBUG("Predicting fall without contact");
     humanoid_catching::PredictFall predictFallNoEE;
-    if (!predictFall(goal, predictFallNoEE, MAX_DURATION, false, true))
+    if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, false, true))
     {
         ROS_DEBUG("Fall prediction failed");
-        as.setAborted();
         return;
     }
     ROS_DEBUG("Fall predicted without contact successfully");
@@ -684,7 +707,6 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
         if (!balancer.call(calcTorques))
         {
             ROS_WARN("Calculating torques failed");
-            as.setAborted();
             return;
         }
         ROS_DEBUG("Torques calculated successfully");
@@ -762,7 +784,6 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
         if (!bestSolution)
         {
             ROS_WARN("No possible catch positions for arm [%s]", arm.c_str());
-            as.setAborted();
             return;
         }
 
@@ -784,32 +805,31 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
 
     ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
              ros::Time::now().toSec() - startRosTime.toSec());
-    as.setSucceeded(result);
 }
 
 /* static */ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)
 {
 
     ROS_DEBUG("q_pole: %f %f %f %f", solution.targetPose.pose.orientation.x,
-             solution.targetPose.pose.orientation.y,
-             solution.targetPose.pose.orientation.z,
-             solution.targetPose.pose.orientation.w);
+              solution.targetPose.pose.orientation.y,
+              solution.targetPose.pose.orientation.z,
+              solution.targetPose.pose.orientation.w);
 
     tf::Quaternion qPole;
     tf::quaternionMsgToTF(solution.targetPose.pose.orientation, qPole);
 
     ROS_DEBUG("q_hand: %f %f %f %f", currentPose.orientation.x,
-             currentPose.orientation.y,
-             currentPose.orientation.z,
-             currentPose.orientation.w);
+              currentPose.orientation.y,
+              currentPose.orientation.z,
+              currentPose.orientation.w);
 
     tf::Quaternion qHand;
     tf::quaternionMsgToTF(currentPose.orientation, qHand);
 
     ROS_DEBUG("v_pole: %f %f %f",
-             solution.targetVelocity.twist.linear.x,
-             solution.targetVelocity.twist.linear.y,
-             solution.targetVelocity.twist.linear.z);
+              solution.targetVelocity.twist.linear.x,
+              solution.targetVelocity.twist.linear.y,
+              solution.targetVelocity.twist.linear.z);
 
     // Create a quaternion representing the linear velocity
     tf::Vector3 l(solution.targetVelocity.twist.linear.x, solution.targetVelocity.twist.linear.y, solution.targetVelocity.twist.linear.z);
@@ -821,14 +841,14 @@ void CatchHumanActionServer::execute(const humanoid_catching::CatchHumanGoalCons
     tf::Quaternion qL(quaternionFromVector(l));
 
     ROS_DEBUG("pose_target: %f %f %f",
-             solution.targetPose.pose.position.x,
-             solution.targetPose.pose.position.y,
-             solution.targetPose.pose.position.z);
+              solution.targetPose.pose.position.x,
+              solution.targetPose.pose.position.y,
+              solution.targetPose.pose.position.z);
 
-     ROS_DEBUG("pose_current: %f %f %f",
-             currentPose.position.x,
-             currentPose.position.y,
-             currentPose.position.z);
+    ROS_DEBUG("pose_current: %f %f %f",
+              currentPose.position.x,
+              currentPose.position.y,
+              currentPose.position.z);
     // Rotate to a vector orthoganal to the velocity.
 
     // Create the vector representing the direction from the end effector to pole
@@ -893,7 +913,7 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "catch_human_action");
 
-    CatchHumanActionServer cha(ros::this_node::getName());
+    CatchHumanActionServer cha;
     ros::spin();
 }
 #endif

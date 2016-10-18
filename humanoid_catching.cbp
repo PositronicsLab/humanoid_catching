@@ -72,7 +72,6 @@
 		<Unit filename="src/balancer.cpp" />
 		<Unit filename="src/calc_ee_bb.cpp" />
 		<Unit filename="src/catch_human_action_server.cpp" />
-		<Unit filename="src/catching_controller.cpp" />
 		<Unit filename="src/fall_predictor.cpp" />
 		<Unit filename="src/fall_starter.cpp" />
 		<Unit filename="src/fall_stats_recorder.cpp" />

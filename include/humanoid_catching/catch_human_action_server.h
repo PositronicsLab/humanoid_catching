@@ -24,8 +24,9 @@
 #include <operational_space_controllers_msgs/Move.h>
 #include <geometry_msgs/WrenchStamped.h>
 #include <kinematics_cache/kinematics_cache.h>
+#include <sensor_msgs/Imu.h>
+#include <std_msgs/Header.h>
 
-typedef actionlib::SimpleActionServer<humanoid_catching::CatchHumanAction> Server;
 typedef std::vector<kinematics_cache::IKv2> IKList;
 
 struct Limits
@@ -68,8 +69,8 @@ private:
     //! Private nh
     ros::NodeHandle pnh;
 
-    //! Action Server
-    Server as;
+    //! Whether the controller is active
+    bool active;
 
     //! Cached fall prediction client
     ros::ServiceClient fallPredictor;
@@ -143,12 +144,16 @@ private:
     //! EE Frame
     std::string eeFrame;
 
-    //! Create messages that are used to published feedback/result
-    humanoid_catching::CatchHumanFeedback feedback;
-    humanoid_catching::CatchHumanResult result;
+    //! Human fall subscriber
+    std::auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
 
+    //! Reset sub
+    std::auto_ptr<message_filters::Subscriber<std_msgs::Header> > resetSub;
+
+    //! Human IMU subscriber
+    std::auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
 public:
-    CatchHumanActionServer(const std::string& name);
+    CatchHumanActionServer();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
 
@@ -157,8 +162,9 @@ private:
 #else
     static std::vector<std::string> getActiveJointModelNames(const robot_model::JointModelGroup* jointModelGroup);
 #endif // ROS_VERSION_MINIMUM
-
-    void preempt();
+    void fallDetected(const std_msgs::HeaderConstPtr& fallingMsg);
+    void imuDataDetected(const sensor_msgs::ImuConstPtr& imuData);
+    void reset(const std_msgs::HeaderConstPtr& reset);
     void jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg);
     void visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
                        geometry_msgs::PoseStamped targetPose, geometry_msgs::TwistStamped targetVelocity,
@@ -184,10 +190,10 @@ private:
 
     geometry_msgs::Twist linkVelocity(const std::string& linkName);
 
-    bool predictFall(const humanoid_catching::CatchHumanGoalConstPtr& human, humanoid_catching::PredictFall& predictFall,
+    bool predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall,
                      ros::Duration duration, bool includeEndEffectors, bool visualize);
 
-    void execute(const humanoid_catching::CatchHumanGoalConstPtr& goal);
+    void execute(const sensor_msgs::ImuConstPtr imuData);
 
 public:
     static geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose);

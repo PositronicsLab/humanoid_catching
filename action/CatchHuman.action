@@ -1,8 +1,0 @@
-# Define the goal target
-Header header
-geometry_msgs/Twist accel
-geometry_msgs/Twist velocity
-geometry_msgs/Quaternion orientation
----
----
-

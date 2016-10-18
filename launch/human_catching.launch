@@ -8,6 +8,7 @@
     <param name="arm" value="left_arm" />
     <param name="command_topic" value="l_arm_force_controller/command" />
     <param name="ee_frame" value="/l_wrist_roll_link" />
+    <remap to="/human/imu_filtered" from="/in" />
   </node>
 
   <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action_right">
@@ -17,6 +18,7 @@
     <param name="arm" value="right_arm" />
     <param name="command_topic" value="r_arm_force_controller/command" />
     <param name="ee_frame" value="/r_wrist_roll_link" />
+    <remap to="/human/imu_filtered" from="/in" />
   </node>
 
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
@@ -24,10 +26,6 @@
   <node pkg="humanoid_catching" type="imu_filter" name="imu_filter">
     <remap to="/human/imu" from="/in" />
     <remap to="/human/imu_filtered" from="/out" />
-  </node>
-
-  <node pkg="humanoid_catching" type="catching_controller" name="catching_controller">
-    <remap to="/human/imu_filtered" from="/in" />
   </node>
 
   <node pkg="humanoid_catching" type="balancer" name="balancer"/>
