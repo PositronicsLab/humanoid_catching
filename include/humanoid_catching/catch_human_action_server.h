@@ -59,7 +59,7 @@ struct Solution
     ros::Duration time;
 };
 
-class CatchHumanActionServer
+class CatchHumanController
 {
 private:
 
@@ -153,7 +153,7 @@ private:
     //! Human IMU subscriber
     std::auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
 public:
-    CatchHumanActionServer();
+    CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
 

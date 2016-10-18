@@ -68,7 +68,7 @@ static tf::Vector3 quatToVector(const tf::Quaternion& orientation)
     return r;
 }
 
-geometry_msgs::Pose CatchHumanActionServer::applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform)
+geometry_msgs::Pose CatchHumanController::applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform)
 {
     tf::Stamped<tf::Pose> tfPose;
     tf::poseStampedMsgToTF(pose, tfPose);
@@ -78,7 +78,7 @@ geometry_msgs::Pose CatchHumanActionServer::applyTransform(const geometry_msgs::
     return msgGoal;
 }
 
-geometry_msgs::Vector3 CatchHumanActionServer::applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform)
+geometry_msgs::Vector3 CatchHumanController::applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform)
 {
     tf::Stamped<tf::Vector3> tfLinear;
 
@@ -90,7 +90,7 @@ geometry_msgs::Vector3 CatchHumanActionServer::applyTransform(const geometry_msg
     return msgGoal;
 }
 
-void CatchHumanActionServer::jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg)
+void CatchHumanController::jointStatesCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
     ROS_DEBUG("Updating joint states");
 
@@ -103,7 +103,7 @@ void CatchHumanActionServer::jointStatesCallback(const sensor_msgs::JointState::
     ROS_DEBUG("Updated joint states");
 }
 
-CatchHumanActionServer::CatchHumanActionServer() :
+CatchHumanController::CatchHumanController() :
     pnh("~"),
     planningScene(new planning_scene_monitor::PlanningSceneMonitor("robot_description")),
     active(false)
@@ -149,15 +149,15 @@ CatchHumanActionServer::CatchHumanActionServer() :
 
     humanFallSub.reset(
         new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
-    humanFallSub->registerCallback(boost::bind(&CatchHumanActionServer::fallDetected, this, _1));
+    humanFallSub->registerCallback(boost::bind(&CatchHumanController::fallDetected, this, _1));
 
     resetSub.reset(
         new message_filters::Subscriber<std_msgs::Header>(nh, "/catching_controller/reset", 1));
-    resetSub->registerCallback(boost::bind(&CatchHumanActionServer::reset, this, _1));
+    resetSub->registerCallback(boost::bind(&CatchHumanController::reset, this, _1));
 
     humanIMUSub.reset(
         new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
-    humanIMUSub->registerCallback(boost::bind(&CatchHumanActionServer::imuDataDetected, this, _1));
+    humanIMUSub->registerCallback(boost::bind(&CatchHumanController::imuDataDetected, this, _1));
 
     ik.reset(new kinematics_cache::KinematicsCache(maxDistance, baseFrame, cacheDataName));
 
@@ -269,7 +269,7 @@ CatchHumanActionServer::CatchHumanActionServer() :
     ROS_DEBUG("Completed initializing the joint limits");
 
     jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1, ros::TransportHints(), &jointStateMessagesQueue));
-    jointStatesSub->registerCallback(boost::bind(&CatchHumanActionServer::jointStatesCallback, this, _1));
+    jointStatesSub->registerCallback(boost::bind(&CatchHumanController::jointStatesCallback, this, _1));
 
     // Spin a separate thread
     jointStateMessagesSpinner.reset(new ros::AsyncSpinner(1, &jointStateMessagesQueue));
@@ -281,7 +281,7 @@ CatchHumanActionServer::CatchHumanActionServer() :
 #if ROS_VERSION_MINIMUM(1, 10, 12)
 // Method not required
 #else
-vector<string> CatchHumanActionServer::getActiveJointModelNames(const robot_model::JointModelGroup* jointModelGroup)
+vector<string> CatchHumanController::getActiveJointModelNames(const robot_model::JointModelGroup* jointModelGroup)
 {
     vector<string> activeJointModels;
     for (unsigned int i = 0; i < jointModelGroup->getJointModels().size(); ++i)
@@ -298,7 +298,7 @@ vector<string> CatchHumanActionServer::getActiveJointModelNames(const robot_mode
 }
 #endif // ROS_VERSION_MINIMUM
 
-void CatchHumanActionServer::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
+void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
     ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
 
     // Set catching as active
@@ -308,14 +308,14 @@ void CatchHumanActionServer::fallDetected(const std_msgs::HeaderConstPtr& fallin
     humanFallSub->unsubscribe();
 }
 
-void CatchHumanActionServer::imuDataDetected(const sensor_msgs::ImuConstPtr& imuData) {
+void CatchHumanController::imuDataDetected(const sensor_msgs::ImuConstPtr& imuData) {
     ROS_DEBUG("Human IMU data received at @ %f", imuData->header.stamp.toSec());
     if (active) {
         execute(imuData);
     }
 }
 
-void CatchHumanActionServer::reset(const std_msgs::HeaderConstPtr& reset) {
+void CatchHumanController::reset(const std_msgs::HeaderConstPtr& reset) {
     ROS_INFO("Resetting catching controller");
 
     active = false;
@@ -331,7 +331,7 @@ void CatchHumanActionServer::reset(const std_msgs::HeaderConstPtr& reset) {
     armCommandPub.publish(command);
 }
 
-void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
+void CatchHumanController::visualizeGoal(const geometry_msgs::Pose& goal, const std_msgs::Header& header,
         geometry_msgs::PoseStamped targetPose,
         geometry_msgs::TwistStamped targetVelocity,
         double humanoidRadius, double humanoidHeight) const
@@ -372,7 +372,7 @@ void CatchHumanActionServer::visualizeGoal(const geometry_msgs::Pose& goal, cons
     }
 }
 
-geometry_msgs::PointStamped CatchHumanActionServer::poseToPoint(const geometry_msgs::PoseStamped pose)
+geometry_msgs::PointStamped CatchHumanController::poseToPoint(const geometry_msgs::PoseStamped pose)
 {
     geometry_msgs::PointStamped point;
     point.point = pose.pose.position;
@@ -380,7 +380,7 @@ geometry_msgs::PointStamped CatchHumanActionServer::poseToPoint(const geometry_m
     return point;
 }
 
-double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, const double signed_d, double v0)
+double CatchHumanController::calcJointExecutionTime(const Limits& limits, const double signed_d, double v0)
 {
     double d = fabs(signed_d);
 
@@ -467,7 +467,7 @@ double CatchHumanActionServer::calcJointExecutionTime(const Limits& limits, cons
     return t;
 }
 
-ros::Duration CatchHumanActionServer::calcExecutionTime(const vector<double>& solution)
+ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution)
 {
     double longestTime = 0.0;
     for(unsigned int i = 0; i < solution.size(); ++i)
@@ -494,7 +494,7 @@ ros::Duration CatchHumanActionServer::calcExecutionTime(const vector<double>& so
     return ros::Duration(longestTime);
 }
 
-geometry_msgs::Pose CatchHumanActionServer::tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base) const
+geometry_msgs::Pose CatchHumanController::tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base) const
 {
     tf::StampedTransform tfStampedTransform;
     tf.lookupTransform(base, tfFrame, stamp, tfStampedTransform);
@@ -508,7 +508,7 @@ geometry_msgs::Pose CatchHumanActionServer::tfFrameToPose(const string& tfFrame,
     return pose;
 }
 
-const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(const humanoid_catching::PredictFall::Response& fall) const
+const vector<FallPoint>::const_iterator CatchHumanController::findContact(const humanoid_catching::PredictFall::Response& fall) const
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
@@ -520,12 +520,12 @@ const vector<FallPoint>::const_iterator CatchHumanActionServer::findContact(cons
     return fall.points.end();
 }
 
-geometry_msgs::Pose CatchHumanActionServer::endEffectorPosition(const string& frame) const
+geometry_msgs::Pose CatchHumanController::endEffectorPosition(const string& frame) const
 {
     return tfFrameToPose(eeFrame, ros::Time(0), frame);
 }
 
-void CatchHumanActionServer::visualizeEEVelocity(const vector<double>& eeVelocity)
+void CatchHumanController::visualizeEEVelocity(const vector<double>& eeVelocity)
 {
     if (eeVelocityVizPub.getNumSubscribers() > 0)
     {
@@ -543,7 +543,7 @@ void CatchHumanActionServer::visualizeEEVelocity(const vector<double>& eeVelocit
     }
 }
 
-void CatchHumanActionServer::sendTorques(const vector<double>& torques)
+void CatchHumanController::sendTorques(const vector<double>& torques)
 {
     // Execute the movement
     ROS_DEBUG("Dispatching torque command for arm %s", arm.c_str());
@@ -555,7 +555,7 @@ void CatchHumanActionServer::sendTorques(const vector<double>& torques)
     armCommandPub.publish(command);
 }
 
-void CatchHumanActionServer::updateRavelinModel()
+void CatchHumanController::updateRavelinModel()
 {
     // Update the joint positions and velocities
     unsigned int numGeneralized = body->num_generalized_coordinates(Ravelin::DynamicBodyd::eEuler);
@@ -580,7 +580,7 @@ void CatchHumanActionServer::updateRavelinModel()
     body->set_generalized_velocity(Ravelin::DynamicBodyd::eEuler, currentVelocities);
 }
 
-bool CatchHumanActionServer::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
+bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
 {
     predictFall.request.header = imuData->header;
     predictFall.request.orientation = imuData->orientation;
@@ -605,7 +605,7 @@ bool CatchHumanActionServer::predictFall(const sensor_msgs::ImuConstPtr imuData,
     return true;
 }
 
-void CatchHumanActionServer::execute(const sensor_msgs::ImuConstPtr imuData)
+void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
 
     ROS_DEBUG("Catch procedure initiated");
@@ -814,7 +814,7 @@ void CatchHumanActionServer::execute(const sensor_msgs::ImuConstPtr imuData)
              ros::Time::now().toSec() - startRosTime.toSec());
 }
 
-/* static */ geometry_msgs::Quaternion CatchHumanActionServer::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)
+/* static */ geometry_msgs::Quaternion CatchHumanController::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)
 {
 
     ROS_DEBUG("q_pole: %f %f %f %f", solution.targetPose.pose.orientation.x,
@@ -920,7 +920,7 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "catch_human_action");
 
-    CatchHumanActionServer cha;
+    CatchHumanController cha;
     ros::spin();
 }
 #endif
