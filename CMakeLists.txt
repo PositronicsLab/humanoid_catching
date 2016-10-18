@@ -140,9 +140,9 @@ if(CATKIN_ENABLE_TESTING)
     add_definitions(-DCATKIN_ENABLE_TESTING)
 endif(CATKIN_ENABLE_TESTING)
 
-add_executable(catch_human_action_server src/catch_human_action_server.cpp)
-add_dependencies(catch_human_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(catch_human_action_server
+add_executable(catch_human_controller src/catch_human_controller.cpp)
+add_dependencies(catch_human_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(catch_human_controller
    ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES} kinematics_cache
 )
 
@@ -189,9 +189,9 @@ target_link_libraries(imu_filter
 )
 
 if(CATKIN_ENABLE_TESTING)
-    catkin_add_gtest(test_catch_human_action_server test/test_catch_human_action_server.cpp src/catch_human_action_server.cpp)
-    set_target_properties(test_catch_human_action_server PROPERTIES COMPILE_FLAGS -DENABLE_TESTING)
-    target_link_libraries(test_catch_human_action_server
+    catkin_add_gtest(test_catch_human_controller test/test_catch_human_controller.cpp src/catch_human_controller.cpp)
+    set_target_properties(test_catch_human_controller PROPERTIES COMPILE_FLAGS -DENABLE_TESTING)
+    target_link_libraries(test_catch_human_controller
         ${catkin_LIBRARIES} ${RAVELIN_LIBRARIES} ${LIBXML2_LIBRARIES} kinematics_cache
     )
     add_rostest_gtest(test_fall_predictor test/test_fall_predictor.test test/test_fall_predictor.cpp)

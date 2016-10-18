@@ -1,7 +1,7 @@
 <launch>
   <include file="$(find pr2_moveit_config)/launch/planning_context.launch" />
 
-  <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action_left">
+  <node pkg="humanoid_catching" type="catch_human_controller" name="catch_human_controller_left">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
     <param name="max_distance" value="0.821000"/>
     <param name="cache_data_name" value="$(find kinematics_cache)/octree/left_arm.cleaned.ot" />
@@ -11,7 +11,7 @@
     <remap to="/human/imu_filtered" from="/in" />
   </node>
 
-  <node pkg="humanoid_catching" type="catch_human_action_server" name="catch_human_action_right">
+  <node pkg="humanoid_catching" type="catch_human_controller" name="catch_human_controller_right">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
     <param name="max_distance" value="0.821000"/>
     <param name="cache_data_name" value="$(find kinematics_cache)/octree/right_arm.cleaned.ot" />
