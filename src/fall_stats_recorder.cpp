@@ -4,16 +4,9 @@
 #include <boost/filesystem.hpp>
 #include <ros/ros.h>
 #include <message_filters/subscriber.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <sensor_msgs/Imu.h>
 #include <std_msgs/Header.h>
-#include <boost/math/constants/constants.hpp>
-#include <tf/tf.h>
 
 using namespace std;
-
-static const double EPSILON = 0.01;
-static const double PI = boost::math::constants::pi<double>();
 
 namespace
 {
@@ -28,7 +21,7 @@ private:
     ros::NodeHandle pnh;
 
     //! Human IMU subscriber
-    auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
+    auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanOnGroundSub;
 
     //! Human fall subscriber
     auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
@@ -50,13 +43,15 @@ public:
         humanFallSub->registerCallback(boost::bind(&FallStatsRecorder::fallDetected, this, _1));
 
         // Don't subscribe until the fall starts
-        humanIMUSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/human/imu", 1));
-        humanIMUSub->unsubscribe();
+        humanOnGroundSub.reset(new message_filters::Subscriber<std_msgs::Header>(nh, "/human/on_ground", 1));
+        humanOnGroundSub->unsubscribe();
     }
 
     ~FallStatsRecorder() {
         if(!resultsWritten) {
-            ros::Duration contactTime = ros::Time::now() - startTime;
+            // Use a maximum value of 30s
+            ros::Duration contactTime = ros::Duration(30);
+            ROS_INFO_STREAM("No on ground message received. Setting contact time to max: " << contactTime);
             printResults(contactTime);
         }
     }
@@ -106,27 +101,17 @@ private:
         humanFallSub->unsubscribe();
 
         startTime = ros::Time::now();
-        humanIMUSub->registerCallback(boost::bind(&FallStatsRecorder::worldUpdate, this, _1));
-        humanIMUSub->subscribe();
+        humanOnGroundSub->registerCallback(boost::bind(&FallStatsRecorder::update, this, _1));
+        humanOnGroundSub->subscribe();
     }
 
-    bool isOnGround(const geometry_msgs::Quaternion& orientation) {
-        double roll, pitch, yaw;
-        tf::Matrix3x3(tf::Quaternion(orientation.x, orientation.y, orientation.z, orientation.w)).getRPY(roll, pitch, yaw);
-        return (pitch >= -EPSILON || pitch < -PI + EPSILON || abs(yaw) > PI / 2 - EPSILON);
-    }
-
-    void worldUpdate(const sensor_msgs::ImuConstPtr& imuData)
+    void update(const std_msgs::HeaderConstPtr& imuData)
     {
-
         ros::Duration contactTime = ros::Time::now() - startTime;
-        if (isOnGround(imuData->orientation) || contactTime.toSec() >= 30.0)
-        {
-            ROS_INFO_STREAM("Setting contact time to: " << contactTime);
-            printResults(contactTime);
-            humanIMUSub->unsubscribe();
-            resultsWritten = true;
-        }
+        ROS_INFO_STREAM("Received an on ground message. Setting contact time to: " << contactTime);
+        printResults(contactTime);
+        humanOnGroundSub->unsubscribe();
+        resultsWritten = true;
     }
 };
 }

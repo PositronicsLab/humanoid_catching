@@ -146,7 +146,7 @@ struct SimulationState {
         dJointSetBallAnchor(groundJoint, base.x, base.y, base.z);
     }
 
-    Model initEndEffector(const geometry_msgs::Pose& endEffector, const geometry_msgs::Twist& velocity)
+    Model initEndEffector(const geometry_msgs::Pose& endEffector, const geometry_msgs::Twist& velocity, const double inflationFactor)
     {
 
         // Create the object
@@ -158,9 +158,9 @@ struct SimulationState {
                   endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
 
         object.geom = dCreateBox(space,
-                                 END_EFFECTOR_LENGTH,
-                                 END_EFFECTOR_WIDTH,
-                                 END_EFFECTOR_HEIGHT);
+                                 END_EFFECTOR_LENGTH * (1.0 + inflationFactor),
+                                 END_EFFECTOR_WIDTH * (1.0 + inflationFactor),
+                                 END_EFFECTOR_HEIGHT * (1.0 + inflationFactor));
         dGeomSetBody(object.geom, object.body);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetLinearVel(object.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
@@ -298,6 +298,9 @@ private:
     //! Mass of the humanoid
     double humanoidMass;
 
+    //! Inflation factor for end-effector
+    double inflationFactor;
+
     //! Position of base
     geometry_msgs::Point base;
 public:
@@ -311,6 +314,7 @@ public:
         pnh.param("base_x", base.x, BASE_X_DEFAULT);
         pnh.param("base_y", base.y, BASE_Y_DEFAULT);
         pnh.param("base_z", base.z, BASE_Z_DEFAULT);
+        pnh.param("inflation_factor", inflationFactor, 0.0);
 
         fallVizPub = nh.advertise<visualization_msgs::Marker>(
                          "/fall_predictor/projected_path", 1);
@@ -634,7 +638,7 @@ private:
 
         for (unsigned int i = 0; i < req.end_effectors.size(); ++i)
         {
-            Model ee = state.initEndEffector(req.end_effectors[i], req.end_effector_velocities[i]);
+            Model ee = state.initEndEffector(req.end_effectors[i], req.end_effector_velocities[i], inflationFactor);
             state.adjustEndEffector(ee);
             state.endEffectors.push_back(ee);
         }

@@ -182,6 +182,12 @@ target_link_libraries(fall_stats_recorder
    ${catkin_LIBRARIES}
 )
 
+add_executable(on_ground_detector src/on_ground_detector.cpp)
+add_dependencies(on_ground_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(on_ground_detector
+   ${catkin_LIBRARIES}
+)
+
 add_executable(imu_filter src/imu_filter.cpp)
 add_dependencies(imu_filter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(imu_filter

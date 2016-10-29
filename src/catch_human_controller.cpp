@@ -35,7 +35,7 @@ static const double MAX_ACCELERATION = 100;
 static const double MAX_EFFORT = 100;
 
 //! Tolerance of time to be considered in contact
-static const ros::Duration CONTACT_TIME_TOLERANCE = ros::Duration(0.1);
+static const double CONTACT_TIME_TOLERANCE_DEFAULT = 0.1;
 static const ros::Duration MAX_DURATION = ros::Duration(10.0);
 static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 
@@ -123,6 +123,12 @@ CatchHumanController::CatchHumanController() :
     double maxDistance;
     pnh.param("max_distance", maxDistance, 0.821000);
 
+    {
+        double contactTimeToleranceDouble;
+        pnh.param("contact_time_tolerance", contactTimeToleranceDouble, CONTACT_TIME_TOLERANCE_DEFAULT);
+        contactTimeTolerance = ros::Duration(contactTimeToleranceDouble);
+    }
+
     pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
 
     if (!pnh.getParam("arm", arm))
@@ -179,6 +185,7 @@ CatchHumanController::CatchHumanController() :
     rdf_loader::RDFLoader rdfLoader;
     const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
     const boost::shared_ptr<urdf::ModelInterface>& urdfModel = rdfLoader.getURDF();
+
     kinematicModel.reset(new robot_model::RobotModel(urdfModel, srdf));
     ROS_INFO("Robot model initialized successfully");
 
@@ -325,7 +332,7 @@ void CatchHumanController::reset(const std_msgs::HeaderConstPtr& reset) {
 
     // Stop the arm
     operational_space_controllers_msgs::Move command;
-    command.header.frame_id = "torso_lift_link";
+    command.header.frame_id = "/torso_lift_link";
     command.header.stamp = ros::Time::now();
     command.stop = true;
     armCommandPub.publish(command);
@@ -615,7 +622,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
     ROS_DEBUG("Predicting fall");
     humanoid_catching::PredictFall predictFallObj;
-    if (!predictFall(imuData, predictFallObj, CONTACT_TIME_TOLERANCE, true, false))
+    if (!predictFall(imuData, predictFallObj, contactTimeTolerance, true, false))
     {
         ROS_INFO("Fall prediction failed");
         return;

@@ -144,6 +144,9 @@ private:
     //! EE Frame
     std::string eeFrame;
 
+    //! Contact time tolerance
+    ros::Duration contactTimeTolerance;
+
     //! Human fall subscriber
     std::auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
 

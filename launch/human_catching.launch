@@ -9,6 +9,7 @@
     <param name="command_topic" value="l_arm_force_controller/command" />
     <param name="ee_frame" value="/l_wrist_roll_link" />
     <remap to="/human/imu_filtered" from="/in" />
+    <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
 
   <node pkg="humanoid_catching" type="catch_human_controller" name="catch_human_controller_right">
@@ -19,6 +20,7 @@
     <param name="command_topic" value="r_arm_force_controller/command" />
     <param name="ee_frame" value="/r_wrist_roll_link" />
     <remap to="/human/imu_filtered" from="/in" />
+    <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
 
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
@@ -29,5 +31,10 @@
   </node>
 
   <node pkg="humanoid_catching" type="balancer" name="balancer"/>
-  <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder"/>
+
+  <node pkg="humanoid_catching" type="on_ground_detector" name="on_ground_detector" output="screen">
+    <remap to="/human/imu_filtered" from="/in" />
+  </node>
+
+  <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder" output="screen"/>
 </launch>

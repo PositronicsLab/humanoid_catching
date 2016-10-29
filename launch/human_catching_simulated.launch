@@ -3,7 +3,7 @@
   <include file="$(find operational_space_controllers)/launch/r_arm_force_controller.launch" />
   <include file="$(find humanoid_catching)/launch/human_catching.launch" />
   <include file="$(find humanoid_catching)/launch/spawn_models.launch" />
-  <node pkg="gazebo_utils" type="fake_imu" name="fake_imu" >
+  <node pkg="gazebo_utils" type="fake_imu" name="fake_imu">
     <remap from="/out" to="/human/imu" />
   </node>
 </launch>

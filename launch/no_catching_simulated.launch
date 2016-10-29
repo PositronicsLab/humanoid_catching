@@ -4,4 +4,7 @@
   <node pkg="gazebo_utils" type="fake_imu" name="fake_imu" >
     <remap from="/out" to="/human/imu" />
   </node>
+  <node pkg="humanoid_catching" type="on_ground_detector" name="on_ground_detector" output="screen">
+    <remap to="/human/imu" from="/in" />
+  </node>
 </launch>
