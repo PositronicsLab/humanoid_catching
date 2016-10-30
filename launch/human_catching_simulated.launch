@@ -6,4 +6,5 @@
   <node pkg="gazebo_utils" type="fake_imu" name="fake_imu">
     <remap from="/out" to="/human/imu" />
   </node>
+
 </launch>

@@ -68,14 +68,14 @@ private:
         const char* resultsFolder = std::getenv("RESULTS_FOLDER");
         if(resultsFolder == NULL)
         {
-            cout << "Results folder not set. Using current directory." << endl;
+            ROS_INFO_STREAM("Results folder not set. Using current directory.");
             resultsFolder = "";
         }
 
         const char* scenarioNumberStr = std::getenv("i");
         if(scenarioNumberStr == NULL)
         {
-            cout << "Scenario number not set. Using 0." << endl;
+            ROS_INFO_STREAM("Scenario number not set. Using 0.");
             scenarioNumberStr = "0";
         }
 
@@ -91,13 +91,13 @@ private:
             writeHeader(outputCSV);
         }
 
-        outputCSV << scenarioNumberStr << ", " << contactTime.toSec() << ", " << endl;
+        outputCSV << scenarioNumberStr << ", " << contactTime.toSec() << endl;
         outputCSV.close();
         ROS_INFO_STREAM("Printing output file complete");
     }
 
     void fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
-        ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
+        ROS_INFO("Human fall detected");
         humanFallSub->unsubscribe();
 
         startTime = ros::Time::now();

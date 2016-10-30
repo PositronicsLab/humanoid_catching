@@ -1,4 +1,5 @@
 <launch>
   <include file="$(find humanoid_catching)/launch/human_catching.launch" />
   <include file="$(find humanoid_catching)/launch/imu.launch" />
+  <node pkg="humanoid_catching" type="ros_bag_recorder" name="ros_bag_recorder" output="screen"/>
 </launch>

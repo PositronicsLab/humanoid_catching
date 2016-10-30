@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
     resource_retriever
     operational_space_controllers_msgs
     kinematics_cache
+    rosbag
 )
 
 if (CATKIN_ENABLE_TESTING)
@@ -179,6 +180,12 @@ target_link_libraries(calc_ee_bb
 add_executable(fall_stats_recorder src/fall_stats_recorder.cpp)
 add_dependencies(fall_stats_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_stats_recorder
+   ${catkin_LIBRARIES}
+)
+
+add_executable(ros_bag_recorder src/ros_bag_recorder.cpp)
+add_dependencies(ros_bag_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(ros_bag_recorder
    ${catkin_LIBRARIES}
 )
 

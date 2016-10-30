@@ -37,4 +37,5 @@
   </node>
 
   <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder" output="screen"/>
+
 </launch>

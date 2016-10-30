@@ -16,11 +16,13 @@
           <izz>0.000451612</izz>
         </inertia>
       </inertial>
+
       <collision name="collision">
+        <pose>0 0 0.1 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.03175</radius>
-            <length>1.8288</length>
+            <length>1.6288</length>
           </cylinder>
         </geometry>
         <surface>
@@ -32,11 +34,41 @@
             </friction>
       </surface>
       </collision>
-      <visual name="visual">
+
+      <collision name="bottom">
+        <pose>0 0 -0.8144 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.03175</radius>
-            <length>1.8288</length>
+            <length>0.2</length>
+          </cylinder>
+        </geometry>
+        <surface>
+            <friction>
+                <ode>
+                    <mu>200</mu>
+                    <mu2>200</mu2>
+                </ode>
+            </friction>
+      </surface>
+      </collision>
+
+     <visual name="visual">
+        <pose>0 0 0.1 0 0 0</pose>
+        <geometry>
+            <cylinder>
+                <radius>0.03175</radius>
+                <length>1.6288</length>
+          </cylinder>
+        </geometry>
+      </visual>
+
+      <visual name="bottom">
+        <pose>0 0 -0.8144 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.03175</radius>
+            <length>0.2</length>
           </cylinder>
         </geometry>
       </visual>
