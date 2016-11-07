@@ -70,6 +70,7 @@ add_message_files(
    Contact.msg
    FallPoint.msg
    Limit.msg
+   Shape.msg
 )
 
 ## Generate services in the 'srv' folder

@@ -6,8 +6,9 @@
     <param name="max_distance" value="0.821000"/>
     <param name="cache_data_name" value="$(find kinematics_cache)/octree/left_arm.cleaned.ot" />
     <param name="arm" value="left_arm" />
+    <param name="fall_predictor" value="/fall_predictor_left/predict_fall" />
+    <param name="balancer" value="/balancer_left/torques" />
     <param name="command_topic" value="l_arm_force_controller/command" />
-    <param name="ee_frame" value="/l_wrist_roll_link" />
     <remap to="/human/imu_filtered" from="/in" />
     <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
@@ -18,19 +19,22 @@
     <param name="cache_data_name" value="$(find kinematics_cache)/octree/right_arm.cleaned.ot" />
     <param name="arm" value="right_arm" />
     <param name="command_topic" value="r_arm_force_controller/command" />
-    <param name="ee_frame" value="/r_wrist_roll_link" />
+    <param name="fall_predictor" value="/fall_predictor_right/predict_fall" />
+    <param name="balancer" value="/balancer_right/torques" />
     <remap to="/human/imu_filtered" from="/in" />
     <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
 
-  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor"/>
+  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_left"/>
+  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_right"/>
 
   <node pkg="humanoid_catching" type="imu_filter" name="imu_filter">
     <remap to="/human/imu" from="/in" />
     <remap to="/human/imu_filtered" from="/out" />
   </node>
 
-  <node pkg="humanoid_catching" type="balancer" name="balancer"/>
+  <node pkg="humanoid_catching" type="balancer" name="balancer_left"/>
+  <node pkg="humanoid_catching" type="balancer" name="balancer_right"/>
 
   <node pkg="humanoid_catching" type="on_ground_detector" name="on_ground_detector" output="screen">
     <remap to="/human/imu_filtered" from="/in" />

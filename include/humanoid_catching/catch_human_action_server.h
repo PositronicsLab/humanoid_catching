@@ -141,9 +141,6 @@ private:
     //! Arm name
     std::string arm;
 
-    //! EE Frame
-    std::string eeFrame;
-
     //! Contact time tolerance
     ros::Duration contactTimeTolerance;
 
@@ -155,6 +152,12 @@ private:
 
     //! Human IMU subscriber
     std::auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
+
+    //! All arm links (including those not in the arm model)
+    std::vector<const robot_model::LinkModel*> allLinks;
+
+    //! Start index of the end effector links in the above list
+    unsigned int endEffectorStartIndex;
 public:
     CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
@@ -183,7 +186,7 @@ private:
 
     const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall) const;
 
-    geometry_msgs::Pose endEffectorPosition(const std::string& frame) const;
+    geometry_msgs::Pose linkPosition(const std::string& linkName, const std::string& frame) const;
 
     void visualizeEEVelocity(const std::vector<double>& eeVelocity);
 
@@ -191,12 +194,12 @@ private:
 
     void updateRavelinModel();
 
-    geometry_msgs::Twist linkVelocity(const std::string& linkName);
-
     bool predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall,
                      ros::Duration duration, bool includeEndEffectors, bool visualize);
 
     void execute(const sensor_msgs::ImuConstPtr imuData);
+
+    void calcArmLinks();
 
 public:
     static geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose);

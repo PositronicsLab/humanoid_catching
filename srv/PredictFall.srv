@@ -4,6 +4,7 @@ geometry_msgs/Twist velocity
 geometry_msgs/Twist accel
 geometry_msgs/Pose[] end_effectors
 geometry_msgs/Twist[] end_effector_velocities
+humanoid_catching/Shape[] shapes
 duration max_time
 duration step_size
 duration result_step_size

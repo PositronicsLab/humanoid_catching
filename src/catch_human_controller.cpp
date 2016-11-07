@@ -11,6 +11,7 @@
 #include <boost/math/constants/constants.hpp>
 #include <map>
 #include <moveit/rdf_loader/rdf_loader.h>
+#include <moveit/robot_model/link_model.h>
 #include <urdf/model.h>
 #include <srdfdom/model.h>
 #include <moveit/robot_model/robot_model.h>
@@ -116,9 +117,14 @@ CatchHumanController::CatchHumanController() :
     planningScene->startWorldGeometryMonitor();
 
     // Configure the fall prediction service
-    ROS_INFO("Waiting for predict_fall service");
-    ros::service::waitForService("/fall_predictor/predict_fall");
-    fallPredictor = nh.serviceClient<humanoid_catching::PredictFall>("/fall_predictor/predict_fall", true /* persistent */);
+    string fallPredictorService;
+    if (!pnh.getParam("fall_predictor", fallPredictorService))
+    {
+        ROS_ERROR("fall_predictor must be specified");
+    }
+    ROS_INFO("Waiting for %s service", fallPredictorService.c_str());
+    ros::service::waitForService(fallPredictorService);
+    fallPredictor = nh.serviceClient<humanoid_catching::PredictFall>(fallPredictorService, true /* persistent */);
 
     double maxDistance;
     pnh.param("max_distance", maxDistance, 0.821000);
@@ -134,11 +140,6 @@ CatchHumanController::CatchHumanController() :
     if (!pnh.getParam("arm", arm))
     {
         ROS_ERROR("Arm name must be specified");
-    }
-
-    if (!pnh.getParam("ee_frame", eeFrame))
-    {
-        ROS_ERROR("ee_frame must be specified");
     }
 
     string armCommandTopic;
@@ -167,9 +168,14 @@ CatchHumanController::CatchHumanController() :
 
     ik.reset(new kinematics_cache::KinematicsCache(maxDistance, baseFrame, cacheDataName));
 
-    ROS_INFO("Waiting for /balancer/torques service");
-    ros::service::waitForService("/balancer/torques");
-    balancer = nh.serviceClient<humanoid_catching::CalculateTorques>("/balancer/torques", true /* persistent */);
+    string balancerService;
+    if (!pnh.getParam("balancer", balancerService))
+    {
+        ROS_ERROR("balancer must be specified");
+    }
+    ROS_INFO("Waiting for %s service", balancerService.c_str());
+    ros::service::waitForService(balancerService);
+    balancer = nh.serviceClient<humanoid_catching::CalculateTorques>(balancerService, true /* persistent */);
 
     // Initialize arm clients
     ROS_INFO("Initializing arm command publisher");
@@ -275,6 +281,8 @@ CatchHumanController::CatchHumanController() :
 
     ROS_DEBUG("Completed initializing the joint limits");
 
+    calcArmLinks();
+
     jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1, ros::TransportHints(), &jointStateMessagesQueue));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanController::jointStatesCallback, this, _1));
 
@@ -305,7 +313,8 @@ vector<string> CatchHumanController::getActiveJointModelNames(const robot_model:
 }
 #endif // ROS_VERSION_MINIMUM
 
-void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg) {
+void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg)
+{
     ROS_INFO("Human fall detected at @ %f", fallingMsg->stamp.toSec());
 
     // Set catching as active
@@ -315,14 +324,17 @@ void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingM
     humanFallSub->unsubscribe();
 }
 
-void CatchHumanController::imuDataDetected(const sensor_msgs::ImuConstPtr& imuData) {
+void CatchHumanController::imuDataDetected(const sensor_msgs::ImuConstPtr& imuData)
+{
     ROS_DEBUG("Human IMU data received at @ %f", imuData->header.stamp.toSec());
-    if (active) {
+    if (active)
+    {
         execute(imuData);
     }
 }
 
-void CatchHumanController::reset(const std_msgs::HeaderConstPtr& reset) {
+void CatchHumanController::reset(const std_msgs::HeaderConstPtr& reset)
+{
     ROS_INFO("Resetting catching controller");
 
     active = false;
@@ -519,17 +531,20 @@ const vector<FallPoint>::const_iterator CatchHumanController::findContact(const 
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
-        if (i->contacts[0].is_in_contact)
-        {
-            return i;
+        // Search the links we consider the end effector
+        for (unsigned int j = endEffectorStartIndex; j < i->contacts.size(); ++j) {
+            if (i->contacts[j].is_in_contact)
+            {
+                return i;
+            }
         }
     }
     return fall.points.end();
 }
 
-geometry_msgs::Pose CatchHumanController::endEffectorPosition(const string& frame) const
+geometry_msgs::Pose CatchHumanController::linkPosition(const string& link, const string& frame) const
 {
-    return tfFrameToPose(eeFrame, ros::Time(0), frame);
+    return tfFrameToPose(link, ros::Time(0), frame);
 }
 
 void CatchHumanController::visualizeEEVelocity(const vector<double>& eeVelocity)
@@ -539,7 +554,7 @@ void CatchHumanController::visualizeEEVelocity(const vector<double>& eeVelocity)
         // Frame is the end effector of the given arm
         geometry_msgs::WrenchStamped wrench;
         wrench.header.stamp = ros::Time::now();
-        wrench.header.frame_id = eeFrame;
+        wrench.header.frame_id = kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back();
         wrench.wrench.force.x = eeVelocity[0];
         wrench.wrench.force.y = eeVelocity[1];
         wrench.wrench.force.z = eeVelocity[2];
@@ -587,6 +602,53 @@ void CatchHumanController::updateRavelinModel()
     body->set_generalized_velocity(Ravelin::DynamicBodyd::eEuler, currentVelocities);
 }
 
+void CatchHumanController::calcArmLinks()
+{
+    // Use a stack to obtain a depth first search. We want to be able to label all links below the end effector
+    stack<const robot_model::LinkModel*> searchLinks;
+    set<const robot_model::LinkModel*> uniqueLinks;
+
+    const vector<const robot_model::LinkModel*>& links = kinematicModel->getJointModelGroup(arm)->getLinkModels();
+    for (int i = links.size() - 1; i >= 0; --i)
+    {
+        ROS_DEBUG("Adding parent link %s", links[i]->getName().c_str());
+        searchLinks.push(links[i]);
+    }
+
+    while(!searchLinks.empty())
+    {
+        const robot_model::LinkModel* link = searchLinks.top();
+        searchLinks.pop();
+
+        if (!uniqueLinks.insert(link).second)
+        {
+            continue;
+        }
+
+        allLinks.push_back(link);
+        ROS_DEBUG("Added link %s", link->getName().c_str());
+
+        // Determine if this is the end effector
+        if (link == kinematicModel->getJointModelGroup(arm)->getLinkModels().back()) {
+            endEffectorStartIndex = allLinks.size() - 1;
+            ROS_DEBUG("Found the end effector @ %u", endEffectorStartIndex);
+        }
+
+        // Now recurse over children
+        for (unsigned int j = 0; j < link->getChildJointModels().size(); ++j)
+        {
+            ROS_DEBUG("Adding child link %s from joint %s", link->getChildJointModels()[j]->getChildLinkModel()->getName().c_str(),
+                      link->getChildJointModels()[j]->getName().c_str());
+
+            searchLinks.push(link->getChildJointModels()[j]->getChildLinkModel());
+        }
+    }
+
+    for (vector<const robot_model::LinkModel*>::const_iterator i = allLinks.begin(); i != allLinks.end(); ++i) {
+        ROS_DEBUG("Final link order %s", (*i)->getName().c_str());
+    }
+}
+
 bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
 {
     predictFall.request.header = imuData->header;
@@ -599,10 +661,20 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.visualize = visualize;
     if (includeEndEffectors)
     {
-        predictFall.request.end_effector_velocities.resize(1);
-
-        predictFall.request.end_effectors.resize(1);
-        predictFall.request.end_effectors[0] = endEffectorPosition(imuData->header.frame_id);
+        for (vector<const robot_model::LinkModel*>::const_iterator i = allLinks.begin(); i != allLinks.end(); ++i)
+        {
+            predictFall.request.end_effector_velocities.push_back(geometry_msgs::Twist());
+            predictFall.request.end_effectors.push_back(linkPosition((*i)->getName(), imuData->header.frame_id));
+            Shape shape;
+            shape.type = Shape::BOX;
+            const Eigen::Vector3d& extents = (*i)->getShapeExtentsAtOrigin();
+            ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
+            shape.dimensions.resize(3);
+            shape.dimensions[0] = extents.x();
+            shape.dimensions[1] = extents.y();
+            shape.dimensions[2] = extents.z();
+            predictFall.request.shapes.push_back(shape);
+        }
     }
 
     if (!fallPredictor.call(predictFall))
@@ -620,30 +692,19 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
 
-    ROS_DEBUG("Predicting fall");
+    ROS_DEBUG("Predicting fall for arm %s", arm.c_str());
+
     humanoid_catching::PredictFall predictFallObj;
     if (!predictFall(imuData, predictFallObj, contactTimeTolerance, true, false))
     {
-        ROS_INFO("Fall prediction failed");
+        ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
         return;
     }
-    ROS_DEBUG("Fall predicted successfully");
-
-    // Repredict without any end effectors
-    ROS_DEBUG("Predicting fall without contact");
-    humanoid_catching::PredictFall predictFallNoEE;
-    if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, false, true))
-    {
-        ROS_DEBUG("Fall prediction failed");
-        return;
-    }
-    ROS_DEBUG("Fall predicted without contact successfully");
+    ROS_DEBUG("Fall predicted successfully for arm %s", arm.c_str());
 
     ROS_DEBUG("Estimated position: %f %f %f", predictFallObj.response.points[0].pose.position.x, predictFallObj.response.points[0].pose.position.y,  predictFallObj.response.points[0].pose.position.z);
     ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
     ROS_DEBUG("Estimated linear velocity: %f %f %f", predictFallObj.response.points[0].velocity.linear.x, predictFallObj.response.points[0].velocity.linear.y,  predictFallObj.response.points[0].velocity.linear.z);
-
-    geometry_msgs::Pose eePose = endEffectorPosition(baseFrame);
 
     // Determine whether to execute balancing.
     const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response);
@@ -662,8 +723,28 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         calcTorques.request.body_mass = predictFallObj.response.body_mass;
         calcTorques.request.time_delta = ros::Duration(0.01);
         calcTorques.request.body_com = fallPoint->pose;
-        calcTorques.request.contact_position = fallPoint->contacts[0].position;
-        calcTorques.request.contact_normal = fallPoint->contacts[0].normal;
+
+        // Search for the last contact in the kinematic chain
+        bool contactFound = false;
+        for (unsigned int i = endEffectorStartIndex; i < fallPoint->contacts.size(); ++i) {
+            if (fallPoint->contacts[i].is_in_contact) {
+                ROS_INFO("Contact is with link %s at position: [%f %f %f] and normal: [%f %f %f]",
+                         allLinks[i]->getName().c_str(), fallPoint->contacts[i].position.x,
+                         fallPoint->contacts[i].position.y,
+                         fallPoint->contacts[i].position.z,
+                         fallPoint->contacts[i].normal.x,
+                         fallPoint->contacts[i].normal.y,
+                         fallPoint->contacts[i].normal.z);
+
+                calcTorques.request.contact_position = fallPoint->contacts[i].position;
+                calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
+                contactFound = true;
+                break;
+            }
+        }
+
+        assert(contactFound && "Contact not found!");
+
         calcTorques.request.ground_contact = fallPoint->ground_contact;
 
         // Get the list of joints in this group
@@ -727,10 +808,25 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         // Visualize the desired velocity
         visualizeEEVelocity(calcTorques.response.ee_velocities);
+        ROS_INFO("Torques [%f %f %f %f %f %f %f", calcTorques.response.torques[0],
+                 calcTorques.response.torques[1], calcTorques.response.torques[2],
+                 calcTorques.response.torques[3], calcTorques.response.torques[4],
+                 calcTorques.response.torques[5], calcTorques.response.torques[6],
+                 calcTorques.response.torques[7]);
         sendTorques(calcTorques.response.torques);
     }
     else
     {
+        // Repredict without any end effectors
+        ROS_DEBUG("Predicting fall without contact for arm %s", arm.c_str());
+        humanoid_catching::PredictFall predictFallNoEE;
+        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, false, true))
+        {
+            ROS_WARN("Fall prediction without contact failed for arm %s", arm.c_str());
+            return;
+        }
+        ROS_DEBUG("Fall predicted without contact successfully for arm %s", arm.c_str());
+
         tf::StampedTransform goalToTorsoTransform;
         tf.lookupTransform(baseFrame, predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
 
@@ -801,12 +897,15 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             return;
         }
 
-        ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
+        ROS_DEBUG("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
                  arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
                  bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
                  bestSolution->time.toSec());
 
         operational_space_controllers_msgs::Move command;
+
+        ROS_DEBUG("Calculating ee_pose for link %s", kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back().c_str());
+        geometry_msgs::Pose eePose = linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), baseFrame);
 
         command.header = bestSolution->position.header;
         command.target.position = bestSolution->position.point;

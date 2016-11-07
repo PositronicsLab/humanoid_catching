@@ -27,7 +27,7 @@ do
   echo "Starting fall"
   rosrun gazebo_utils random_torque_applier _random:=true _waitForTopic:=false
   sleep 30
-   kill $(ps -ef | grep '/usr/bin/python /opt/ros/groovy/bin/roslaunch' | grep -v grep | awk '{print $2}')
+  kill $(ps -ef | grep '/usr/bin/python /opt/ros/groovy/bin/roslaunch' | grep -v grep | awk '{print $2}')
   sleep 30
 done
 

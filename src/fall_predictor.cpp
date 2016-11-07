@@ -22,12 +22,6 @@ static const double RADIUS_DEFAULT = 0.03175;
 static const int MAX_CONTACTS = 6;
 static const unsigned int MAX_CORRECTIONS = 100;
 
-// Computed from models. Note that the gazebo convention for the PR2 model has the end
-// effector aligned along the z axis in the zero orientation
-static const double END_EFFECTOR_WIDTH = 0.100908;
-static const double END_EFFECTOR_HEIGHT = 0.055100;
-static const double END_EFFECTOR_LENGTH = 0.244724;
-
 static const double BASE_X_DEFAULT = 0.4;
 static const double BASE_Y_DEFAULT = 0;
 static const double BASE_Z_DEFAULT = 0;
@@ -146,21 +140,21 @@ struct SimulationState {
         dJointSetBallAnchor(groundJoint, base.x, base.y, base.z);
     }
 
-    Model initEndEffector(const geometry_msgs::Pose& endEffector, const geometry_msgs::Twist& velocity, const double inflationFactor)
+    Model initEndEffector(const geometry_msgs::Pose& endEffector, const geometry_msgs::Twist& velocity, const double inflationFactor, vector<double> dimensions)
     {
-
         // Create the object
         Model object;
         object.body = dBodyCreate(world);
 
-        ROS_DEBUG("Adding end effector @ %f %f %f (%f %f %f %f)",
+        ROS_DEBUG("Adding link @ %f %f %f (%f %f %f %f) with dimensions [%f %f %f]",
                   endEffector.position.x, endEffector.position.y, endEffector.position.z,
-                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w);
+                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w,
+                  dimensions[0], dimensions[1], dimensions[2]);
 
         object.geom = dCreateBox(space,
-                                 END_EFFECTOR_LENGTH * (1.0 + inflationFactor),
-                                 END_EFFECTOR_WIDTH * (1.0 + inflationFactor),
-                                 END_EFFECTOR_HEIGHT * (1.0 + inflationFactor));
+                                 dimensions[0] * (1.0 + inflationFactor),
+                                 dimensions[1] * (1.0 + inflationFactor),
+                                 dimensions[2] * (1.0 + inflationFactor));
         dGeomSetBody(object.geom, object.body);
         dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
         dBodySetLinearVel(object.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
@@ -304,7 +298,7 @@ private:
     //! Position of base
     geometry_msgs::Point base;
 public:
-    FallPredictor() :
+    FallPredictor(const string& name) :
         pnh("~")
     {
         pnh.param("humanoid_height", humanoidHeight, HEIGHT_DEFAULT);
@@ -317,18 +311,18 @@ public:
         pnh.param("inflation_factor", inflationFactor, 0.0);
 
         fallVizPub = nh.advertise<visualization_msgs::Marker>(
-                         "/fall_predictor/projected_path", 1);
+                         "/" + name + "/projected_path", 1);
 
         contactVizPub = nh.advertise<visualization_msgs::Marker>(
-                            "/fall_predictor/contacts", 1);
+                            "/" + name + "/contacts", 1);
 
         initialPoseVizPub = nh.advertise<geometry_msgs::PoseStamped>(
-                                "/fall_predictor/initial_pose", 1);
+                                "/" + name + "/initial_pose", 1);
 
         initialVelocityVizPub = nh.advertise<geometry_msgs::WrenchStamped>(
-                                    "/fall_predictor/initial_velocity", 1);
+                                    "/" + name + "/initial_velocity", 1);
 
-        fallPredictionService = nh.advertiseService("/fall_predictor/predict_fall",
+        fallPredictionService = nh.advertiseService("/" + name + "/predict_fall",
                                 &FallPredictor::predict, this);
 
         initODE();
@@ -599,14 +593,14 @@ private:
                  humanoid_catching::PredictFall::Response& res)
     {
 
-        ROS_INFO("Predicting fall in frame %s", req.header.frame_id.c_str());
+        ROS_INFO("Predicting fall in frame %s for %lu links", req.header.frame_id.c_str(), req.end_effectors.size());
 
         res.header = req.header;
 
         SimulationState state;
         state.initWorld();
 
-        ROS_INFO("Initializing humanoid with orientation: (%f %f %f %f) and velocity: (%f %f %f)",
+        ROS_DEBUG("Initializing humanoid with orientation: (%f %f %f %f) and velocity: (%f %f %f)",
                  req.orientation.x, req.orientation.y, req.orientation.z, req.orientation.w,
                  req.velocity.angular.x, req.velocity.angular.y, req.velocity.angular.z);
 
@@ -630,7 +624,7 @@ private:
             publishPoseAndVelocity(req.header, humanoidPose, req.velocity);
         }
 
-        ROS_INFO("Recalculated humanoid linear velocity: (%f %f %f)",
+        ROS_DEBUG("Recalculated humanoid linear velocity: (%f %f %f)",
                  req.velocity.linear.x, req.velocity.linear.y, req.velocity.linear.z);
         res.initial_velocity = req.velocity;
 
@@ -638,15 +632,14 @@ private:
 
         for (unsigned int i = 0; i < req.end_effectors.size(); ++i)
         {
-            Model ee = state.initEndEffector(req.end_effectors[i], req.end_effector_velocities[i], inflationFactor);
+            Model ee = state.initEndEffector(req.end_effectors[i], req.end_effector_velocities[i], inflationFactor, req.shapes[i].dimensions);
             state.adjustEndEffector(ee);
             state.endEffectors.push_back(ee);
         }
 
         // Execute the simulation loop up to MAX_DURATION seconds
-        bool contact = false;
         ros::Duration lastTime;
-        for (double t = 0; t <= req.max_time.toSec() && !contact; t += req.step_size.toSec())
+        for (double t = 0; t <= req.max_time.toSec(); t += req.step_size.toSec())
         {
             // Clear end effector contacts
             state.eeContacts.clear();
@@ -685,7 +678,6 @@ private:
                 {
                     curr.contacts[i].position = arrayToPoint(state.eeContacts[i]->pos);
                     curr.contacts[i].normal = arrayToVector(state.eeContacts[i]->normal);
-                    contact = true;
                 }
             }
             res.points.push_back(curr);
@@ -741,7 +733,7 @@ private:
 
         state.destroyWorld();
 
-        ROS_DEBUG("Completed fall prediction");
+        ROS_INFO("Completed fall prediction");
         return true;
     }
 };
@@ -750,6 +742,6 @@ private:
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "fall_predictor");
-    FallPredictor fp;
+    FallPredictor fp(ros::this_node::getName());
     ros::spin();
 }

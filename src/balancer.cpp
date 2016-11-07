@@ -32,10 +32,10 @@ private:
     ros::ServiceServer balancerService;
 
 public:
-   Balancer() :
+   Balancer(const string& name) :
      pnh("~") {
        ROS_DEBUG("Starting the balancer service");
-       balancerService = nh.advertiseService("/balancer/torques",
+       balancerService = nh.advertiseService("/" + name + "/torques",
             &Balancer::calculateTorques, this);
        ROS_DEBUG("Balancer service started");
 	}
@@ -90,9 +90,9 @@ private:
 
       const int num_joints = req.torque_limits.size();
 
-      // Ignore last 3 joints that only impact orientation of end effector
+      // Ignore last joint that only impact orientation of end effector
       // that is not used in this formulation
-      const int num_effective_joints = num_joints - 3;
+      const int num_effective_joints = num_joints - 1;
 
       // x_pole
       // linear velocity of body
@@ -730,6 +730,6 @@ private:
 
 int main(int argc, char** argv) {
   ros::init(argc, argv, "balancer");
-  Balancer bal;
+  Balancer bal(ros::this_node::getName());
   ros::spin();
 }
