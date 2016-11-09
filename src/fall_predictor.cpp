@@ -65,6 +65,9 @@ struct SimulationState {
     //! End effectors
     vector<Model> endEffectors;
 
+    //! Links (non end-effectors)
+    vector<Model> links;
+
     //! Contacts with end effectors
     vector<boost::optional<dContactGeom> > eeContacts;
 
@@ -140,15 +143,15 @@ struct SimulationState {
         dJointSetBallAnchor(groundJoint, base.x, base.y, base.z);
     }
 
-    Model initEndEffector(const geometry_msgs::Pose& endEffector, const geometry_msgs::Twist& velocity, const double inflationFactor, vector<double> dimensions)
+    Model initLink(const geometry_msgs::Pose& link, const geometry_msgs::Twist& velocity, const double inflationFactor, vector<double> dimensions)
     {
         // Create the object
         Model object;
         object.body = dBodyCreate(world);
 
         ROS_DEBUG("Adding link @ %f %f %f (%f %f %f %f) with dimensions [%f %f %f]",
-                  endEffector.position.x, endEffector.position.y, endEffector.position.z,
-                  endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w,
+                  link.position.x, link.position.y, link.position.z,
+                  link.orientation.x, link.orientation.y, link.orientation.z, link.orientation.w,
                   dimensions[0], dimensions[1], dimensions[2]);
 
         object.geom = dCreateBox(space,
@@ -156,11 +159,11 @@ struct SimulationState {
                                  dimensions[1] * (1.0 + inflationFactor),
                                  dimensions[2] * (1.0 + inflationFactor));
         dGeomSetBody(object.geom, object.body);
-        dBodySetPosition(object.body, endEffector.position.x, endEffector.position.y, endEffector.position.z);
+        dBodySetPosition(object.body, link.position.x, link.position.y, link.position.z);
         dBodySetLinearVel(object.body, velocity.linear.x, velocity.linear.y, velocity.linear.z);
         dBodySetAngularVel(object.body, velocity.angular.x, velocity.angular.y, velocity.angular.z);
 
-        const dReal q[] = {endEffector.orientation.x, endEffector.orientation.y, endEffector.orientation.z, endEffector.orientation.w};
+        const dReal q[] = {link.orientation.x, link.orientation.y, link.orientation.z, link.orientation.w};
         dBodySetQuaternion(object.body, q);
 
         // Set it as unresponsive to forces
@@ -632,9 +635,15 @@ private:
 
         for (unsigned int i = 0; i < req.end_effectors.size(); ++i)
         {
-            Model ee = state.initEndEffector(req.end_effectors[i], req.end_effector_velocities[i], inflationFactor, req.shapes[i].dimensions);
+            Model ee = state.initLink(req.end_effectors[i], req.end_effector_velocities[i], inflationFactor, req.shapes[i].dimensions);
             state.adjustEndEffector(ee);
             state.endEffectors.push_back(ee);
+        }
+
+        for (unsigned int i = 0; i < req.link_positions.size(); ++i)
+        {
+            Model link = state.initLink(req.link_positions[i], req.link_velocities[i], inflationFactor, req.link_shapes[i].dimensions);
+            state.links.push_back(link);
         }
 
         // Execute the simulation loop up to MAX_DURATION seconds

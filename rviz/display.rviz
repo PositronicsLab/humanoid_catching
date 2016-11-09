@@ -6,7 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Predicted Path1
+        - /Predicted Path Left1
         - /IK Cache1
         - /IMU1
         - /Goal Trials1
@@ -62,13 +62,13 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: true
     - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /fall_predictor/projected_path
-      Name: Predicted Path
+      Enabled: true
+      Marker Topic: /fall_predictor_left/projected_path
+      Name: Predicted Path Left
       Namespaces:
         {}
       Queue Size: 1000
-      Value: false
+      Value: true
     - Class: rviz/Marker
       Enabled: false
       Marker Topic: /kinematics_cache/known_ik_positions_perm
@@ -82,7 +82,7 @@ Visualization Manager:
       Axes Radius: 0.1
       Class: rviz/Pose
       Color: 0; 85; 255
-      Enabled: true
+      Enabled: false
       Head Length: 0.3
       Head Radius: 0.1
       Name: IMU
@@ -90,7 +90,7 @@ Visualization Manager:
       Shaft Radius: 0.05
       Shape: Arrow
       Topic: /imu/pose
-      Value: true
+      Value: false
     - Alpha: 1
       Class: rviz/PointStamped
       Color: 255; 0; 255
@@ -687,17 +687,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 4.42187
+      Distance: 4.29544
       Focal Point:
         X: 0
         Y: 0
         Z: 0
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.5798
+      Pitch: 0.6798
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.63918
+      Yaw: 5.95918
     Saved: ~
 Window Geometry:
   Displays:
@@ -715,5 +715,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1373
-  X: 41
-  Y: 24
+  X: 65
+  Y: 48

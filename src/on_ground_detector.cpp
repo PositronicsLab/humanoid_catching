@@ -44,16 +44,37 @@ public:
 private:
 
     bool isOnGround(const geometry_msgs::Quaternion& orientation) {
-        double roll, pitch, yaw;
-        tf::Matrix3x3(tf::Quaternion(orientation.x, orientation.y, orientation.z, orientation.w)).getRPY(roll, pitch, yaw);
-        return (pitch >= -EPSILON || pitch < -PI + EPSILON || abs(yaw) > PI / 2 - EPSILON);
+        // Rotate the quaternion to compensate for the initial rotation of the pole
+        tf::Quaternion correctedOrientation = orientPose(orientation);
+
+        // Compute a vector from the quaternion
+        tf::Vector3 up(0, 0, 1);
+        tf::Vector3 poseVector = tf::quatRotate(correctedOrientation, up).normalize();
+
+        // Now compute a vector that is the projection onto the ground plane
+        tf::Vector3 ground(poseVector.x(), poseVector.y(), 0.0);
+        ground.normalized();
+
+        tfScalar angle = poseVector.angle(ground);
+        return angle < EPSILON;
+    }
+
+    // Compensate for the model being initial aligned to the x axis and oriented
+    // up
+    static tf::Quaternion orientPose(const geometry_msgs::Quaternion& orientationMsg)
+    {
+        tf::Quaternion rotation = tf::createQuaternionFromRPY(0, PI / 2.0, 0);
+
+        tf::Quaternion orientation;
+        tf::quaternionMsgToTF(orientationMsg, orientation);
+        orientation *= rotation;
+        return orientation;
     }
 
     void update(const sensor_msgs::ImuConstPtr& imuData)
     {
         if (isOnGround(imuData->orientation))
         {
-            ROS_DEBUG("Human is on ground!");
             std_msgs::Header header;
             header.stamp = ros::Time::now();
             pub.publish(header);

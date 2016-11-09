@@ -153,8 +153,8 @@ private:
     //! Human IMU subscriber
     std::auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
 
-    //! All arm links (including those not in the arm model)
-    std::vector<const robot_model::LinkModel*> allLinks;
+    //! All arm links
+    std::vector<const robot_model::LinkModel*> allArmLinks;
 
     //! Start index of the end effector links in the above list
     unsigned int endEffectorStartIndex;
@@ -195,7 +195,7 @@ private:
     void updateRavelinModel();
 
     bool predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall,
-                     ros::Duration duration, bool includeEndEffectors, bool visualize);
+                     ros::Duration duration, bool includeEndEffectors, bool includeCollisionLinks, bool visualize);
 
     void execute(const sensor_msgs::ImuConstPtr imuData);
 

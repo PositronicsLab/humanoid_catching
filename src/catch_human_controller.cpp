@@ -625,12 +625,12 @@ void CatchHumanController::calcArmLinks()
             continue;
         }
 
-        allLinks.push_back(link);
+        allArmLinks.push_back(link);
         ROS_DEBUG("Added link %s", link->getName().c_str());
 
         // Determine if this is the end effector
         if (link == kinematicModel->getJointModelGroup(arm)->getLinkModels().back()) {
-            endEffectorStartIndex = allLinks.size() - 1;
+            endEffectorStartIndex = allArmLinks.size() - 1;
             ROS_DEBUG("Found the end effector @ %u", endEffectorStartIndex);
         }
 
@@ -644,12 +644,13 @@ void CatchHumanController::calcArmLinks()
         }
     }
 
-    for (vector<const robot_model::LinkModel*>::const_iterator i = allLinks.begin(); i != allLinks.end(); ++i) {
+    for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i) {
         ROS_DEBUG("Final link order %s", (*i)->getName().c_str());
     }
 }
 
-bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration, bool includeEndEffectors, bool visualize)
+bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration,
+                                       bool includeEndEffectors, bool includeCollisionLinks, bool visualize)
 {
     predictFall.request.header = imuData->header;
     predictFall.request.orientation = imuData->orientation;
@@ -661,7 +662,7 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.visualize = visualize;
     if (includeEndEffectors)
     {
-        for (vector<const robot_model::LinkModel*>::const_iterator i = allLinks.begin(); i != allLinks.end(); ++i)
+        for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i)
         {
             predictFall.request.end_effector_velocities.push_back(geometry_msgs::Twist());
             predictFall.request.end_effectors.push_back(linkPosition((*i)->getName(), imuData->header.frame_id));
@@ -674,6 +675,24 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
             shape.dimensions[1] = extents.y();
             shape.dimensions[2] = extents.z();
             predictFall.request.shapes.push_back(shape);
+        }
+    }
+
+    if(includeCollisionLinks) {
+        for (vector<robot_model::LinkModel*>::const_iterator i = kinematicModel->getLinkModels().begin(); i != kinematicModel->getLinkModels().end(); ++i)
+        {
+            predictFall.request.link_positions.push_back(linkPosition((*i)->getName(), imuData->header.frame_id));
+            predictFall.request.link_velocities.push_back(geometry_msgs::Twist());
+
+            Shape shape;
+            shape.type = Shape::BOX;
+            const Eigen::Vector3d& extents = (*i)->getShapeExtentsAtOrigin();
+            ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
+            shape.dimensions.resize(3);
+            shape.dimensions[0] = extents.x();
+            shape.dimensions[1] = extents.y();
+            shape.dimensions[2] = extents.z();
+            predictFall.request.link_shapes.push_back(shape);
         }
     }
 
@@ -695,7 +714,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     ROS_DEBUG("Predicting fall for arm %s", arm.c_str());
 
     humanoid_catching::PredictFall predictFallObj;
-    if (!predictFall(imuData, predictFallObj, contactTimeTolerance, true, false))
+    if (!predictFall(imuData, predictFallObj, contactTimeTolerance, true, false, false))
     {
         ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
         return;
@@ -729,7 +748,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         for (unsigned int i = endEffectorStartIndex; i < fallPoint->contacts.size(); ++i) {
             if (fallPoint->contacts[i].is_in_contact) {
                 ROS_INFO("Contact is with link %s at position: [%f %f %f] and normal: [%f %f %f]",
-                         allLinks[i]->getName().c_str(), fallPoint->contacts[i].position.x,
+                         allArmLinks[i]->getName().c_str(), fallPoint->contacts[i].position.x,
                          fallPoint->contacts[i].position.y,
                          fallPoint->contacts[i].position.z,
                          fallPoint->contacts[i].normal.x,
@@ -820,7 +839,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         // Repredict without any end effectors
         ROS_DEBUG("Predicting fall without contact for arm %s", arm.c_str());
         humanoid_catching::PredictFall predictFallNoEE;
-        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, false, true))
+        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, false, true, true))
         {
             ROS_WARN("Fall prediction without contact failed for arm %s", arm.c_str());
             return;

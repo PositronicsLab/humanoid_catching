@@ -5,6 +5,10 @@ geometry_msgs/Twist accel
 geometry_msgs/Pose[] end_effectors
 geometry_msgs/Twist[] end_effector_velocities
 humanoid_catching/Shape[] shapes
+geometry_msgs/Pose[] link_positions
+humanoid_catching/Shape[] link_shapes
+geometry_msgs/Twist[] link_velocities
+
 duration max_time
 duration step_size
 duration result_step_size
