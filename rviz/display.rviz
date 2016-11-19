@@ -66,7 +66,7 @@ Visualization Manager:
       Marker Topic: /fall_predictor_left/projected_path
       Name: Predicted Path Left
       Namespaces:
-        {}
+        pole: true
       Queue Size: 1000
       Value: true
     - Class: rviz/Marker
@@ -694,10 +694,10 @@ Visualization Manager:
         Z: 0
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.6798
+      Pitch: 0.109796
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.95918
+      Yaw: 0.830994
     Saved: ~
 Window Geometry:
   Displays:
