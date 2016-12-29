@@ -681,6 +681,11 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     if(includeCollisionLinks) {
         for (vector<robot_model::LinkModel*>::const_iterator i = kinematicModel->getLinkModels().begin(); i != kinematicModel->getLinkModels().end(); ++i)
         {
+            // Don't include arm links twice
+            if (includeEndEffectors && std::find(allArmLinks.begin(), allArmLinks.end(), *i) != allArmLinks.end()) {
+                continue;
+            }
+
             predictFall.request.link_positions.push_back(linkPosition((*i)->getName(), imuData->header.frame_id));
             predictFall.request.link_velocities.push_back(geometry_msgs::Twist());
 
@@ -839,12 +844,12 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         // Repredict without any end effectors
         ROS_DEBUG("Predicting fall without contact for arm %s", arm.c_str());
         humanoid_catching::PredictFall predictFallNoEE;
-        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, false, true, true))
+        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, true, true, true))
         {
-            ROS_WARN("Fall prediction without contact failed for arm %s", arm.c_str());
+            ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
             return;
         }
-        ROS_DEBUG("Fall predicted without contact successfully for arm %s", arm.c_str());
+        ROS_DEBUG("Fall predicted successfully for arm %s", arm.c_str());
 
         tf::StampedTransform goalToTorsoTransform;
         tf.lookupTransform(baseFrame, predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);

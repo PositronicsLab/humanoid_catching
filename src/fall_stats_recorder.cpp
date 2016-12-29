@@ -49,8 +49,7 @@ public:
 
     ~FallStatsRecorder() {
         if(!resultsWritten) {
-            // Use a maximum value of 30s
-            ros::Duration contactTime = ros::Duration(30);
+            ros::Duration contactTime = ros::Time::now() - startTime;
             ROS_INFO_STREAM("No on ground message received. Setting contact time to max: " << contactTime);
             printResults(contactTime);
         }

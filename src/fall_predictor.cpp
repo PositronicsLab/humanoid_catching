@@ -400,7 +400,7 @@ private:
         }
     }
 
-    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const vector<vector<double> >& eeSizes, const string& frame) const
+    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const vector<vector<double> >& eeSizes, const string& frame, const vector<bool>& isEE) const
     {
         for (unsigned int i = 0; i < ees.size(); ++i)
         {
@@ -416,9 +416,10 @@ private:
             box.scale.z = eeSizes[i][2];
 
             // Box is red
-            box.color.r = 1.0f;
-            if (i == 1)
-            {
+            if (isEE[i]) {
+                box.color.r = 1.0f;
+            }
+            else {
                 box.color.b = 1.0f;
             }
             box.color.a = 0.5;
@@ -603,6 +604,16 @@ private:
         return result;
     }
 
+    static vector<double> getGeomSize(const dGeomID geom) {
+        dVector3 boxSize;
+        dGeomBoxGetLengths(geom, boxSize);
+        vector<double> vecBoxSize(3);
+        vecBoxSize[0] = boxSize[0];
+        vecBoxSize[1] = boxSize[1];
+        vecBoxSize[2] = boxSize[2];
+        return vecBoxSize;
+    }
+
     bool predict(humanoid_catching::PredictFall::Request& req,
                  humanoid_catching::PredictFall::Response& res)
     {
@@ -735,21 +746,27 @@ private:
             {
                 publishContacts(i->contacts, res.header.frame_id);
             }
+        }
 
+        if (req.visualize && fallVizPub.getNumSubscribers() > 0){
             vector<geometry_msgs::Pose> eePoses;
             vector<vector<double> > eeSizes;
+            vector<bool> isEE;
+
             for (vector<Model>::const_iterator i = state.endEffectors.begin(); i != state.endEffectors.end(); ++i)
             {
                 eePoses.push_back(getBodyPose(i->body));
-                dVector3 boxSize;
-                dGeomBoxGetLengths(i->geom, boxSize);
-                vector<double> vecBoxSize(3);
-                vecBoxSize[0] = boxSize[0];
-                vecBoxSize[1] = boxSize[1];
-                vecBoxSize[2] = boxSize[2];
-                eeSizes.push_back(vecBoxSize);
+                eeSizes.push_back(getGeomSize(i->geom));
+                isEE.push_back(true);
             }
-            publishEeViz(eePoses, eeSizes, res.header.frame_id);
+
+            for (vector<Model>::const_iterator i = state.links.begin(); i != state.links.end(); ++i)
+            {
+                eePoses.push_back(getBodyPose(i->body));
+                eeSizes.push_back(getGeomSize(i->geom));
+                isEE.push_back(false);
+            }
+            publishEeViz(eePoses, eeSizes, res.header.frame_id, isEE);
         }
 
         state.destroyWorld();
