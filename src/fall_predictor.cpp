@@ -38,6 +38,9 @@ struct Model
 };
 
 struct SimulationState {
+    //! Is in contact
+    bool isInContact;
+
     //! Ground plane
     dGeomID ground;
 
@@ -70,6 +73,10 @@ struct SimulationState {
 
     //! Contacts with end effectors
     vector<boost::optional<dContactGeom> > eeContacts;
+
+    SimulationState() {
+        isInContact = false;
+    }
 
     int whichEndEffector(const dBodyID b1, const dBodyID b2) const
     {
@@ -185,6 +192,10 @@ struct SimulationState {
 
         dBodyID b1 = dGeomGetBody(o1);
         dBodyID b2 = dGeomGetBody(o2);
+
+        if (b1 == humanoid.body || b2 == humanoid.body) {
+            isInContact = true;
+        }
 
         for (int i = 0; i < MAX_CONTACTS; i++)
         {
@@ -648,7 +659,7 @@ private:
 
         // Execute the simulation loop up to MAX_DURATION seconds
         ros::Duration lastTime;
-        for (double t = 0; t <= req.max_time.toSec(); t += req.step_size.toSec())
+        for (double t = 0; t <= req.max_time.toSec() && !state.isInContact; t += req.step_size.toSec())
         {
             // Clear end effector contacts
             state.eeContacts.clear();
@@ -689,6 +700,7 @@ private:
                     curr.contacts[i].normal = arrayToVector(state.eeContacts[i]->normal);
                 }
             }
+
             res.points.push_back(curr);
 
             // Determine if the pole is on the ground and end the simulation
