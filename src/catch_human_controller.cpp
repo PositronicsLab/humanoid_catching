@@ -15,6 +15,7 @@
 #include <urdf/model.h>
 #include <srdfdom/model.h>
 #include <moveit/robot_model/robot_model.h>
+#include <moveit/robot_state/link_state.h>
 #include <moveit/robot_state/robot_state.h>
 #include <sensor_msgs/JointState.h>
 #include <message_filters/subscriber.h>
@@ -27,6 +28,7 @@
 #include <geometry_msgs/WrenchStamped.h>
 #include <kinematics_cache/kinematics_cache.h>
 #include <ros/spinner.h>
+#include <eigen_conversions/eigen_msg.h>
 
 using namespace std;
 using namespace humanoid_catching;
@@ -69,22 +71,47 @@ static tf::Vector3 quatToVector(const tf::Quaternion& orientation)
     return r;
 }
 
-geometry_msgs::Pose CatchHumanController::applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform)
+geometry_msgs::PoseStamped CatchHumanController::transformGoalToBase(const geometry_msgs::PoseStamped& pose) const
 {
+    assert(pose.header.frame_id == globalFrame);
+    assert(goalToBaseTransform.child_frame_id_ == globalFrame);
+    assert(goalToBaseTransform.frame_id_ == baseFrame);
+
     tf::Stamped<tf::Pose> tfPose;
     tf::poseStampedMsgToTF(pose, tfPose);
-    tf::Pose tfGoal = transform * tfPose;
-    geometry_msgs::Pose msgGoal;
-    tf::poseTFToMsg(tfGoal, msgGoal);
+    tf::Pose tfGoal = goalToBaseTransform * tfPose;
+    geometry_msgs::PoseStamped msgGoal;
+    tf::poseTFToMsg(tfGoal, msgGoal.pose);
+    msgGoal.header.stamp = ros::Time::now();
+    msgGoal.header.frame_id = baseFrame;
     return msgGoal;
 }
 
-geometry_msgs::Vector3 CatchHumanController::applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform)
+geometry_msgs::PoseStamped CatchHumanController::transformBaseToGoal(const geometry_msgs::PoseStamped& pose) const
 {
+    assert(pose.header.frame_id == baseFrame);
+    assert(goalToBaseTransform.child_frame_id_ == globalFrame);
+    assert(goalToBaseTransform.frame_id_ == baseFrame);
+
+    tf::Stamped<tf::Pose> tfPose;
+    tf::poseStampedMsgToTF(pose, tfPose);
+    tf::Pose tfGoal = goalToBaseTransform.inverse() * tfPose;
+    geometry_msgs::PoseStamped msgGoal;
+    tf::poseTFToMsg(tfGoal, msgGoal.pose);
+    msgGoal.header.stamp = ros::Time::now();
+    msgGoal.header.frame_id = globalFrame;
+    return msgGoal;
+}
+
+geometry_msgs::Vector3 CatchHumanController::transformGoalToBase(const geometry_msgs::Vector3& linear) const
+{
+    assert(goalToBaseTransform.child_frame_id_ == globalFrame);
+    assert(goalToBaseTransform.frame_id_ == baseFrame);
+
     tf::Stamped<tf::Vector3> tfLinear;
 
     tf::vector3MsgToTF(linear, tfLinear);
-    tf::Vector3 tfGoal = transform * tfLinear;
+    tf::Vector3 tfGoal = goalToBaseTransform * tfLinear;
 
     geometry_msgs::Vector3 msgGoal;
     tf::vector3TFToMsg(tfGoal, msgGoal);
@@ -136,6 +163,7 @@ CatchHumanController::CatchHumanController() :
     }
 
     pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
+    pnh.param<string>("global_frame", globalFrame, "/odom_combined");
 
     if (!pnh.getParam("arm", arm))
     {
@@ -210,8 +238,6 @@ CatchHumanController::CatchHumanController() :
     body->set_links_and_joints(links, joints);
     body->set_floating_base(false);
 
-    const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(arm);
-
     // Determine the indexes for the arms within the body joints in Ravelin
     int curr = 0;
     for (int l = 0; l < joints.size(); ++l)
@@ -224,7 +250,10 @@ CatchHumanController::CatchHumanController() :
         curr += joints[l]->num_dof();
     }
 
+    assert(curr == body->num_generalized_coordinates(Ravelin::DynamicBodyd::eEuler));
+
     ROS_DEBUG("Loading joint limits for arm %s", arm.c_str());
+    const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(arm);
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)
     const vector<string> jointModelNames = jointModelGroup->getActiveJointModelNames();
@@ -282,6 +311,13 @@ CatchHumanController::CatchHumanController() :
     ROS_DEBUG("Completed initializing the joint limits");
 
     calcArmLinks();
+
+    if (!tf.waitForTransform(baseFrame, globalFrame, ros::Time(0), ros::Duration(15)))
+    {
+        ROS_ERROR("Failed to lookup transform from %s to %s", globalFrame.c_str(), baseFrame.c_str());
+    }
+    tf.lookupTransform(baseFrame /* target */, globalFrame /* source */, ros::Time(0), goalToBaseTransform);
+
 
     jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1, ros::TransportHints(), &jointStateMessagesQueue));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanController::jointStatesCallback, this, _1));
@@ -486,18 +522,18 @@ double CatchHumanController::calcJointExecutionTime(const Limits& limits, const 
     return t;
 }
 
-ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution)
+ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution) const
 {
     double longestTime = 0.0;
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
-        const string& jointName = jointNames[i];
-        Limits& limits = jointLimits[jointName];
+        const string& jointName = jointNames.at(i);
+        const Limits& limits = jointLimits.at(jointName);
 
         // Take the read lock
         boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
-        double v0 = jointStates[jointName].velocity;
-        double signed_d = jointStates[jointName].position - solution[i];
+        double v0 = jointStates.at(jointName).velocity;
+        double signed_d = jointStates.at(jointName).position - solution[i];
         lock.unlock();
 
 #if (ENABLE_EXECUTION_TIME_DEBUGGING)
@@ -513,26 +549,16 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     return ros::Duration(longestTime);
 }
 
-geometry_msgs::Pose CatchHumanController::tfFrameToPose(const string& tfFrame, const ros::Time& stamp, const string& base) const
-{
-    tf::StampedTransform tfStampedTransform;
-    tf.lookupTransform(base, tfFrame, stamp, tfStampedTransform);
-    geometry_msgs::TransformStamped stampedTransform;
-    transformStampedTFToMsg(tfStampedTransform, stampedTransform);
-    geometry_msgs::Pose pose;
-    pose.position.x = stampedTransform.transform.translation.x;
-    pose.position.y = stampedTransform.transform.translation.y;
-    pose.position.z = stampedTransform.transform.translation.z;
-    pose.orientation = stampedTransform.transform.rotation;
-    return pose;
-}
-
 const vector<FallPoint>::const_iterator CatchHumanController::findContact(const humanoid_catching::PredictFall::Response& fall) const
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
-        // Search the links we consider the end effector
-        for (unsigned int j = endEffectorStartIndex; j < i->contacts.size(); ++j) {
+        if (i->time > contactTimeTolerance) {
+            break;
+        }
+
+        for (unsigned int j = 0; j < i->contacts.size(); ++j)
+        {
             if (i->contacts[j].is_in_contact)
             {
                 return i;
@@ -542,9 +568,28 @@ const vector<FallPoint>::const_iterator CatchHumanController::findContact(const 
     return fall.points.end();
 }
 
-geometry_msgs::Pose CatchHumanController::linkPosition(const string& link, const string& frame) const
+bool CatchHumanController::linkPosition(const string& link, geometry_msgs::PoseStamped& pose) const
 {
-    return tfFrameToPose(link, ros::Time(0), frame);
+    robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
+    robot_state::LinkState* linkState = currentRobotState.getLinkState(link);
+    if (linkState == NULL)
+    {
+        ROS_DEBUG("Could not locate link named %s", link.c_str());
+        pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, 0);
+        pose.header.stamp = ros::Time::now();
+        pose.header.frame_id = globalFrame;
+        return false;
+    }
+
+    const Eigen::Affine3d eigenPose = linkState->getGlobalLinkTransform ();
+    tf::poseEigenToMsg(eigenPose, pose.pose);
+
+    ROS_DEBUG("%s position in global frame (%f %f %f)", link.c_str(), pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
+
+    pose.header.stamp = ros::Time::now();
+    pose.header.frame_id = globalFrame;
+
+    return true;
 }
 
 void CatchHumanController::visualizeEEVelocity(const vector<double>& eeVelocity)
@@ -628,12 +673,6 @@ void CatchHumanController::calcArmLinks()
         allArmLinks.push_back(link);
         ROS_DEBUG("Added link %s", link->getName().c_str());
 
-        // Determine if this is the end effector
-        if (link == kinematicModel->getJointModelGroup(arm)->getLinkModels().back()) {
-            endEffectorStartIndex = allArmLinks.size() - 1;
-            ROS_DEBUG("Found the end effector @ %u", endEffectorStartIndex);
-        }
-
         // Now recurse over children
         for (unsigned int j = 0; j < link->getChildJointModels().size(); ++j)
         {
@@ -644,13 +683,21 @@ void CatchHumanController::calcArmLinks()
         }
     }
 
-    for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i) {
+    for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i)
+    {
         ROS_DEBUG("Final link order %s", (*i)->getName().c_str());
     }
 }
 
-bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration,
-                                       bool includeEndEffectors, bool includeCollisionLinks, bool visualize)
+struct ModelsMatch
+{
+  explicit ModelsMatch(const robot_model::LinkModel* a) : b(a) {}
+  inline bool operator()(const robot_model::LinkModel* m) const { return m->getName() == b->getName(); }
+private:
+  const robot_model::LinkModel* b;
+};
+
+bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration)
 {
     predictFall.request.header = imuData->header;
     predictFall.request.orientation = imuData->orientation;
@@ -659,45 +706,39 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.max_time = duration;
     predictFall.request.step_size = STEP_SIZE;
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
-    predictFall.request.visualize = visualize;
-    if (includeEndEffectors)
-    {
-        for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i)
-        {
-            predictFall.request.end_effector_velocities.push_back(geometry_msgs::Twist());
-            predictFall.request.end_effectors.push_back(linkPosition((*i)->getName(), imuData->header.frame_id));
-            Shape shape;
-            shape.type = Shape::BOX;
-            const Eigen::Vector3d& extents = (*i)->getShapeExtentsAtOrigin();
-            ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
-            shape.dimensions.resize(3);
-            shape.dimensions[0] = extents.x();
-            shape.dimensions[1] = extents.y();
-            shape.dimensions[2] = extents.z();
-            predictFall.request.shapes.push_back(shape);
+
+    const vector<robot_state::LinkState*>& linkStates = planningScene->getPlanningScene()->getCurrentState().getLinkStateVector();
+    for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i) {
+        Link link;
+        const Eigen::Affine3d eigenPose = (*i)->getGlobalLinkTransform();
+        tf::poseEigenToMsg(eigenPose, link.pose.pose);
+
+        ROS_DEBUG("%s position in global frame (%f %f %f)", (*i)->getLinkModel()->getName().c_str(), link.pose.pose.position.x, link.pose.pose.position.y, link.pose.pose.position.z);
+
+        link.pose.header.stamp = imuData->header.stamp;
+        link.pose.header.frame_id = globalFrame;
+
+        link.shape.type = Shape::BOX;
+        const Eigen::Vector3d& extents = (*i)->getLinkModel()->getShapeExtentsAtOrigin();
+        ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
+
+        if (extents.x() <= 0.0 || extents.y() <= 0.0 || extents.z() <= 0.0) {
+            ROS_DEBUG("Skipping zero dimension link %s", (*i)->getName().c_str());
+            continue;
         }
-    }
 
-    if(includeCollisionLinks) {
-        for (vector<robot_model::LinkModel*>::const_iterator i = kinematicModel->getLinkModels().begin(); i != kinematicModel->getLinkModels().end(); ++i)
-        {
-            // Don't include arm links twice
-            if (includeEndEffectors && std::find(allArmLinks.begin(), allArmLinks.end(), *i) != allArmLinks.end()) {
-                continue;
-            }
+        link.shape.dimensions.resize(3);
+        link.shape.dimensions[0] = extents.x();
+        link.shape.dimensions[1] = extents.y();
+        link.shape.dimensions[2] = extents.z();
+        link.name = (*i)->getLinkModel()->getName();
 
-            predictFall.request.link_positions.push_back(linkPosition((*i)->getName(), imuData->header.frame_id));
-            predictFall.request.link_velocities.push_back(geometry_msgs::Twist());
-
-            Shape shape;
-            shape.type = Shape::BOX;
-            const Eigen::Vector3d& extents = (*i)->getShapeExtentsAtOrigin();
-            ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
-            shape.dimensions.resize(3);
-            shape.dimensions[0] = extents.x();
-            shape.dimensions[1] = extents.y();
-            shape.dimensions[2] = extents.z();
-            predictFall.request.link_shapes.push_back(shape);
+        // Decide whether to add it to end effectors or collisions
+        if (find_if(allArmLinks.begin(), allArmLinks.end(), ModelsMatch((*i)->getLinkModel())) != allArmLinks.end()) {
+            predictFall.request.end_effectors.push_back(link);
+        }
+        else {
+            predictFall.request.links.push_back(link);
         }
     }
 
@@ -712,6 +753,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
 
     ROS_DEBUG("Catch procedure initiated");
+    assert(imuData->header.frame_id == globalFrame);
 
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
@@ -719,7 +761,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     ROS_DEBUG("Predicting fall for arm %s", arm.c_str());
 
     humanoid_catching::PredictFall predictFallObj;
-    if (!predictFall(imuData, predictFallObj, contactTimeTolerance, true, false, false))
+    if (!predictFall(imuData, predictFallObj, MAX_DURATION))
     {
         ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
         return;
@@ -738,8 +780,6 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     {
         ROS_INFO("Robot is in contact. Executing balancing for arm %s", arm.c_str());
 
-        updateRavelinModel();
-
         humanoid_catching::CalculateTorques calcTorques;
         calcTorques.request.name = arm;
         calcTorques.request.body_velocity = fallPoint->velocity;
@@ -750,8 +790,11 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         // Search for the last contact in the kinematic chain
         bool contactFound = false;
-        for (unsigned int i = endEffectorStartIndex; i < fallPoint->contacts.size(); ++i) {
-            if (fallPoint->contacts[i].is_in_contact) {
+
+        for (unsigned int i = 0; i < fallPoint->contacts.size(); ++i)
+        {
+            if (fallPoint->contacts[i].is_in_contact)
+            {
                 ROS_INFO("Contact is with link %s at position: [%f %f %f] and normal: [%f %f %f]",
                          allArmLinks[i]->getName().c_str(), fallPoint->contacts[i].position.x,
                          fallPoint->contacts[i].position.y,
@@ -773,6 +816,9 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         // Get the list of joints in this group
         const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(arm);
+
+        // Set the joint poses into the ravelin model
+        updateRavelinModel();
 
         // Get the inertia matrix
         Ravelin::MatrixNd robotInertiaMatrix;
@@ -841,23 +887,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     }
     else
     {
-        // Repredict without any end effectors
-        ROS_DEBUG("Predicting fall without contact for arm %s", arm.c_str());
-        humanoid_catching::PredictFall predictFallNoEE;
-        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION, true, true, true))
-        {
-            ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
-            return;
-        }
-        ROS_DEBUG("Fall predicted successfully for arm %s", arm.c_str());
-
-        tf::StampedTransform goalToTorsoTransform;
-        tf.lookupTransform(baseFrame, predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
-
         // We now have a projected time/position path. Search the path for acceptable times.
         boost::optional<Solution> bestSolution;
 
-        for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
+        for (vector<FallPoint>::const_iterator i = predictFallObj.response.points.begin(); i != predictFallObj.response.points.end(); ++i)
         {
             Solution possibleSolution;
 
@@ -866,17 +899,13 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             possibleSolution.time = i->time;
 
             geometry_msgs::PoseStamped basePose;
-            basePose.header = predictFallNoEE.response.header;
+            basePose.header = predictFallObj.response.header;
             basePose.pose = i->pose;
 
-            geometry_msgs::PoseStamped transformedPose;
-            transformedPose.header.frame_id = baseFrame;
-            transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
-
-            transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
+            geometry_msgs::PoseStamped transformedPose = transformGoalToBase(basePose);
             possibleSolution.targetPose = transformedPose;
 
-            possibleSolution.targetVelocity.twist.linear = applyTransform(i->velocity.linear, goalToTorsoTransform);
+            possibleSolution.targetVelocity.twist.linear = transformGoalToBase(i->velocity.linear);
             possibleSolution.targetVelocity.header = transformedPose.header;
 
             possibleSolution.position.header = transformedPose.header;
@@ -922,21 +951,25 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         }
 
         ROS_DEBUG("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
-                 arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
-                 bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
-                 bestSolution->time.toSec());
+                  arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
+                  bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
+                  bestSolution->time.toSec());
 
         operational_space_controllers_msgs::Move command;
 
         ROS_DEBUG("Calculating ee_pose for link %s", kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back().c_str());
-        geometry_msgs::Pose eePose = linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), baseFrame);
+        geometry_msgs::PoseStamped eePose;
+        if (!linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), eePose))
+        {
+            ROS_WARN("Failed to find ee pose. Using default.");
+        }
 
         command.header = bestSolution->position.header;
         command.target.position = bestSolution->position.point;
         command.target.orientation = computeOrientation(*bestSolution, eePose);
         command.point_at_target = false;
-        visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallNoEE.response.radius,
-                      predictFallNoEE.response.height);
+        visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallObj.response.radius,
+                      predictFallObj.response.height);
         armCommandPub.publish(command);
     }
 
@@ -944,9 +977,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
              ros::Time::now().toSec() - startRosTime.toSec());
 }
 
-/* static */ geometry_msgs::Quaternion CatchHumanController::computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose)
+/* static */ geometry_msgs::Quaternion CatchHumanController::computeOrientation(const Solution& solution, const geometry_msgs::PoseStamped& currentPose)
 {
-
     ROS_DEBUG("q_pole: %f %f %f %f", solution.targetPose.pose.orientation.x,
               solution.targetPose.pose.orientation.y,
               solution.targetPose.pose.orientation.z,
@@ -955,13 +987,13 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     tf::Quaternion qPole;
     tf::quaternionMsgToTF(solution.targetPose.pose.orientation, qPole);
 
-    ROS_DEBUG("q_hand: %f %f %f %f", currentPose.orientation.x,
-              currentPose.orientation.y,
-              currentPose.orientation.z,
-              currentPose.orientation.w);
+    ROS_DEBUG("q_hand: %f %f %f %f", currentPose.pose.orientation.x,
+              currentPose.pose.orientation.y,
+              currentPose.pose.orientation.z,
+              currentPose.pose.orientation.w);
 
     tf::Quaternion qHand;
-    tf::quaternionMsgToTF(currentPose.orientation, qHand);
+    tf::quaternionMsgToTF(currentPose.pose.orientation, qHand);
 
     ROS_DEBUG("v_pole: %f %f %f",
               solution.targetVelocity.twist.linear.x,
@@ -983,16 +1015,16 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
               solution.targetPose.pose.position.z);
 
     ROS_DEBUG("pose_current: %f %f %f",
-              currentPose.position.x,
-              currentPose.position.y,
-              currentPose.position.z);
+              currentPose.pose.position.x,
+              currentPose.pose.position.y,
+              currentPose.pose.position.z);
     // Rotate to a vector orthoganal to the velocity.
 
     // Create the vector representing the direction from the end effector to pole
     // COM
-    tf::Vector3 pointAt(solution.targetPose.pose.position.x - currentPose.position.x,
-                        solution.targetPose.pose.position.y - currentPose.position.y,
-                        solution.targetPose.pose.position.z - currentPose.position.z);
+    tf::Vector3 pointAt(solution.targetPose.pose.position.x - currentPose.pose.position.x,
+                        solution.targetPose.pose.position.y - currentPose.pose.position.y,
+                        solution.targetPose.pose.position.z - currentPose.pose.position.z);
 
     ROS_DEBUG("p_at: %f %f %f", pointAt.x(), pointAt.y(), pointAt.z());
 

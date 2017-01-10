@@ -71,6 +71,7 @@ add_message_files(
    FallPoint.msg
    Limit.msg
    Shape.msg
+   Link.msg
 )
 
 ## Generate services in the 'srv' folder
