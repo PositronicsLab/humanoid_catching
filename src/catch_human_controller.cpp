@@ -533,7 +533,7 @@ const vector<FallPoint>::const_iterator CatchHumanController::findContact(const 
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
         // Search the links we consider the end effector
-        for (unsigned int j = endEffectorStartIndex; j < i->contacts.size(); ++j) {
+        for (unsigned int j = 0; j < i->contacts.size(); ++j) {
             if (i->contacts[j].is_in_contact)
             {
                 return i;
@@ -628,12 +628,6 @@ void CatchHumanController::calcArmLinks()
 
         allArmLinks.push_back(link);
         ROS_DEBUG("Added link %s", link->getName().c_str());
-
-        // Determine if this is the end effector
-        if (link == kinematicModel->getJointModelGroup(arm)->getLinkModels().back()) {
-            endEffectorStartIndex = allArmLinks.size() - 1;
-            ROS_DEBUG("Found the end effector @ %u", endEffectorStartIndex);
-        }
 
         // Now recurse over children
         for (unsigned int j = 0; j < link->getChildJointModels().size(); ++j)
@@ -748,7 +742,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         // Search for the last contact in the kinematic chain
         bool contactFound = false;
-        for (unsigned int i = endEffectorStartIndex; i < fallPoint->contacts.size(); ++i) {
+        for (unsigned int i = 0; i < fallPoint->contacts.size(); ++i) {
             if (fallPoint->contacts[i].is_in_contact) {
                 ROS_INFO("Contact is with link %s at position: [%f %f %f] and normal: [%f %f %f]",
                          allArmLinks[i]->getName().c_str(), fallPoint->contacts[i].position.x,
