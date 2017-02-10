@@ -195,7 +195,7 @@ private:
     void updateRavelinModel();
 
     bool predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall,
-                     ros::Duration duration, bool includeEndEffectors, bool includeCollisionLinks, bool visualize);
+                     ros::Duration duration, bool includeEndEffectors, bool includeCollisionLinks);
 
     void execute(const sensor_msgs::ImuConstPtr imuData);
 
