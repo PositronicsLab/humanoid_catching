@@ -964,9 +964,6 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             ROS_WARN("Failed to find ee pose. Using default.");
         }
 
-        // Convert to baseFrame
-        eePose = transformGoalToBase(eePose);
-
         command.header = bestSolution->position.header;
         command.target.position = bestSolution->position.point;
         command.target.orientation = computeOrientation(*bestSolution, eePose);

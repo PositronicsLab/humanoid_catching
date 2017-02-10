@@ -679,7 +679,7 @@ private:
         for (unsigned int i = 0; i < req.end_effectors.size(); ++i)
         {
             Model ee = state.initLink(req.end_effectors[i].pose.pose, req.end_effectors[i].velocity, inflationFactor, req.end_effectors[i].shape.dimensions);
-            ee.name = req.end_effectors[i].name;
+            ee.name = req.end_effectors[i].name.c_str();
             state.adjustEndEffector(ee);
             state.endEffectors.push_back(ee);
         }
@@ -687,7 +687,7 @@ private:
         for (unsigned int i = 0; i < req.links.size(); ++i)
         {
             Model link = state.initLink(req.links[i].pose.pose, req.links[i].velocity, inflationFactor, req.links[i].shape.dimensions);
-            link.name = req.links[i].name;
+            link.name = req.links[i].name.c_str();
             state.links.push_back(link);
         }
 
@@ -783,6 +783,7 @@ private:
                 eeSizes.push_back(getGeomSize(i->geom));
                 eeNames.push_back(i->name);
                 isEE.push_back(true);
+                ROS_INFO("link post %s (%f %f %f)", eeNames.back().c_str(), eePoses.back().position.x, eePoses.back().position.y, eePoses.back().position.z);
             }
 
             for (vector<Model>::const_iterator i = state.links.begin(); i != state.links.end(); ++i)
@@ -791,6 +792,7 @@ private:
                 eeSizes.push_back(getGeomSize(i->geom));
                 eeNames.push_back(i->name);
                 isEE.push_back(false);
+                ROS_INFO("link post %s (%f %f %f)", eeNames.back().c_str(), eePoses.back().position.x, eePoses.back().position.y, eePoses.back().position.z);
             }
             publishEeViz(eePoses, eeSizes, res.header.frame_id, isEE, eeNames);
         }
