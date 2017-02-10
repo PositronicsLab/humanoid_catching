@@ -487,18 +487,18 @@ double CatchHumanController::calcJointExecutionTime(const Limits& limits, const 
     return t;
 }
 
-ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution)
+ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution) const
 {
     double longestTime = 0.0;
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
-        const string& jointName = jointNames[i];
-        Limits& limits = jointLimits[jointName];
+        const string& jointName = jointNames.at(i);
+        const Limits& limits = jointLimits.at(jointName);
 
         // Take the read lock
         boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
-        double v0 = jointStates[jointName].velocity;
-        double signed_d = jointStates[jointName].position - solution[i];
+        double v0 = jointStates.at(jointName).velocity;
+        double signed_d = jointStates.at(jointName).position - solution[i];
         lock.unlock();
 
 #if (ENABLE_EXECUTION_TIME_DEBUGGING)
