@@ -644,6 +644,14 @@ void CatchHumanController::calcArmLinks()
     }
 }
 
+struct ModelsMatch
+{
+    explicit ModelsMatch(const robot_model::LinkModel* a) : b(a) {}
+    inline bool operator()(const robot_model::LinkModel* m) const { return m->getName() == b->getName(); }
+private:
+    const robot_model::LinkModel* b;
+};
+
 bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration)
 {
     predictFall.request.header = imuData->header;
@@ -654,38 +662,32 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.step_size = STEP_SIZE;
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
 
-    for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i)
+    for (vector<robot_model::LinkModel*>::const_iterator i = kinematicModel->getLinkModels().begin(); i != kinematicModel->getLinkModels().end(); ++i)
     {
         Link link;
         link.pose.pose = linkPosition((*i)->getName(), imuData->header.frame_id);
+
         link.shape.type = Shape::BOX;
         const Eigen::Vector3d& extents = (*i)->getShapeExtentsAtOrigin();
         ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
-        link.shape.dimensions.resize(3);
-        link.shape.dimensions[0] = extents.x();
-        link.shape.dimensions[1] = extents.y();
-        link.shape.dimensions[2] = extents.z();
-        predictFall.request.end_effectors.push_back(link);
-    }
 
-    for (vector<robot_model::LinkModel*>::const_iterator i = kinematicModel->getLinkModels().begin(); i != kinematicModel->getLinkModels().end(); ++i)
-    {
-        // Don't include arm links twice
-        if (std::find(allArmLinks.begin(), allArmLinks.end(), *i) != allArmLinks.end()) {
+        if (extents.x() <= 0.0 || extents.y() <= 0.0 || extents.z() <= 0.0) {
+            ROS_DEBUG("Skipping zero dimension link %s", (*i)->getName().c_str());
             continue;
         }
 
-        Link link;
-        link.pose.pose = linkPosition((*i)->getName(), imuData->header.frame_id);
-
-        link.shape.type = Shape::BOX;
-        const Eigen::Vector3d& extents = (*i)->getShapeExtentsAtOrigin();
-        ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
         link.shape.dimensions.resize(3);
         link.shape.dimensions[0] = extents.x();
         link.shape.dimensions[1] = extents.y();
         link.shape.dimensions[2] = extents.z();
-        predictFall.request.links.push_back(link);
+
+        // Decide whether to add it to end effectors or collisions
+        if (find_if(allArmLinks.begin(), allArmLinks.end(), ModelsMatch((*i))) != allArmLinks.end()) {
+            predictFall.request.end_effectors.push_back(link);
+        }
+        else {
+            predictFall.request.links.push_back(link);
+        }
     }
 
     if (!fallPredictor.call(predictFall))
@@ -697,7 +699,6 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
 
 void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
-
     ROS_DEBUG("Catch procedure initiated");
 
     ros::WallTime startWallTime = ros::WallTime::now();
