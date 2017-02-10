@@ -35,7 +35,6 @@ struct Model
 {
     dBodyID body;  // the dynamics body
     dGeomID geom;  // geometries representing this body
-    string name; // name of the body
 };
 
 struct SimulationState {
@@ -401,7 +400,7 @@ private:
         }
     }
 
-    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const vector<vector<double> >& eeSizes, const string& frame, const vector<bool>& isEE, const vector<string>& names) const
+    void publishEeViz(const vector<geometry_msgs::Pose>& ees, const vector<vector<double> >& eeSizes, const string& frame, const vector<bool>& isEE) const
     {
         for (unsigned int i = 0; i < ees.size(); ++i)
         {
@@ -412,11 +411,6 @@ private:
             box.id = i;
             box.type = visualization_msgs::Marker::CUBE;
             box.pose = ees[i];
-
-            if (eeSizes[i][0] <= 0.0 || eeSizes[i][1] <= 0.0 || eeSizes[i][2] <= 0.0) {
-                ROS_WARN("Cannot publish zero scale box");
-            }
-
             box.scale.x = eeSizes[i][0];
             box.scale.y = eeSizes[i][1];
             box.scale.z = eeSizes[i][2];
@@ -430,25 +424,6 @@ private:
             }
             box.color.a = 0.5;
             fallVizPub.publish(box);
-
-            visualization_msgs::Marker text;
-            text.header.frame_id = frame;
-            text.header.stamp = ros::Time::now();
-            text.ns = "end_effectors_text";
-            text.id = i;
-
-            text.scale.x = 1.0;
-            text.scale.y = 1.0;
-            text.scale.z = 0.1;
-            text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-            text.pose = ees[i];
-            text.text = names[i];
-
-            // Text is black
-            text.color.r = text.color.b = text.color.g = 1.0f;
-            text.color.a = 1.0;
-
-            fallVizPub.publish(text);
         }
     }
 
@@ -668,7 +643,11 @@ private:
         res.initial.orientation = orientPose(humanoidPose.orientation, true);
 
         state.initHumanoid(humanoidPose, req.velocity, req.accel, humanoidMass, humanoidRadius, humanoidHeight);
-        publishPoseAndVelocity(req.header, humanoidPose, req.velocity);
+
+        if (req.visualize)
+        {
+            publishPoseAndVelocity(req.header, humanoidPose, req.velocity);
+        }
 
         ROS_DEBUG("Recalculated humanoid linear velocity: (%f %f %f)",
                  req.velocity.linear.x, req.velocity.linear.y, req.velocity.linear.z);
@@ -678,16 +657,14 @@ private:
 
         for (unsigned int i = 0; i < req.end_effectors.size(); ++i)
         {
-            Model ee = state.initLink(req.end_effectors[i].pose.pose, req.end_effectors[i].velocity, inflationFactor, req.end_effectors[i].shape.dimensions);
-            ee.name = req.end_effectors[i].name.c_str();
+            Model ee = state.initLink(req.end_effectors[i], req.end_effector_velocities[i], inflationFactor, req.shapes[i].dimensions);
             state.adjustEndEffector(ee);
             state.endEffectors.push_back(ee);
         }
 
-        for (unsigned int i = 0; i < req.links.size(); ++i)
+        for (unsigned int i = 0; i < req.link_positions.size(); ++i)
         {
-            Model link = state.initLink(req.links[i].pose.pose, req.links[i].velocity, inflationFactor, req.links[i].shape.dimensions);
-            link.name = req.links[i].name.c_str();
+            Model link = state.initLink(req.link_positions[i], req.link_velocities[i], inflationFactor, req.link_shapes[i].dimensions);
             state.links.push_back(link);
         }
 
@@ -753,7 +730,7 @@ private:
         res.inertia_matrix = getPoleInertiaMatrix();
 
         // Publish the path
-        if (fallVizPub.getNumSubscribers() > 0)
+        if (req.visualize && fallVizPub.getNumSubscribers() > 0)
         {
             vector<geometry_msgs::Pose> points;
             for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i)
@@ -763,7 +740,7 @@ private:
             publishPathViz(points, res.header.frame_id);
         }
 
-        if (contactVizPub.getNumSubscribers() > 0)
+        if (req.visualize && contactVizPub.getNumSubscribers() > 0)
         {
             for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i)
             {
@@ -771,30 +748,25 @@ private:
             }
         }
 
-        if (fallVizPub.getNumSubscribers() > 0){
+        if (req.visualize && fallVizPub.getNumSubscribers() > 0){
             vector<geometry_msgs::Pose> eePoses;
             vector<vector<double> > eeSizes;
             vector<bool> isEE;
-            vector<string> eeNames;
 
             for (vector<Model>::const_iterator i = state.endEffectors.begin(); i != state.endEffectors.end(); ++i)
             {
                 eePoses.push_back(getBodyPose(i->body));
                 eeSizes.push_back(getGeomSize(i->geom));
-                eeNames.push_back(i->name);
                 isEE.push_back(true);
-                ROS_INFO("link post %s (%f %f %f)", eeNames.back().c_str(), eePoses.back().position.x, eePoses.back().position.y, eePoses.back().position.z);
             }
 
             for (vector<Model>::const_iterator i = state.links.begin(); i != state.links.end(); ++i)
             {
                 eePoses.push_back(getBodyPose(i->body));
                 eeSizes.push_back(getGeomSize(i->geom));
-                eeNames.push_back(i->name);
                 isEE.push_back(false);
-                ROS_INFO("link post %s (%f %f %f)", eeNames.back().c_str(), eePoses.back().position.x, eePoses.back().position.y, eePoses.back().position.z);
             }
-            publishEeViz(eePoses, eeSizes, res.header.frame_id, isEE, eeNames);
+            publishEeViz(eePoses, eeSizes, res.header.frame_id, isEE);
         }
 
         state.destroyWorld();

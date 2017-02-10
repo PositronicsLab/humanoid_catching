@@ -111,12 +111,6 @@ private:
     //! Joint limits
     LimitMapType jointLimits;
 
-    //! Constant transform from world to base frame
-    tf::StampedTransform goalToBaseTransform;
-
-    //! Global frame
-    std::string globalFrame;
-
     //! Base frame
     std::string baseFrame;
 
@@ -124,7 +118,7 @@ private:
     ros::CallbackQueue jointStateMessagesQueue;
 
     //! Joint states lock
-    mutable boost::shared_mutex jointStatesAccess;
+    boost::shared_mutex jointStatesAccess;
 
     //! Spinner
     std::auto_ptr<ros::AsyncSpinner> jointStateMessagesSpinner;
@@ -161,6 +155,9 @@ private:
 
     //! All arm links
     std::vector<const robot_model::LinkModel*> allArmLinks;
+
+    //! Start index of the end effector links in the above list
+    unsigned int endEffectorStartIndex;
 public:
     CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
@@ -181,14 +178,15 @@ private:
 
     static geometry_msgs::PointStamped poseToPoint(const geometry_msgs::PoseStamped pose);
 
-    ros::Duration calcExecutionTime(const std::vector<double>& solution) const;
-    geometry_msgs::PoseStamped transformGoalToBase(const geometry_msgs::PoseStamped& pose) const;
-    geometry_msgs::PoseStamped transformBaseToGoal(const geometry_msgs::PoseStamped& pose) const;
-    geometry_msgs::Vector3 transformGoalToBase(const geometry_msgs::Vector3& linear) const;
+    ros::Duration calcExecutionTime(const std::vector<double>& solution);
+    static geometry_msgs::Pose applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform);
+    static geometry_msgs::Vector3 applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform);
+
+    geometry_msgs::Pose tfFrameToPose(const std::string& tfFrame, const ros::Time& stamp, const std::string& base) const;
 
     const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall) const;
 
-    bool linkPosition(const std::string& linkName, geometry_msgs::PoseStamped& pose) const;
+    geometry_msgs::Pose linkPosition(const std::string& linkName, const std::string& frame) const;
 
     void visualizeEEVelocity(const std::vector<double>& eeVelocity);
 
@@ -197,12 +195,12 @@ private:
     void updateRavelinModel();
 
     bool predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall,
-                     ros::Duration duration);
+                     ros::Duration duration, bool includeEndEffectors, bool includeCollisionLinks, bool visualize);
 
     void execute(const sensor_msgs::ImuConstPtr imuData);
 
     void calcArmLinks();
 
 public:
-    static geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::PoseStamped& currentPose);
+    static geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::Pose& currentPose);
 };
