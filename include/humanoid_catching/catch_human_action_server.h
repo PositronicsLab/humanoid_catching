@@ -111,6 +111,12 @@ private:
     //! Joint limits
     LimitMapType jointLimits;
 
+    //! Constant transform from world to base frame
+    tf::StampedTransform goalToBaseTransform;
+
+    //! Global frame
+    std::string globalFrame;
+
     //! Base frame
     std::string baseFrame;
 
