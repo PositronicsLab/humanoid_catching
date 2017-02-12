@@ -118,7 +118,7 @@ private:
     ros::CallbackQueue jointStateMessagesQueue;
 
     //! Joint states lock
-    mutable boost::shared_mutex jointStatesAccess;
+    boost::shared_mutex jointStatesAccess;
 
     //! Spinner
     std::auto_ptr<ros::AsyncSpinner> jointStateMessagesSpinner;
@@ -178,7 +178,7 @@ private:
 
     static geometry_msgs::PointStamped poseToPoint(const geometry_msgs::PoseStamped pose);
 
-    ros::Duration calcExecutionTime(const std::vector<double>& solution) const;
+    ros::Duration calcExecutionTime(const std::vector<double>& solution);
     static geometry_msgs::Pose applyTransform(const geometry_msgs::PoseStamped& pose, const tf::StampedTransform transform);
     static geometry_msgs::Vector3 applyTransform(const geometry_msgs::Vector3& linear, const tf::StampedTransform transform);
 
