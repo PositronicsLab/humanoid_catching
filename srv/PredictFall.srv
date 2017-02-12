@@ -2,12 +2,17 @@ Header header
 geometry_msgs/Quaternion orientation
 geometry_msgs/Twist velocity
 geometry_msgs/Twist accel
-humanoid_catching/Link[] end_effectors
-humanoid_catching/Link[] links
+geometry_msgs/Pose[] end_effectors
+geometry_msgs/Twist[] end_effector_velocities
+humanoid_catching/Shape[] shapes
+geometry_msgs/Pose[] link_positions
+humanoid_catching/Shape[] link_shapes
+geometry_msgs/Twist[] link_velocities
 
 duration max_time
 duration step_size
 duration result_step_size
+bool visualize
 
 ---
 Header header
@@ -19,3 +24,4 @@ float64[] inertia_matrix
 float64 body_mass
 float64 radius
 float64 height
+
