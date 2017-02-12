@@ -156,6 +156,8 @@ private:
     //! All arm links
     std::vector<const robot_model::LinkModel*> allArmLinks;
 
+    //! Start index of the end effector links in the above list
+    unsigned int endEffectorStartIndex;
 public:
     CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
