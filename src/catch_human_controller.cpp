@@ -136,7 +136,6 @@ CatchHumanController::CatchHumanController() :
     }
 
     pnh.param<string>("base_frame", baseFrame, "/torso_lift_link");
-    pnh.param<string>("global_frame", globalFrame, "/odom_combined");
 
     if (!pnh.getParam("arm", arm))
     {
@@ -284,12 +283,6 @@ CatchHumanController::CatchHumanController() :
     ROS_DEBUG("Completed initializing the joint limits");
 
     calcArmLinks();
-
-    if (!tf.waitForTransform(baseFrame, globalFrame, ros::Time(0), ros::Duration(15)))
-    {
-        ROS_ERROR("Failed to lookup transform from %s to %s", globalFrame.c_str(), baseFrame.c_str());
-    }
-    tf.lookupTransform(baseFrame /* target */, globalFrame /* source */, ros::Time(0), goalToBaseTransform);
 
     jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1, ros::TransportHints(), &jointStateMessagesQueue));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanController::jointStatesCallback, this, _1));
@@ -707,7 +700,6 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
 void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
     ROS_DEBUG("Catch procedure initiated");
-    assert(imuData->header.frame_id == globalFrame);
 
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
@@ -733,6 +725,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     if (fallPoint != predictFallObj.response.points.end())
     {
         ROS_INFO("Robot is in contact. Executing balancing for arm %s", arm.c_str());
+
+        updateRavelinModel();
 
         humanoid_catching::CalculateTorques calcTorques;
         calcTorques.request.name = arm;
@@ -767,9 +761,6 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         // Get the list of joints in this group
         const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(arm);
-
-        // Set the joint poses into the ravelin model
-        updateRavelinModel();
 
         // Get the inertia matrix
         Ravelin::MatrixNd robotInertiaMatrix;
@@ -848,6 +839,9 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         }
         ROS_DEBUG("Fall predicted successfully for arm %s", arm.c_str());
 
+        tf::StampedTransform goalToTorsoTransform;
+        tf.lookupTransform(baseFrame, predictFallNoEE.response.header.frame_id, ros::Time(0), goalToTorsoTransform);
+
         // We now have a projected time/position path. Search the path for acceptable times.
         boost::optional<Solution> bestSolution;
 
@@ -867,10 +861,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             transformedPose.header.frame_id = baseFrame;
             transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
 
-            transformedPose.pose = applyTransform(basePose, goalToBaseTransform);
+            transformedPose.pose = applyTransform(basePose, goalToTorsoTransform);
             possibleSolution.targetPose = transformedPose;
 
-            possibleSolution.targetVelocity.twist.linear = applyTransform(i->velocity.linear, goalToBaseTransform);
+            possibleSolution.targetVelocity.twist.linear = applyTransform(i->velocity.linear, goalToTorsoTransform);
             possibleSolution.targetVelocity.header = transformedPose.header;
 
             possibleSolution.position.header = transformedPose.header;
