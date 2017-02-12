@@ -539,10 +539,6 @@ const vector<FallPoint>::const_iterator CatchHumanController::findContact(const 
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
-        if (i->time > contactTimeTolerance) {
-            break;
-        }
-
         // Search the links we consider the end effector
         for (unsigned int j = 0; j < i->contacts.size(); ++j) {
             if (i->contacts[j].is_in_contact)
@@ -719,7 +715,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     ROS_DEBUG("Predicting fall for arm %s", arm.c_str());
 
     humanoid_catching::PredictFall predictFallObj;
-    if (!predictFall(imuData, predictFallObj, MAX_DURATION))
+    if (!predictFall(imuData, predictFallObj, contactTimeTolerance))
     {
         ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
         return;
@@ -842,10 +838,20 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     }
     else
     {
+        // Repredict without any end effectors
+        ROS_DEBUG("Predicting fall without contact for arm %s", arm.c_str());
+        humanoid_catching::PredictFall predictFallNoEE;
+        if (!predictFall(imuData, predictFallNoEE, MAX_DURATION))
+        {
+            ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
+            return;
+        }
+        ROS_DEBUG("Fall predicted successfully for arm %s", arm.c_str());
+
         // We now have a projected time/position path. Search the path for acceptable times.
         boost::optional<Solution> bestSolution;
 
-        for (vector<FallPoint>::const_iterator i = predictFallObj.response.points.begin(); i != predictFallObj.response.points.end(); ++i)
+        for (vector<FallPoint>::const_iterator i = predictFallNoEE.response.points.begin(); i != predictFallNoEE.response.points.end(); ++i)
         {
             Solution possibleSolution;
 
@@ -854,12 +860,12 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             possibleSolution.time = i->time;
 
             geometry_msgs::PoseStamped basePose;
-            basePose.header = predictFallObj.response.header;
+            basePose.header = predictFallNoEE.response.header;
             basePose.pose = i->pose;
 
             geometry_msgs::PoseStamped transformedPose;
             transformedPose.header.frame_id = baseFrame;
-            transformedPose.header.stamp = predictFallObj.response.header.stamp;
+            transformedPose.header.stamp = predictFallNoEE.response.header.stamp;
 
             transformedPose.pose = applyTransform(basePose, goalToBaseTransform);
             possibleSolution.targetPose = transformedPose;
@@ -923,8 +929,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         command.target.position = bestSolution->position.point;
         command.target.orientation = computeOrientation(*bestSolution, eePose);
         command.point_at_target = false;
-        visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallObj.response.radius,
-                      predictFallObj.response.height);
+        visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallNoEE.response.radius,
+                      predictFallNoEE.response.height);
         armCommandPub.publish(command);
     }
 
