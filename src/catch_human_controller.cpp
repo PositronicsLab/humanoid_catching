@@ -39,10 +39,10 @@ static const double MAX_EFFORT = 100;
 
 //! Tolerance of time to be considered in contact
 static const double CONTACT_TIME_TOLERANCE_DEFAULT = 0.1;
-static const ros::Duration MAX_DURATION = ros::Duration(10.0);
+static const ros::Duration MAX_DURATION = ros::Duration(1.5);
 static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 
-static const ros::Duration SEARCH_RESOLUTION(0.05);
+static const ros::Duration SEARCH_RESOLUTION(0.025);
 static const double pi = boost::math::constants::pi<double>();
 
 #define ENABLE_EXECUTION_TIME_DEBUGGING 0
@@ -312,6 +312,7 @@ CatchHumanController::CatchHumanController() :
 
     calcArmLinks();
 
+    tf::TransformListener tf;
     if (!tf.waitForTransform(baseFrame, globalFrame, ros::Time(0), ros::Duration(15)))
     {
         ROS_ERROR("Failed to lookup transform from %s to %s", globalFrame.c_str(), baseFrame.c_str());
@@ -348,6 +349,9 @@ vector<string> CatchHumanController::getActiveJointModelNames(const robot_model:
     return activeJointModels;
 }
 #endif // ROS_VERSION_MINIMUM
+
+CatchHumanController::~CatchHumanController() {
+}
 
 void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg)
 {
@@ -525,17 +529,16 @@ double CatchHumanController::calcJointExecutionTime(const Limits& limits, const 
 ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution) const
 {
     double longestTime = 0.0;
+
+    // Take the read lock
+    boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
         const string& jointName = jointNames.at(i);
         const Limits& limits = jointLimits.at(jointName);
-
-        // Take the read lock
-        boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
-        double v0 = jointStates.at(jointName).velocity;
-        double signed_d = jointStates.at(jointName).position - solution[i];
-        lock.unlock();
-
+        const State& state = jointStates.at(jointName);
+        double v0 = state.velocity;
+        double signed_d = state.position - solution[i];
 #if (ENABLE_EXECUTION_TIME_DEBUGGING)
         ROS_DEBUG_NAMED("catch_human_action_server", "Distance to travel for joint %s is [%f]", jointName.c_str(), signed_d);
 #endif
@@ -546,6 +549,7 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
 #if (ENABLE_EXECUTION_TIME_DEBUGGING)
     ROS_DEBUG_NAMED("catch_human_action_server", "Execution time is %f", longestTime);
 #endif
+    lock.unlock();
     return ros::Duration(longestTime);
 }
 
@@ -649,16 +653,14 @@ void CatchHumanController::updateRavelinModel()
 
 void CatchHumanController::calcArmLinks()
 {
+    ROS_INFO("Calculating arm links");
+
     // Use a stack to obtain a depth first search. We want to be able to label all links below the end effector
     stack<const robot_model::LinkModel*> searchLinks;
     set<const robot_model::LinkModel*> uniqueLinks;
 
-    const vector<const robot_model::LinkModel*>& links = kinematicModel->getJointModelGroup(arm)->getLinkModels();
-    for (int i = links.size() - 1; i >= 0; --i)
-    {
-        ROS_DEBUG("Adding parent link %s", links[i]->getName().c_str());
-        searchLinks.push(links[i]);
-    }
+    ROS_INFO("Adding parent link %s", kinematicModel->getJointModelGroup(arm)->getLinkModels().back()->getName().c_str());
+    searchLinks.push(kinematicModel->getJointModelGroup(arm)->getLinkModels().back());
 
     while(!searchLinks.empty())
     {
@@ -671,21 +673,16 @@ void CatchHumanController::calcArmLinks()
         }
 
         allArmLinks.push_back(link);
-        ROS_DEBUG("Added link %s", link->getName().c_str());
+        ROS_INFO("Added link %s", link->getName().c_str());
 
         // Now recurse over children
         for (unsigned int j = 0; j < link->getChildJointModels().size(); ++j)
         {
-            ROS_DEBUG("Adding child link %s from joint %s", link->getChildJointModels()[j]->getChildLinkModel()->getName().c_str(),
+            ROS_INFO("Adding child link %s from joint %s", link->getChildJointModels()[j]->getChildLinkModel()->getName().c_str(),
                       link->getChildJointModels()[j]->getName().c_str());
 
             searchLinks.push(link->getChildJointModels()[j]->getChildLinkModel());
         }
-    }
-
-    for (vector<const robot_model::LinkModel*>::const_iterator i = allArmLinks.begin(); i != allArmLinks.end(); ++i)
-    {
-        ROS_DEBUG("Final link order %s", (*i)->getName().c_str());
     }
 }
 
@@ -708,9 +705,15 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
 
     const vector<robot_state::LinkState*>& linkStates = planningScene->getPlanningScene()->getCurrentState().getLinkStateVector();
+
+    // Reserve capacity so push_back doesn't allocate
+    predictFall.request.end_effectors.reserve(allArmLinks.size());
+    predictFall.request.links.reserve(linkStates.size() - allArmLinks.size());
+
     for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i) {
         Link link;
         const Eigen::Affine3d eigenPose = (*i)->getGlobalLinkTransform();
+
         tf::poseEigenToMsg(eigenPose, link.pose.pose);
 
         ROS_DEBUG("%s position in global frame (%f %f %f)", (*i)->getLinkModel()->getName().c_str(), link.pose.pose.position.x, link.pose.pose.position.y, link.pose.pose.position.z);
@@ -720,12 +723,6 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
 
         link.shape.type = Shape::BOX;
         const Eigen::Vector3d& extents = (*i)->getLinkModel()->getShapeExtentsAtOrigin();
-        ROS_DEBUG("Extents of shape %s: %f %f %f", (*i)->getName().c_str(), extents.x(), extents.y(), extents.z());
-
-        if (extents.x() <= 0.0 || extents.y() <= 0.0 || extents.z() <= 0.0) {
-            ROS_DEBUG("Skipping zero dimension link %s", (*i)->getName().c_str());
-            continue;
-        }
 
         link.shape.dimensions.resize(3);
         link.shape.dimensions[0] = extents.x();
@@ -751,7 +748,6 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
 
 void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
-
     ROS_DEBUG("Catch procedure initiated");
     assert(imuData->header.frame_id == globalFrame);
 

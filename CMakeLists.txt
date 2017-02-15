@@ -34,6 +34,7 @@ find_package(Moby REQUIRED)
 find_package(QPOASES REQUIRED)
 find_package(LibXml2 REQUIRED)
 find_package(BLAS REQUIRED)
+find_package(Gperftools)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed

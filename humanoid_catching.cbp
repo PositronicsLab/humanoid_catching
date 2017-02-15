@@ -66,6 +66,8 @@
 		<Unit filename="msg/Contact.msg" />
 		<Unit filename="msg/FallPoint.msg" />
 		<Unit filename="msg/Limit.msg" />
+		<Unit filename="msg/Link.msg" />
+		<Unit filename="msg/Shape.msg" />
 		<Unit filename="package.xml" />
 		<Unit filename="run_scenario.sh" />
 		<Unit filename="rviz/display.rviz" />

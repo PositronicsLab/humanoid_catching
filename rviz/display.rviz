@@ -6,9 +6,6 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Predicted Path Left1
-        - /IK Cache1
-        - /IMU1
         - /Goal Trials1
         - /Initial Pose1
         - /Initial Velocity1
@@ -66,6 +63,8 @@ Visualization Manager:
       Marker Topic: /fall_predictor_left/projected_path
       Name: Predicted Path Left
       Namespaces:
+        end_effectors: true
+        end_effectors_text: true
         pole: true
       Queue Size: 1000
       Value: true
@@ -159,11 +158,6 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        double_stereo_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
         fl_caster_l_wheel_link:
           Alpha: 1
           Show Axes: false
@@ -194,38 +188,6 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        head_mount_kinect_ir_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        head_mount_kinect_ir_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        head_mount_kinect_rgb_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        head_mount_kinect_rgb_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        head_mount_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        head_mount_prosilica_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        head_mount_prosilica_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
         head_pan_link:
           Alpha: 1
           Show Axes: false
@@ -241,14 +203,6 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        high_def_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        high_def_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
         imu_link:
           Alpha: 1
           Show Axes: false
@@ -258,14 +212,6 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        l_forearm_cam_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        l_forearm_cam_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
         l_forearm_link:
           Alpha: 1
           Show Axes: false
@@ -360,60 +306,11 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        laser_tilt_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        laser_tilt_mount_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        narrow_stereo_l_stereo_camera_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        narrow_stereo_l_stereo_camera_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        narrow_stereo_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        narrow_stereo_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        narrow_stereo_r_stereo_camera_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        narrow_stereo_r_stereo_camera_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        projector_wg6802418_child_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        projector_wg6802418_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
         r_elbow_flex_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        r_forearm_cam_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        r_forearm_cam_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
         r_forearm_link:
           Alpha: 1
           Show Axes: false
@@ -508,41 +405,12 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        sensor_mount_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
         torso_lift_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
         torso_lift_motor_screw_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wide_stereo_l_stereo_camera_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wide_stereo_l_stereo_camera_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wide_stereo_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wide_stereo_optical_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wide_stereo_r_stereo_camera_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wide_stereo_r_stereo_camera_optical_frame:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -687,17 +555,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 4.29544
+      Distance: 4.17262
       Focal Point:
         X: 0
         Y: 0
         Z: 0
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.109796
+      Pitch: 0.354795
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.830994
+      Yaw: 0.340986
     Saved: ~
 Window Geometry:
   Displays:

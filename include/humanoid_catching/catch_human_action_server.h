@@ -26,6 +26,7 @@
 #include <kinematics_cache/kinematics_cache.h>
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Header.h>
+#include <map>
 
 typedef std::vector<kinematics_cache::IKv2> IKList;
 
@@ -86,9 +87,6 @@ private:
 
     //! Arm client
     ros::Publisher armCommandPub;
-
-    //! TF listener
-    tf::TransformListener tf;
 
     //! Visualization of goals
     ros::Publisher goalPub;
@@ -163,6 +161,7 @@ private:
     std::vector<const robot_model::LinkModel*> allArmLinks;
 public:
     CatchHumanController();
+    ~CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
 

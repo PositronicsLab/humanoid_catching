@@ -218,9 +218,14 @@ struct SimulationState {
                 dJointID c = dJointCreateContact(world, contactgroup, &contact[i]);
                 dJointAttach(c, b1, b2);
 
+                // Check if either contact is the humanoid
+                if (b1 != humanoid.body && b2 != humanoid.body) {
+                    continue;
+                }
+
                 // Determine if this contact should be saved
                 int which = whichEndEffector(b1, b2);
-                if ((b1 == humanoid.body || b2 == humanoid.body) && which != -1)
+                if (which != -1)
                 {
                     assert(firstObj == humanoid.geom && secondObj == endEffectors[which].geom
                            && firstObj == contact[i].geom.g1 && secondObj == contact[i].geom.g2);
@@ -439,7 +444,7 @@ private:
 
             text.scale.x = 1.0;
             text.scale.y = 1.0;
-            text.scale.z = 0.1;
+            text.scale.z = 0.05;
             text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
             text.pose = ees[i];
             text.text = names[i];
@@ -642,8 +647,8 @@ private:
     bool predict(humanoid_catching::PredictFall::Request& req,
                  humanoid_catching::PredictFall::Response& res)
     {
-
-        ROS_INFO("Predicting fall in frame %s for %lu links", req.header.frame_id.c_str(), req.end_effectors.size());
+        ROS_INFO("Predicting fall in frame %s for %lu end effector links and %lu collision links",
+                 req.header.frame_id.c_str(), req.end_effectors.size(), req.links.size());
 
         res.header = req.header;
 
@@ -755,6 +760,7 @@ private:
         // Publish the path
         if (fallVizPub.getNumSubscribers() > 0)
         {
+            ROS_INFO("Publishing path visualization");
             vector<geometry_msgs::Pose> points;
             for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i)
             {
@@ -765,6 +771,7 @@ private:
 
         if (contactVizPub.getNumSubscribers() > 0)
         {
+            ROS_INFO("Publishing contact visualization");
             for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i)
             {
                 publishContacts(i->contacts, res.header.frame_id);
@@ -772,6 +779,7 @@ private:
         }
 
         if (fallVizPub.getNumSubscribers() > 0){
+            ROS_INFO("Publishing link visualization");
             vector<geometry_msgs::Pose> eePoses;
             vector<vector<double> > eeSizes;
             vector<bool> isEE;
