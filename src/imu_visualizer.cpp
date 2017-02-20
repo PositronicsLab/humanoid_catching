@@ -63,14 +63,6 @@ private:
         imu.linear_acceleration = data->linear_acceleration;
         imu.angular_velocity = data->angular_velocity;
 
-        // Print out the roll pitch yaw values
-        tf::Quaternion q;
-        tf::quaternionMsgToTF(imu.orientation, q);
-        tf::Matrix3x3 m(q);
-        double roll, pitch, yaw;
-        m.getRPY(roll, pitch, yaw);
-        ROS_INFO("RPY: [%f] [%f] [%f]", roll, pitch, yaw);
-
         if (poseVizPub.getNumSubscribers() > 0) {
             visualizePose(imu.header, imu.orientation);
         }
