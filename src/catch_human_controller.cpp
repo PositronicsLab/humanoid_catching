@@ -942,7 +942,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         if (!bestSolution)
         {
-            ROS_WARN("No possible catch positions for arm [%s]", arm.c_str());
+            ROS_WARN("No possible catch positions for arm [%s]. Sending zero torques", arm.c_str());
+            vector<double> zeroTorques;
+            zeroTorques.resize(7);
+            sendTorques(zeroTorques);
             return;
         }
 

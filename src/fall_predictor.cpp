@@ -232,6 +232,7 @@ struct SimulationState {
 
                     // Only save one contact per end effector
                     eeContacts[which] = contact[i].geom;
+                    ROS_DEBUG("Contact between human and %s", endEffectors[i].name.c_str());
                 }
             }
         }
