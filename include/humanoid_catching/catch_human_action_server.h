@@ -76,6 +76,9 @@ private:
     //! Cached fall prediction client
     ros::ServiceClient fallPredictor;
 
+    //! Cached last sensor reading
+    sensor_msgs::ImuConstPtr cachedImuData;
+
     //! IK Cache
     std::auto_ptr<kinematics_cache::KinematicsCache> ik;
 
@@ -187,7 +190,7 @@ private:
 
     const std::vector<humanoid_catching::FallPoint>::const_iterator findContact(const humanoid_catching::PredictFall::Response& fall) const;
 
-    bool linkPosition(const std::string& linkName, geometry_msgs::PoseStamped& pose) const;
+    bool linkPosition(const std::string& linkName, geometry_msgs::PoseStamped& pose, const robot_state::RobotState& currentRobotState) const;
 
     void visualizeEEVelocity(const std::vector<double>& eeVelocity);
 

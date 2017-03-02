@@ -140,8 +140,7 @@ CatchHumanController::CatchHumanController() :
 
     // Configure the planning scene
     planningScene->startStateMonitor();
-    planningScene->startSceneMonitor();
-    planningScene->startWorldGeometryMonitor();
+    planningScene->setStateUpdateFrequency(100); // 100hz
 
     // Configure the fall prediction service
     string fallPredictorService;
@@ -362,11 +361,16 @@ void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingM
 
     // Unsubscribe from further fall notifications
     humanFallSub->unsubscribe();
+
+    if (cachedImuData.get() != NULL) {
+        imuDataDetected(cachedImuData);
+    }
 }
 
 void CatchHumanController::imuDataDetected(const sensor_msgs::ImuConstPtr& imuData)
 {
     ROS_DEBUG("Human IMU data received at @ %f", imuData->header.stamp.toSec());
+    cachedImuData = imuData;
     if (active)
     {
         execute(imuData);
@@ -572,9 +576,8 @@ const vector<FallPoint>::const_iterator CatchHumanController::findContact(const 
     return fall.points.end();
 }
 
-bool CatchHumanController::linkPosition(const string& link, geometry_msgs::PoseStamped& pose) const
+bool CatchHumanController::linkPosition(const string& link, geometry_msgs::PoseStamped& pose, const robot_state::RobotState& currentRobotState) const
 {
-    robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
     robot_state::LinkState* linkState = currentRobotState.getLinkState(link);
     if (linkState == NULL)
     {
@@ -704,38 +707,42 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.step_size = STEP_SIZE;
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
 
-    const vector<robot_state::LinkState*>& linkStates = planningScene->getPlanningScene()->getCurrentState().getLinkStateVector();
+    // Lock scope
+    {
+        planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
+        const vector<robot_state::LinkState*>& linkStates = planningSceneLock->getCurrentState().getLinkStateVector();
 
-    // Reserve capacity so push_back doesn't allocate
-    predictFall.request.end_effectors.reserve(allArmLinks.size());
-    predictFall.request.links.reserve(linkStates.size() - allArmLinks.size());
+        // Reserve capacity so push_back doesn't allocate
+        predictFall.request.end_effectors.reserve(allArmLinks.size());
+        predictFall.request.links.reserve(linkStates.size() - allArmLinks.size());
 
-    for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i) {
-        Link link;
-        const Eigen::Affine3d eigenPose = (*i)->getGlobalLinkTransform();
+        for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i) {
+            Link link;
+            const Eigen::Affine3d eigenPose = (*i)->getGlobalLinkTransform();
 
-        tf::poseEigenToMsg(eigenPose, link.pose.pose);
+            tf::poseEigenToMsg(eigenPose, link.pose.pose);
 
-        ROS_DEBUG("%s position in global frame (%f %f %f)", (*i)->getLinkModel()->getName().c_str(), link.pose.pose.position.x, link.pose.pose.position.y, link.pose.pose.position.z);
+            ROS_DEBUG("%s position in global frame (%f %f %f)", (*i)->getLinkModel()->getName().c_str(), link.pose.pose.position.x, link.pose.pose.position.y, link.pose.pose.position.z);
 
-        link.pose.header.stamp = imuData->header.stamp;
-        link.pose.header.frame_id = globalFrame;
+            link.pose.header.stamp = imuData->header.stamp;
+            link.pose.header.frame_id = globalFrame;
 
-        link.shape.type = Shape::BOX;
-        const Eigen::Vector3d& extents = (*i)->getLinkModel()->getShapeExtentsAtOrigin();
+            link.shape.type = Shape::BOX;
+            const Eigen::Vector3d& extents = (*i)->getLinkModel()->getShapeExtentsAtOrigin();
 
-        link.shape.dimensions.resize(3);
-        link.shape.dimensions[0] = extents.x();
-        link.shape.dimensions[1] = extents.y();
-        link.shape.dimensions[2] = extents.z();
-        link.name = (*i)->getLinkModel()->getName();
+            link.shape.dimensions.resize(3);
+            link.shape.dimensions[0] = extents.x();
+            link.shape.dimensions[1] = extents.y();
+            link.shape.dimensions[2] = extents.z();
+            link.name = (*i)->getLinkModel()->getName();
 
-        // Decide whether to add it to end effectors or collisions
-        if (find_if(allArmLinks.begin(), allArmLinks.end(), ModelsMatch((*i)->getLinkModel())) != allArmLinks.end()) {
-            predictFall.request.end_effectors.push_back(link);
-        }
-        else {
-            predictFall.request.links.push_back(link);
+            // Decide whether to add it to end effectors or collisions
+            if (find_if(allArmLinks.begin(), allArmLinks.end(), ModelsMatch((*i)->getLinkModel())) != allArmLinks.end()) {
+                predictFall.request.end_effectors.push_back(link);
+            }
+            else {
+                predictFall.request.links.push_back(link);
+            }
         }
     }
 
@@ -753,6 +760,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
+    ROS_DEBUG("Planning scene is from %f", planningScene->getLastUpdateTime().toSec());
 
     ROS_DEBUG("Predicting fall for arm %s", arm.c_str());
 
@@ -770,6 +778,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
     // Determine whether to execute balancing.
     const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response);
+
 
     // Determine if the robot is currently in contact
     if (fallPoint != predictFallObj.response.points.end())
@@ -826,14 +835,17 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         calcTorques.request.robot_inertia_matrix = vector<double>(armMatrix.data(), armMatrix.data() + armMatrix.size());
 
         // Get the jacobian
-        robot_state::RobotState currentRobotState = planningScene->getPlanningScene()->getCurrentState();
+        Eigen::MatrixXd jacobian;
+        { // Lock scope
+            planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
+            const robot_state::RobotState& currentRobotState = planningSceneLock->getCurrentState();
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)
-        Eigen::MatrixXd jacobian = currentRobotState.getJacobian(jointModelGroup);
+            jacobian = currentRobotState.getJacobian(jointModelGroup);
 #else
-        Eigen::MatrixXd jacobian;
-        currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getLinkModelNames().back(), Eigen::Vector3d(0, 0, 0), jacobian);
+            currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(jointModelGroup->getLinkModelNames().back(), Eigen::Vector3d(0, 0, 0), jacobian);
 #endif
+        }
 
         // Set current velocities
         calcTorques.request.joint_velocity.resize(jointNames.size());
@@ -958,9 +970,13 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         ROS_DEBUG("Calculating ee_pose for link %s", kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back().c_str());
         geometry_msgs::PoseStamped eePose;
-        if (!linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), eePose))
-        {
-            ROS_WARN("Failed to find ee pose. Using default.");
+
+        { // lock scope
+            planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
+            if (!linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), eePose, planningSceneLock->getCurrentState()))
+            {
+                ROS_WARN("Failed to find ee pose. Using default.");
+            }
         }
 
         // Convert to baseFrame
