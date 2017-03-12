@@ -33,14 +33,13 @@
 			<Add option="-fexceptions" />
 		</Compiler>
 		<Unit filename="CMakeLists.txt" />
+		<Unit filename="CMakeModules/FindGperftools.cmake" />
 		<Unit filename="CMakeModules/FindMoby.cmake" />
 		<Unit filename="CMakeModules/FindQPOASES.cmake" />
 		<Unit filename="CMakeModules/FindRavelin.cmake" />
 		<Unit filename="LICENSE" />
 		<Unit filename="README.md" />
 		<Unit filename="TODO" />
-		<Unit filename="action/CatchHuman.action" />
-		<Unit filename="action/MoveArmFast.action" />
 		<Unit filename="bags/fall1.bag" />
 		<Unit filename="bags/fall2.bag" />
 		<Unit filename="bags/fall3.bag" />
@@ -80,6 +79,7 @@
 		<Unit filename="src/imu_filter.cpp" />
 		<Unit filename="src/imu_visualizer.cpp" />
 		<Unit filename="src/on_ground_detector.cpp" />
+		<Unit filename="src/ros_bag_recorder.cpp" />
 		<Unit filename="srv/CalculateTorques.srv" />
 		<Unit filename="srv/PredictFall.srv" />
 		<Unit filename="test/test_catch_human_action_server.cpp" />

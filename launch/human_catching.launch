@@ -35,7 +35,7 @@
 
   <node pkg="humanoid_catching" type="balancer" name="balancer_left"/>
   <node pkg="humanoid_catching" type="balancer" name="balancer_right"/>
-
+  
   <node pkg="humanoid_catching" type="on_ground_detector" name="on_ground_detector" output="screen">
     <remap to="/human/imu_filtered" from="/in" />
   </node>
