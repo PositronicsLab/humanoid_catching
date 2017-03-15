@@ -148,7 +148,7 @@ CatchHumanController::CatchHumanController() :
     {
         ROS_ERROR("fall_predictor must be specified");
     }
-    ROS_INFO("Waiting for %s service", fallPredictorService.c_str());
+    ROS_DEBUG("Waiting for %s service", fallPredictorService.c_str());
     ros::service::waitForService(fallPredictorService);
     fallPredictor = nh.serviceClient<humanoid_catching::PredictFall>(fallPredictorService, true /* persistent */);
 
@@ -200,12 +200,12 @@ CatchHumanController::CatchHumanController() :
     {
         ROS_ERROR("balancer must be specified");
     }
-    ROS_INFO("Waiting for %s service", balancerService.c_str());
+    ROS_DEBUG("Waiting for %s service", balancerService.c_str());
     ros::service::waitForService(balancerService);
     balancer = nh.serviceClient<humanoid_catching::CalculateTorques>(balancerService, true /* persistent */);
 
     // Initialize arm clients
-    ROS_INFO("Initializing arm command publisher");
+    ROS_DEBUG("Initializing arm command publisher");
     armCommandPub = nh.advertise<operational_space_controllers_msgs::Move>(armCommandTopic, 1, false);
 
     // Initialize visualization publishers
@@ -215,12 +215,15 @@ CatchHumanController::CatchHumanController() :
     trialGoalPub = pnh.advertise<geometry_msgs::PointStamped>("movement_goal_trials", 1);
     eeVelocityVizPub = pnh.advertise<geometry_msgs::WrenchStamped>("ee_velocity", 1);
 
+    ros::SubscriberStatusCallback connectCB = boost::bind(&CatchHumanController::publishIkCache, this);
+    ikCachePub = pnh.advertise<visualization_msgs::MarkerArray>("ik_cache", 1, connectCB);
+
     rdf_loader::RDFLoader rdfLoader;
     const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
     const boost::shared_ptr<urdf::ModelInterface>& urdfModel = rdfLoader.getURDF();
 
     kinematicModel.reset(new robot_model::RobotModel(urdfModel, srdf));
-    ROS_INFO("Robot model initialized successfully");
+    ROS_DEBUG("Robot model initialized successfully");
 
     string urdfLocation;
     pnh.param<string>("urdf", urdfLocation, "pr2.urdf");
@@ -350,6 +353,46 @@ vector<string> CatchHumanController::getActiveJointModelNames(const robot_model:
 #endif // ROS_VERSION_MINIMUM
 
 CatchHumanController::~CatchHumanController() {
+}
+
+void CatchHumanController::publishIkCache() {
+
+    if (ikCachePub.getNumSubscribers() <= 0) {
+        return;
+    }
+
+    ROS_DEBUG("Publishing the IK cache");
+
+    IKList results;
+    if (!ik->list(results))
+    {
+        ROS_WARN("Failed to find load ik cache for vizualization for arm [%s]", arm.c_str());
+        return;
+    }
+
+    ROS_DEBUG("Publishing markers");
+    unsigned int i = 0;
+    visualization_msgs::MarkerArray markers;
+    for (IKList::iterator j = results.begin(); j != results.end(); ++j)
+    {
+        visualization_msgs::Marker marker;
+        marker.header.stamp = ros::Time::now();
+        marker.header.frame_id = baseFrame;
+        marker.id = ++i;
+        marker.action = visualization_msgs::Marker::ADD;
+        marker.color.r = 0.0f;
+        marker.color.g = 1.0f;
+        marker.color.b = 0.0f;
+        marker.color.a = 1.0;
+        marker.type = visualization_msgs::Marker::CUBE;
+        marker.scale.x = marker.scale.y = marker.scale.z = 0.02;
+        marker.pose.position = j->point.point;
+        marker.pose.orientation.w = 1.0;
+        markers.markers.push_back(marker);
+    }
+    ikCachePub.publish(markers);
+
+    ROS_DEBUG("Completed publishing markers");
 }
 
 void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingMsg)
@@ -656,13 +699,13 @@ void CatchHumanController::updateRavelinModel()
 
 void CatchHumanController::calcArmLinks()
 {
-    ROS_INFO("Calculating arm links");
+    ROS_DEBUG("Calculating arm links");
 
     // Use a stack to obtain a depth first search. We want to be able to label all links below the end effector
     stack<const robot_model::LinkModel*> searchLinks;
     set<const robot_model::LinkModel*> uniqueLinks;
 
-    ROS_INFO("Adding parent link %s", kinematicModel->getJointModelGroup(arm)->getLinkModels().back()->getName().c_str());
+    ROS_DEBUG("Adding parent link %s", kinematicModel->getJointModelGroup(arm)->getLinkModels().back()->getName().c_str());
     searchLinks.push(kinematicModel->getJointModelGroup(arm)->getLinkModels().back());
 
     while(!searchLinks.empty())
@@ -676,12 +719,12 @@ void CatchHumanController::calcArmLinks()
         }
 
         allArmLinks.push_back(link);
-        ROS_INFO("Added link %s", link->getName().c_str());
+        ROS_DEBUG("Added link %s", link->getName().c_str());
 
         // Now recurse over children
         for (unsigned int j = 0; j < link->getChildJointModels().size(); ++j)
         {
-            ROS_INFO("Adding child link %s from joint %s", link->getChildJointModels()[j]->getChildLinkModel()->getName().c_str(),
+            ROS_DEBUG("Adding child link %s from joint %s", link->getChildJointModels()[j]->getChildLinkModel()->getName().c_str(),
                       link->getChildJointModels()[j]->getName().c_str());
 
             searchLinks.push(link->getChildJointModels()[j]->getChildLinkModel());

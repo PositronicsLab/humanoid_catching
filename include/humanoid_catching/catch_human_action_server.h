@@ -91,6 +91,9 @@ private:
     //! Arm client
     ros::Publisher armCommandPub;
 
+    //! Visualization of kinematic cache state for end effectors
+    ros::Publisher ikCachePub;
+
     //! Visualization of goals
     ros::Publisher goalPub;
 
@@ -167,6 +170,8 @@ public:
     ~CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
+
+    void publishIkCache();
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)
     // Method not required
