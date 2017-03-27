@@ -851,7 +851,6 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
                          fallPoint->contacts[i].normal.y,
                          fallPoint->contacts[i].normal.z);
 
-                calcTorques.request.contact_position = fallPoint->contacts[i].position;
                 calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
                 contactFound = true;
                 break;

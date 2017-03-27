@@ -204,6 +204,12 @@ target_link_libraries(imu_filter
    ${catkin_LIBRARIES}
 )
 
+add_executable(imu_gaussian_noise src/imu_gaussian_noise.cpp)
+add_dependencies(imu_gaussian_noise ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(imu_gaussian_noise
+   ${catkin_LIBRARIES}
+)
+
 if(CATKIN_ENABLE_TESTING)
     catkin_add_gtest(test_catch_human_controller test/test_catch_human_controller.cpp src/catch_human_controller.cpp)
     set_target_properties(test_catch_human_controller PROPERTIES COMPILE_FLAGS -DENABLE_TESTING)

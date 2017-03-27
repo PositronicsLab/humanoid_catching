@@ -47,17 +47,17 @@ private:
     void imuCallback(sensor_msgs::ImuConstPtr data)
     {
         // Copy over all fields
-        sensor_msgs::Imu output = *data;
+        sensor_msgs::ImuPtr output(new sensor_msgs::Imu(*data));
 
-        ROS_DEBUG("Unfiltered angular velocity [%f] [%f] [%f]", output.angular_velocity.x, output.angular_velocity.y, output.angular_velocity.z);
+        ROS_DEBUG("Unfiltered angular velocity [%f] [%f] [%f]", output->angular_velocity.x, output->angular_velocity.y, output->angular_velocity.z);
 
         // Update angular velocity
-        output.angular_velocity.x = z[0] = output.angular_velocity.x * A0 + z[0] * B1;
-        output.angular_velocity.y = z[1] = output.angular_velocity.x * A0 + z[1] * B1;
-        output.angular_velocity.z = z[2] = output.angular_velocity.x * A0 + z[2] * B1;
+        output->angular_velocity.x = z[0] = output->angular_velocity.x * A0 + z[0] * B1;
+        output->angular_velocity.y = z[1] = output->angular_velocity.x * A0 + z[1] * B1;
+        output->angular_velocity.z = z[2] = output->angular_velocity.x * A0 + z[2] * B1;
 
-        ROS_DEBUG("Filtered angular velocity [%f] [%f] [%f]", output.angular_velocity.x, output.angular_velocity.y, output.angular_velocity.z);
-        filteredPub.publish(data);
+        ROS_DEBUG("Filtered angular velocity [%f] [%f] [%f]", output->angular_velocity.x, output->angular_velocity.y, output->angular_velocity.z);
+        filteredPub.publish(output);
     }
 };
 }

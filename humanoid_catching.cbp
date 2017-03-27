@@ -77,6 +77,7 @@
 		<Unit filename="src/fall_starter.cpp" />
 		<Unit filename="src/fall_stats_recorder.cpp" />
 		<Unit filename="src/imu_filter.cpp" />
+		<Unit filename="src/imu_gaussian_noise.cpp" />
 		<Unit filename="src/imu_visualizer.cpp" />
 		<Unit filename="src/on_ground_detector.cpp" />
 		<Unit filename="src/ros_bag_recorder.cpp" />
