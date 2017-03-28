@@ -97,6 +97,9 @@ private:
     //! Visualization of goals
     ros::Publisher goalPub;
 
+    //! Visualization of goals as points
+    ros::Publisher goalPointPub;
+
     //! Visualization of velocities
     ros::Publisher eeVelocityVizPub;
 

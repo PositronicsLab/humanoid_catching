@@ -210,6 +210,7 @@ CatchHumanController::CatchHumanController() :
 
     // Initialize visualization publishers
     goalPub = pnh.advertise<geometry_msgs::PoseStamped>("movement_goal", 10, true);
+    goalPointPub = pnh.advertise<geometry_msgs::PointStamped>("movement_goal_point", 10, true);
     targetPosePub = pnh.advertise<geometry_msgs::PoseStamped>("target_pose", 1);
     targetVelocityPub = pnh.advertise<visualization_msgs::Marker>("target_velocity", 1);
     trialGoalPub = pnh.advertise<geometry_msgs::PointStamped>("movement_goal_trials", 1);
@@ -352,12 +353,15 @@ vector<string> CatchHumanController::getActiveJointModelNames(const robot_model:
 }
 #endif // ROS_VERSION_MINIMUM
 
-CatchHumanController::~CatchHumanController() {
+CatchHumanController::~CatchHumanController()
+{
 }
 
-void CatchHumanController::publishIkCache() {
+void CatchHumanController::publishIkCache()
+{
 
-    if (ikCachePub.getNumSubscribers() <= 0) {
+    if (ikCachePub.getNumSubscribers() <= 0)
+    {
         return;
     }
 
@@ -405,7 +409,8 @@ void CatchHumanController::fallDetected(const std_msgs::HeaderConstPtr& fallingM
     // Unsubscribe from further fall notifications
     humanFallSub->unsubscribe();
 
-    if (cachedImuData.get() != NULL) {
+    if (cachedImuData.get() != NULL)
+    {
         imuDataDetected(cachedImuData);
     }
 }
@@ -449,6 +454,15 @@ void CatchHumanController::visualizeGoal(const geometry_msgs::Pose& goal, const 
         pose.pose = goal;
         goalPub.publish(pose);
     }
+
+    if (goalPointPub.getNumSubscribers() > 0)
+    {
+        geometry_msgs::PointStamped point;
+        point.header = header;
+        point.point = goal.position;
+        goalPointPub.publish(point);
+    }
+
     if (targetPosePub.getNumSubscribers() > 0)
     {
         targetPosePub.publish(targetPose);
@@ -604,7 +618,8 @@ const vector<FallPoint>::const_iterator CatchHumanController::findContact(const 
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
-        if (i->time > contactTimeTolerance) {
+        if (i->time > contactTimeTolerance)
+        {
             break;
         }
 
@@ -734,10 +749,13 @@ void CatchHumanController::calcArmLinks()
 
 struct ModelsMatch
 {
-  explicit ModelsMatch(const robot_model::LinkModel* a) : b(a) {}
-  inline bool operator()(const robot_model::LinkModel* m) const { return m->getName() == b->getName(); }
+    explicit ModelsMatch(const robot_model::LinkModel* a) : b(a) {}
+    inline bool operator()(const robot_model::LinkModel* m) const
+    {
+        return m->getName() == b->getName();
+    }
 private:
-  const robot_model::LinkModel* b;
+    const robot_model::LinkModel* b;
 };
 
 bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration)
@@ -759,7 +777,8 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
         predictFall.request.end_effectors.reserve(allArmLinks.size());
         predictFall.request.links.reserve(linkStates.size() - allArmLinks.size());
 
-        for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i) {
+        for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i)
+        {
             Link link;
             const Eigen::Affine3d eigenPose = (*i)->getGlobalLinkTransform();
 
@@ -780,10 +799,12 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
             link.name = (*i)->getLinkModel()->getName();
 
             // Decide whether to add it to end effectors or collisions
-            if (find_if(allArmLinks.begin(), allArmLinks.end(), ModelsMatch((*i)->getLinkModel())) != allArmLinks.end()) {
+            if (find_if(allArmLinks.begin(), allArmLinks.end(), ModelsMatch((*i)->getLinkModel())) != allArmLinks.end())
+            {
                 predictFall.request.end_effectors.push_back(link);
             }
-            else {
+            else
+            {
                 predictFall.request.links.push_back(link);
             }
         }
@@ -878,7 +899,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         // Get the jacobian
         Eigen::MatrixXd jacobian;
-        { // Lock scope
+        {
+            // Lock scope
             planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
             const robot_state::RobotState& currentRobotState = planningSceneLock->getCurrentState();
 
@@ -1013,7 +1035,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         ROS_DEBUG("Calculating ee_pose for link %s", kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back().c_str());
         geometry_msgs::PoseStamped eePose;
 
-        { // lock scope
+        {
+            // lock scope
             planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
             if (!linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), eePose, planningSceneLock->getCurrentState()))
             {
