@@ -11,6 +11,10 @@ using namespace std;
 using namespace geometry_msgs;
 using namespace std_msgs;
 
+static const double BASE_X_DEFAULT = 0.4;
+static const double BASE_Y_DEFAULT = 0;
+static const double BASE_Z_DEFAULT = 0;
+
 class ImuVisualizer
 {
 private:
@@ -32,7 +36,7 @@ public:
     ImuVisualizer() :
         pnh("~")
     {
-        imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
+        imuSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/human/imu", 1));
         imuSub->registerCallback(boost::bind(&ImuVisualizer::imuCallback, this, _1));
 
         poseVizPub = nh.advertise<geometry_msgs::PoseStamped>("imu/pose", 1);
@@ -44,6 +48,9 @@ private:
     void visualizePose(const Header& header, const Quaternion& orientation) {
         PoseStamped poseStamped;
         poseStamped.pose.orientation = orientation;
+        poseStamped.pose.position.x = BASE_X_DEFAULT;
+        poseStamped.pose.position.y = BASE_Y_DEFAULT;
+        poseStamped.pose.position.z = BASE_Z_DEFAULT;
         poseStamped.header = header;
         poseVizPub.publish(poseStamped);
     }

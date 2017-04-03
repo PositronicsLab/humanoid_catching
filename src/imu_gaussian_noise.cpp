@@ -52,7 +52,7 @@ private:
         // Copy over all fields
         sensor_msgs::ImuPtr output(new sensor_msgs::Imu(*data));
 
-        // Compute random xyz
+        // Compute random noise on xyz velocity
         boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > randNormal(engine, dist);
 
         double x = randNormal();
@@ -63,6 +63,17 @@ private:
         output->angular_velocity.x += x;
         output->angular_velocity.y += y;
         output->angular_velocity.z += z;
+
+        // Compute random noise on position
+        double r = randNormal() / 20.0;
+        double p = randNormal() / 20.0;
+        double yaw = randNormal() / 20.0;
+        ROS_INFO("Generated random parameters for r [%f], p [%f], yaw [%f]", r, p, yaw);
+
+        tf::Quaternion update = tf::createQuaternionFromRPY(r, p, yaw);
+        tf::Quaternion curr;
+        tf::quaternionMsgToTF(data->orientation, curr);
+        tf::quaternionTFToMsg((curr + update).normalized(), output->orientation);
 
         filteredPub.publish(output);
     }
