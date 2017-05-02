@@ -91,6 +91,18 @@ struct SimulationState {
         return -1;
     }
 
+    int whichLink(const dBodyID b1, const dBodyID b2) const
+    {
+        for (unsigned int i = 0; i < links.size(); ++i)
+        {
+            if (links[i].body == b1 || links[i].body == b2)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     void destroyWorld() {
         dJointGroupDestroy(contactgroup);
         dJointGroupDestroy(groundToBodyJG);
@@ -196,6 +208,10 @@ struct SimulationState {
 
         if (b1 == humanoid.body || b2 == humanoid.body) {
             isInContact = true;
+            int link = whichLink(b1, b2);
+            if (link != -1) {
+                ROS_DEBUG("Contact between human and link %s", links[link].name.c_str());
+            }
         }
 
         for (int i = 0; i < MAX_CONTACTS; i++)
@@ -420,7 +436,8 @@ private:
             box.pose = ees[i];
 
             if (eeSizes[i][0] <= 0.0 || eeSizes[i][1] <= 0.0 || eeSizes[i][2] <= 0.0) {
-                ROS_WARN("Cannot publish zero scale box");
+                ROS_DEBUG("Cannot publish zero scale box");
+                continue;
             }
 
             box.scale.x = eeSizes[i][0];

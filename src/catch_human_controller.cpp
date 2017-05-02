@@ -1025,10 +1025,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             return;
         }
 
-        ROS_DEBUG("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f)  @ time %f",
+        ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f) @ time [%f] with delta [%f]",
                   arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
                   bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
-                  bestSolution->time.toSec());
+                  bestSolution->time.toSec(), bestSolution->delta.toSec());
 
         operational_space_controllers_msgs::Move command;
 

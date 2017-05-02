@@ -42,4 +42,5 @@
 
   <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder" output="screen"/>
 
+  <node pkg="humanoid_catching" type="imu_visualizer" name="imu_visualizer" />
 </launch>
