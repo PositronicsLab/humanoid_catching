@@ -134,7 +134,8 @@ void CatchHumanController::jointStatesCallback(const sensor_msgs::JointState::Co
 CatchHumanController::CatchHumanController() :
     pnh("~"),
     planningScene(new planning_scene_monitor::PlanningSceneMonitor("robot_description")),
-    active(false)
+    active(false),
+    rng(0) // fixed start
 {
     ROS_INFO("Initializing the catch human action");
 
@@ -267,19 +268,20 @@ CatchHumanController::CatchHumanController() :
     for (unsigned int i = 0; i < jointModelNames.size(); ++i)
     {
         jointNames.push_back(jointModelNames[i]);
+        const urdf::Joint* ujoint = urdfModel->getJoint(jointModelNames[i]).get();
 
         const string prefix = "robot_description_planning/joint_limits/" + jointModelNames[i] + "/";
         ROS_DEBUG_NAMED("catch_human_action_server", "Loading velocity and acceleration limits for joint %s", jointModelNames[i].c_str());
 
-        bool has_vel_limits;
         double max_velocity;
-        if (nh.getParam(prefix + "has_velocity_limits", has_vel_limits) && has_vel_limits && nh.getParam(prefix + "max_velocity", max_velocity))
+        if (ujoint != NULL && ujoint->limits)
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to %f", max_velocity);
+            max_velocity = ujoint->limits->velocity;
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
         }
         else
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity to default");
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_VELOCITY);
             max_velocity = MAX_VELOCITY;
         }
 
@@ -287,25 +289,26 @@ CatchHumanController::CatchHumanController() :
         double max_acc;
         if (nh.getParam(prefix + "has_acceleration_limits", has_acc_limits) && has_acc_limits && nh.getParam(prefix + "max_acceleration", max_acc))
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to %f", max_acc);
+            // max accelerations are very conservative and not consistent with in-situ observations
+            max_acc *= 2.0;
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
         }
         else
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration to default");
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_ACCELERATION);
             max_acc = MAX_ACCELERATION;
         }
 
         // Fetch the effort from the urdf
         double max_effort;
-        const urdf::Joint* ujoint = urdfModel->getJoint(jointModelNames[i]).get();
         if (ujoint != NULL && ujoint->limits)
         {
             max_effort = ujoint->limits->effort;
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointModelNames[i].c_str());
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointModelNames[i].c_str());
         }
         else
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
             max_effort = MAX_EFFORT;
         }
         jointLimits[jointModelNames[i]] = Limits(max_velocity, max_acc, max_effort);
@@ -611,7 +614,8 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     ROS_DEBUG_NAMED("catch_human_action_server", "Execution time is %f", longestTime);
 #endif
     lock.unlock();
-    return ros::Duration(longestTime);
+    // TODO: Remove this and calculate true accelerations
+    return ros::Duration(longestTime - 2.0);
 }
 
 const vector<FallPoint>::const_iterator CatchHumanController::findContact(const humanoid_catching::PredictFall::Response& fall) const
@@ -817,6 +821,61 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     return true;
 }
 
+bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution& possibleSolution, const std_msgs::Header& fallPointHeader) const
+{
+    bool success = false;
+    possibleSolution.time = fallPoint.time;
+
+    // Initialize to very poor value
+    possibleSolution.delta = ros::Duration(-1000);
+
+    geometry_msgs::PoseStamped basePose;
+    basePose.header = fallPointHeader;
+    basePose.pose = fallPoint.pose;
+
+    geometry_msgs::PoseStamped transformedPose = transformGoalToBase(basePose);
+    possibleSolution.targetPose = transformedPose;
+
+    possibleSolution.targetVelocity.twist.linear = transformGoalToBase(fallPoint.velocity.linear);
+    possibleSolution.targetVelocity.header = transformedPose.header;
+
+    possibleSolution.position.header = transformedPose.header;
+    possibleSolution.position.point = transformedPose.pose.position;
+
+    if (trialGoalPub.getNumSubscribers() > 0)
+    {
+        trialGoalPub.publish(poseToPoint(transformedPose));
+    }
+
+    // Lookup the IK solution
+    geometry_msgs::PointStamped point;
+    point.point = transformedPose.pose.position;
+    point.header = transformedPose.header;
+
+    IKList results;
+    if (!ik->query(point, results))
+    {
+        ROS_DEBUG("Failed to find IK solution for arm [%s]", arm.c_str());
+        return success;
+    }
+
+    ROS_DEBUG("Received %lu results from IK query", results.size());
+    for (IKList::iterator j = results.begin(); j != results.end(); ++j)
+    {
+        // We want to search for the fastest arm movement
+        ros::Duration estimate = calcExecutionTime(j->positions);
+        ros::Duration executionTimeDelta = ros::Duration(fallPoint.time) - estimate;
+        if (executionTimeDelta < possibleSolution.delta)
+        {
+            continue;
+        }
+        success = true;
+        possibleSolution.estimate = estimate;
+        possibleSolution.delta = executionTimeDelta;
+    }
+    return success;
+}
+
 void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
     ROS_DEBUG("Catch procedure initiated");
@@ -959,60 +1018,50 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     }
     else
     {
+        ros::Time start = ros::Time::now();
+
         // We now have a projected time/position path. Search the path for acceptable times.
         boost::optional<Solution> bestSolution;
 
-        for (vector<FallPoint>::const_iterator i = predictFallObj.response.points.begin(); i != predictFallObj.response.points.end(); ++i)
-        {
-            Solution possibleSolution;
+        // Initialize a random range
+        boost::uniform_int<unsigned int> pointRandom(0, predictFallObj.response.points.size() - 1);
 
-            // Initialize to a large negative number.
-            possibleSolution.delta = ros::Duration(-1000);
-            possibleSolution.time = i->time;
+        // Compute an offset from the COM at the middle of the pole
+        boost::uniform_real<float> heightRandom(-predictFallObj.response.height / 2.0, predictFallObj.response.height / 2.0);
 
-            geometry_msgs::PoseStamped basePose;
-            basePose.header = predictFallObj.response.header;
-            basePose.pose = i->pose;
+        // Search for a fixed duration of time
+        while (ros::Time::now() - start < ros::Duration(0.020)) {
+            // Select a random point in the fall
+            unsigned int point = pointRandom(rng);
 
-            geometry_msgs::PoseStamped transformedPose = transformGoalToBase(basePose);
-            possibleSolution.targetPose = transformedPose;
+            // Select a random pole position
+            double height = heightRandom(rng);
 
-            possibleSolution.targetVelocity.twist.linear = transformGoalToBase(i->velocity.linear);
-            possibleSolution.targetVelocity.header = transformedPose.header;
+            geometry_msgs::Pose comPose = predictFallObj.response.points[point].pose;
+            tf::Quaternion rotation(comPose.orientation.x, comPose.orientation.y, comPose.orientation.z, comPose.orientation.w);
 
-            possibleSolution.position.header = transformedPose.header;
-            possibleSolution.position.point = transformedPose.pose.position;
+            tf::Vector3 initialVector(1, 0, 0);
+            tf::Vector3 rotatedVector = tf::quatRotate(rotation, initialVector);
 
-            if (trialGoalPub.getNumSubscribers() > 0)
-            {
-                trialGoalPub.publish(poseToPoint(transformedPose));
-            }
+            // Now set the height
+            rotatedVector *= height;
 
-            // Lookup the IK solution
-            geometry_msgs::PointStamped point;
-            point.point = transformedPose.pose.position;
-            point.header = transformedPose.header;
+            // Now offset by the COM
+            rotatedVector += tf::Vector3(comPose.position.x, comPose.position.y, comPose.position.z);
 
-            IKList results;
-            if (!ik->query(point, results))
-            {
-                ROS_DEBUG("Failed to find IK solution for arm [%s]", arm.c_str());
-                continue;
-            }
+            FallPoint fallPointQuery = predictFallObj.response.points[point];
+            fallPointQuery.pose.position.x = rotatedVector.x();
+            fallPointQuery.pose.position.y = rotatedVector.y();
+            fallPointQuery.pose.position.z = rotatedVector.z();
 
-            ROS_DEBUG("Received %lu results from IK query", results.size());
-            for (IKList::iterator j = results.begin(); j != results.end(); ++j)
-            {
-                // We want to search for the fastest arm movement. The idea is that the first arm there should slow the human
-                // down and give the second arm time to arrive.
-                ros::Duration executionTimeDelta = ros::Duration(i->time) - calcExecutionTime(j->positions);
-                if (bestSolution && executionTimeDelta < bestSolution->delta)
-                {
-                    continue;
+            Solution possible;
+            ROS_DEBUG("Checking for feasibility at position [%f, %f, %f] given COM [%f, %f, %f] and height %f",
+                     fallPointQuery.pose.position.x, fallPointQuery.pose.position.y, fallPointQuery.pose.position.z, comPose.position.x, comPose.position.y, comPose.position.z, height);
+            if (checkFeasibility(fallPointQuery, possible, predictFallObj.response.header)) {
+                if (possible.delta >= ros::Duration(0) && (!bestSolution || bestSolution->height < height)) {
+                    bestSolution = possible;
+                    bestSolution->height = height;
                 }
-
-                possibleSolution.delta = executionTimeDelta;
-                bestSolution = possibleSolution;
             }
         }
 
@@ -1025,10 +1074,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             return;
         }
 
-        ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f) @ time [%f] with delta [%f]",
+        ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f) @ time [%f] with delta [%f] and estimate [%f] and height [%f]",
                   arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
                   bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
-                  bestSolution->time.toSec(), bestSolution->delta.toSec());
+                  bestSolution->time.toSec(), bestSolution->delta.toSec(), bestSolution->estimate.toSec(), bestSolution->height);
 
         operational_space_controllers_msgs::Move command;
 

@@ -27,6 +27,7 @@
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Header.h>
 #include <map>
+#include <boost/random.hpp>
 
 typedef std::vector<kinematics_cache::IKv2> IKList;
 
@@ -58,6 +59,8 @@ struct Solution
     geometry_msgs::TwistStamped targetVelocity;
     ros::Duration delta;
     ros::Duration time;
+    ros::Duration estimate;
+    double height;
 };
 
 class CatchHumanController
@@ -168,6 +171,8 @@ private:
 
     //! All arm links
     std::vector<const robot_model::LinkModel*> allArmLinks;
+
+    boost::mt19937 rng;    // random-number engine used (Mersenne-Twister in this case)
 public:
     CatchHumanController();
     ~CatchHumanController();
@@ -212,6 +217,8 @@ private:
     void execute(const sensor_msgs::ImuConstPtr imuData);
 
     void calcArmLinks();
+
+    bool checkFeasibility(const humanoid_catching::FallPoint& fallPoint, Solution& possibleSolution, const std_msgs::Header& fallPointHeader) const;
 
 public:
     static geometry_msgs::Quaternion computeOrientation(const Solution& solution, const geometry_msgs::PoseStamped& currentPose);
