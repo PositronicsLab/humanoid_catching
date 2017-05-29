@@ -27,7 +27,6 @@
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Header.h>
 #include <map>
-#include <boost/random.hpp>
 
 typedef std::vector<kinematics_cache::IKv2> IKList;
 
@@ -171,8 +170,6 @@ private:
 
     //! All arm links
     std::vector<const robot_model::LinkModel*> allArmLinks;
-
-    boost::mt19937 rng;    // random-number engine used (Mersenne-Twister in this case)
 public:
     CatchHumanController();
     ~CatchHumanController();

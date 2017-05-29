@@ -134,9 +134,7 @@ void CatchHumanController::jointStatesCallback(const sensor_msgs::JointState::Co
 CatchHumanController::CatchHumanController() :
     pnh("~"),
     planningScene(new planning_scene_monitor::PlanningSceneMonitor("robot_description")),
-    active(false),
-    rng(0) // fixed start
-{
+    active(false){
     ROS_INFO("Initializing the catch human action");
 
     // Configure the planning scene
@@ -1023,46 +1021,57 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         // We now have a projected time/position path. Search the path for acceptable times.
         boost::optional<Solution> bestSolution;
 
-        // Initialize a random range
-        boost::uniform_int<unsigned int> pointRandom(0, predictFallObj.response.points.size() - 1);
-
-        // Compute an offset from the COM at the middle of the pole
-        boost::uniform_real<float> heightRandom(-predictFallObj.response.height / 2.0, predictFallObj.response.height / 2.0);
-
         // Search for a fixed duration of time
+        unsigned int level = 0;
         while (ros::Time::now() - start < ros::Duration(0.020)) {
-            // Select a random point in the fall
-            unsigned int point = pointRandom(rng);
 
-            // Select a random pole position
-            double height = heightRandom(rng);
+            unsigned int quadrants = pow(2, level);
 
-            geometry_msgs::Pose comPose = predictFallObj.response.points[point].pose;
-            tf::Quaternion rotation(comPose.orientation.x, comPose.orientation.y, comPose.orientation.z, comPose.orientation.w);
+            for (unsigned int q = 0; q < quadrants && ros::Time::now() - start < ros::Duration(0.020); ++q) {
 
-            tf::Vector3 initialVector(1, 0, 0);
-            tf::Vector3 rotatedVector = tf::quatRotate(rotation, initialVector);
+                // Determine the size of each quadrant
+                unsigned int pointQuadrantSize = min(ceil(1 / double(quadrants) * predictFallObj.response.points.size()), double(predictFallObj.response.points.size()));
 
-            // Now set the height
-            rotatedVector *= height;
+                // Find the beginning of the quadrant and then take the midpoint
+                unsigned int point = min(q * pointQuadrantSize + int(floor(pointQuadrantSize / 2)), (unsigned int)predictFallObj.response.points.size() - 1);
 
-            // Now offset by the COM
-            rotatedVector += tf::Vector3(comPose.position.x, comPose.position.y, comPose.position.z);
+                // Determine the size of each quadrant
+                double heightQuadrantSize = 1 / double(quadrants) * predictFallObj.response.height;
 
-            FallPoint fallPointQuery = predictFallObj.response.points[point];
-            fallPointQuery.pose.position.x = rotatedVector.x();
-            fallPointQuery.pose.position.y = rotatedVector.y();
-            fallPointQuery.pose.position.z = rotatedVector.z();
+                // Find the beginning of the quadrant and then take the midpoint
+                double height = q * heightQuadrantSize + heightQuadrantSize / 2.0;
 
-            Solution possible;
-            ROS_DEBUG("Checking for feasibility at position [%f, %f, %f] given COM [%f, %f, %f] and height %f",
-                     fallPointQuery.pose.position.x, fallPointQuery.pose.position.y, fallPointQuery.pose.position.z, comPose.position.x, comPose.position.y, comPose.position.z, height);
-            if (checkFeasibility(fallPointQuery, possible, predictFallObj.response.header)) {
-                if (possible.delta >= ros::Duration(0) && (!bestSolution || bestSolution->height < height)) {
-                    bestSolution = possible;
-                    bestSolution->height = height;
+                geometry_msgs::Pose comPose = predictFallObj.response.points[point].pose;
+                tf::Quaternion rotation(comPose.orientation.x, comPose.orientation.y, comPose.orientation.z, comPose.orientation.w);
+
+                tf::Vector3 initialVector(1, 0, 0);
+                tf::Vector3 rotatedVector = tf::quatRotate(rotation, initialVector);
+
+                // Now set the height. Height is assumed to be between [0, height], so compensate for the COM at the center of the pole.
+                rotatedVector *= (height - predictFallObj.response.height / 2.0);
+
+                // Now offset by the COM
+                rotatedVector += tf::Vector3(comPose.position.x, comPose.position.y, comPose.position.z);
+
+                FallPoint fallPointQuery = predictFallObj.response.points[point];
+                fallPointQuery.pose.position.x = rotatedVector.x();
+                fallPointQuery.pose.position.y = rotatedVector.y();
+                fallPointQuery.pose.position.z = rotatedVector.z();
+
+                Solution possible;
+                ROS_DEBUG("Checking for feasibility at position [%f, %f, %f] given COM [%f, %f, %f] and height %f",
+                fallPointQuery.pose.position.x, fallPointQuery.pose.position.y, fallPointQuery.pose.position.z, comPose.position.x, comPose.position.y, comPose.position.z, height);
+                if (checkFeasibility(fallPointQuery, possible, predictFallObj.response.header))
+                {
+                    if (possible.delta >= ros::Duration(0) && (!bestSolution || bestSolution->height < height))
+                    {
+                        bestSolution = possible;
+                        bestSolution->height = height;
+                    }
                 }
             }
+            // Increment the number of quadrants
+            ++level;
         }
 
         if (!bestSolution)
