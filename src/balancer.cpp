@@ -232,7 +232,7 @@ private:
       // contact normal
       ROS_DEBUG("Calculating q_hat");
       Vector3d q_hat = to_vector(req.contact_normal);
-      ROS_WARN_STREAM("q_hat: " << q_hat);
+      ROS_INFO_STREAM("q_hat: " << q_hat);
 
       // p
       // contact point

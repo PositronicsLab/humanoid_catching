@@ -3,7 +3,7 @@
 #include <humanoid_catching/CatchHumanAction.h>
 #include <kinematics_cache/IKQueryv2.h>
 #include <humanoid_catching/PredictFall.h>
-#include <humanoid_catching/catch_human_action_server.h>
+#include <humanoid_catching/catch_human_controller.h>
 #include <actionlib/client/simple_action_client.h>
 #include <humanoid_catching/CalculateTorques.h>
 #include <tf/transform_listener.h>
