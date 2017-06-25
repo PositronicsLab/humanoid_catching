@@ -45,7 +45,7 @@
 		<Unit filename="bags/fall3.bag" />
 		<Unit filename="bags/stable.bag" />
 		<Unit filename="humanoid_catching.layout" />
-		<Unit filename="include/humanoid_catching/catch_human_action_server.h" />
+		<Unit filename="include/humanoid_catching/catch_human_controller.h" />
 		<Unit filename="launch/activate_force_controllers.launch" />
 		<Unit filename="launch/human_catching.launch" />
 		<Unit filename="launch/human_catching_robot.launch" />

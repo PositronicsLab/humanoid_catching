@@ -590,6 +590,7 @@ double CatchHumanController::calcJointExecutionTime(const Limits& limits, const 
 
 ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution) const
 {
+    ROS_DEBUG("Calculating execution time for %lu joints", solution.size());
     double longestTime = 0.0;
 
     // Take the read lock
@@ -612,8 +613,7 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     ROS_DEBUG_NAMED("catch_human_action_server", "Execution time is %f", longestTime);
 #endif
     lock.unlock();
-    // TODO: Remove this and calculate true accelerations
-    return ros::Duration(longestTime - 2.0);
+    return ros::Duration(longestTime);
 }
 
 const vector<FallPoint>::const_iterator CatchHumanController::findContact(const humanoid_catching::PredictFall::Response& fall) const
@@ -1018,9 +1018,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     {
         ros::Time start = ros::Time::now();
 
+        vector<Solution> solutions;
         // We now have a projected time/position path. Search the path for acceptable times.
-        boost::optional<Solution> bestSolution;
-
         // Search for a fixed duration of time
         unsigned int level = 0;
         while (ros::Time::now() - start < ros::Duration(0.020)) {
@@ -1063,15 +1062,35 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
                 fallPointQuery.pose.position.x, fallPointQuery.pose.position.y, fallPointQuery.pose.position.z, comPose.position.x, comPose.position.y, comPose.position.z, height);
                 if (checkFeasibility(fallPointQuery, possible, predictFallObj.response.header))
                 {
-                    if (possible.delta >= ros::Duration(0) && (!bestSolution || bestSolution->height < height))
-                    {
-                        bestSolution = possible;
-                        bestSolution->height = height;
-                    }
+                    possible.height = height;
+                    solutions.push_back(possible);
                 }
             }
             // Increment the number of quadrants
             ++level;
+        }
+
+        // Iterate over all possible solutions and select the most feasible. Use a progressive relaxation of the time
+        // constraint.
+        boost::optional<Solution> bestSolution;
+
+        if (solutions.empty())
+        {
+            ROS_INFO("Possible solution set is empty. Aborting search.");
+        }
+        else {
+            ros::Duration durationLimit = ros::Duration(0);
+            while (!bestSolution) {
+                for (vector<Solution>::const_iterator possible = solutions.begin(); possible != solutions.end(); ++possible) {
+                    if (possible->delta >= durationLimit && (!bestSolution || bestSolution->height < possible->height)) {
+                        bestSolution = *possible;
+                    }
+                }
+                if (!bestSolution) {
+                    ROS_DEBUG("Relaxing constraint. New value is %f", durationLimit.toSec());
+                    durationLimit -= ros::Duration(0.1);
+                }
+            }
         }
 
         if (!bestSolution)
