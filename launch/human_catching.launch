@@ -4,7 +4,7 @@
   <node pkg="humanoid_catching" type="catch_human_controller" name="catch_human_controller_left">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
     <param name="max_distance" value="0.821000"/>
-    <param name="cache_data_name" value="$(find kinematics_cache)/octree/left_arm.cleaned.ot" />
+    <param name="cache_data_name" value="$(find kinematics_cache)/octree/left_arm.added.cleaned.ot" />
     <param name="arm" value="left_arm" />
     <param name="fall_predictor" value="/fall_predictor_left/predict_fall" />
     <param name="balancer" value="/balancer_left/torques" />
@@ -16,7 +16,7 @@
   <node pkg="humanoid_catching" type="catch_human_controller" name="catch_human_controller_right">
     <param name="urdf" value="$(find humanoid_catching)/models/pr2.urdf" />
     <param name="max_distance" value="0.821000"/>
-    <param name="cache_data_name" value="$(find kinematics_cache)/octree/right_arm.cleaned.ot" />
+    <param name="cache_data_name" value="$(find kinematics_cache)/octree/right_arm.added.cleaned.ot" />
     <param name="arm" value="right_arm" />
     <param name="command_topic" value="r_arm_force_controller/command" />
     <param name="fall_predictor" value="/fall_predictor_right/predict_fall" />

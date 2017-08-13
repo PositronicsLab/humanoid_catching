@@ -16,7 +16,7 @@ using namespace humanoid_catching;
 
 //! Default weight in kg
 static const double MASS_DEFAULT = 0.896;
-static const double HEIGHT_DEFAULT = 1.8288;
+static const double HEIGHT_DEFAULT = 1.6288;
 static const double RADIUS_DEFAULT = 0.03175;
 
 static const int MAX_CONTACTS = 6;
