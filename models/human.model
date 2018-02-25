@@ -36,7 +36,7 @@
       </collision>
 
       <collision name="bottom">
-        <pose>0 0 -0.8785 0 0 0</pose>
+        <pose>0 0 -0.7785 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.03175</radius>
@@ -64,7 +64,7 @@
       </visual>
 
       <visual name="bottom">
-        <pose>0 0 -0.8785 0 0 0</pose>
+        <pose>0 0 -0.7785 0 0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.03175</radius>

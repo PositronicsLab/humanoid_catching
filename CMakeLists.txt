@@ -168,6 +168,12 @@ target_link_libraries(fall_starter
    ${catkin_LIBRARIES}
 )
 
+add_executable(fall_readiness src/fall_readiness.cpp)
+add_dependencies(fall_readiness ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(fall_readiness
+   ${catkin_LIBRARIES}
+)
+
 add_executable(balancer src/balancer.cpp)
 add_dependencies(balancer ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(balancer
