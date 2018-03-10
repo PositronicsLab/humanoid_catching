@@ -27,6 +27,7 @@
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Header.h>
 #include <map>
+#include <std_srvs/Empty.h>
 
 typedef std::vector<kinematics_cache::IKv2> IKList;
 
@@ -114,6 +115,9 @@ private:
     //! Visualization of target velocity
     ros::Publisher targetVelocityPub;
 
+    //! Empty service to indicate the node is ready
+    ros::ServiceServer readyService;
+
     //! Current joint states
     StateMapType jointStates;
 
@@ -175,7 +179,7 @@ public:
     ~CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
-
+    bool noop(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
     void publishIkCache();
 
 #if ROS_VERSION_MINIMUM(1, 10, 12)

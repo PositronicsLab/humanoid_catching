@@ -331,6 +331,22 @@ CatchHumanController::CatchHumanController() :
     jointStateMessagesSpinner.reset(new ros::AsyncSpinner(1, &jointStateMessagesQueue));
     jointStateMessagesSpinner->start();
 
+    // Spin until the joint states are set.
+    ROS_INFO("Waiting for joint states to be received");
+    while(true) {
+        ros::Duration().fromNSec(1000000 /* 1ms */).sleep();
+
+        // Take the read lock
+        boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+        if (jointStates.size() > 0) {
+            break;
+        }
+    }
+
+    ROS_INFO("Joint states ready");
+
+    readyService = nh.advertiseService("/humanoid_catching/catch_human_controller", &CatchHumanController::noop, this);
+
     ROS_INFO("Catch human action server initialized successfully");
 }
 
@@ -356,6 +372,9 @@ vector<string> CatchHumanController::getActiveJointModelNames(const robot_model:
 
 CatchHumanController::~CatchHumanController()
 {
+}
+
+bool CatchHumanController::noop(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res) {
 }
 
 void CatchHumanController::publishIkCache()
@@ -595,10 +614,15 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
 
     // Take the read lock
     boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+    assert(solution.size() == jointNames.size());
+    assert(solution.size() == jointLimits.size());
+    assert(solution.size() == jointStates.size());
+
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
         const string& jointName = jointNames.at(i);
         const Limits& limits = jointLimits.at(jointName);
+
         const State& state = jointStates.at(jointName);
         double v0 = state.velocity;
         double signed_d = state.position - solution[i];
