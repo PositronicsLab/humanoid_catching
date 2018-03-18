@@ -32,13 +32,15 @@ private:
 public:
     OnGroundDetector() : pnh("~")
     {
-        ROS_DEBUG("Initializing the on ground detector");
+        ROS_INFO("Initializing the on ground detector");
 
         // Don't subscribe until the fall starts
         humanIMUSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
         humanIMUSub->registerCallback(boost::bind(&OnGroundDetector::update, this, _1));
 
         pub = nh.advertise<std_msgs::Header>("/human/on_ground", 1, true);
+
+        ROS_INFO("On ground detector initialized successfully");
     }
 
 private:
@@ -88,5 +90,6 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "on_ground_detector");
     OnGroundDetector ogd;
     ros::spin();
+    ROS_INFO("On ground detector exiting");
 }
 
