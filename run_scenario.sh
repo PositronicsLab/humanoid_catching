@@ -20,7 +20,7 @@ do
   echo "Executing scenario: $i"
   export i=$i
   # Launch gazebo
-  roslaunch pr2_gazebo pr2_empty_world.launch gui:=false  &
+  roslaunch pr2_gazebo pr2_empty_world.launch gui:=false &
   echo "PR2 launched. Waiting 5 seconds for stability"
   sleep 5
 

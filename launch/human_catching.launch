@@ -9,7 +9,7 @@
     <param name="fall_predictor" value="/fall_predictor_left/predict_fall" />
     <param name="balancer" value="/balancer_left/torques" />
     <param name="command_topic" value="l_arm_force_controller/command" />
-    <remap to="/human/imu_filtered" from="/in" />
+    <remap to="/human/imu" from="/in" />
     <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
 
@@ -21,26 +21,21 @@
     <param name="command_topic" value="r_arm_force_controller/command" />
     <param name="fall_predictor" value="/fall_predictor_right/predict_fall" />
     <param name="balancer" value="/balancer_right/torques" />
-    <remap to="/human/imu_filtered" from="/in" />
+    <remap to="/human/imu" from="/in" />
     <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
 
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_left"/>
   <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_right"/>
 
-  <node pkg="humanoid_catching" type="imu_filter" name="imu_filter">
-    <remap to="/human/imu" from="/in" />
-    <remap to="/human/imu_filtered" from="/out" />
-  </node>
-
   <node pkg="humanoid_catching" type="balancer" name="balancer_left"/>
   <node pkg="humanoid_catching" type="balancer" name="balancer_right"/>
 
-  <node pkg="humanoid_catching" type="on_ground_detector" name="on_ground_detector">
-    <remap to="/human/imu_filtered" from="/in" />
+  <node pkg="humanoid_catching" type="on_ground_detector" name="on_ground_detector" output="screen">
+    <remap to="/human/imu" from="/in" />
   </node>
 
-  <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder"/>
+  <node pkg="humanoid_catching" type="fall_stats_recorder" name="fall_stats_recorder" output="screen"/>
 
   <node pkg="humanoid_catching" type="imu_visualizer" name="imu_visualizer" />
 </launch>

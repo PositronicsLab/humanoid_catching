@@ -63,6 +63,8 @@ private:
 
     void printResults(const ros::Duration& contactTime)
     {
+        ROS_INFO("Printing results of trial");
+
         // Get the name of the folder to store the result in
         const char* resultsFolder = std::getenv("RESULTS_FOLDER");
         if(resultsFolder == NULL)

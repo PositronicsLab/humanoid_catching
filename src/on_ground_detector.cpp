@@ -26,6 +26,9 @@ private:
     //! Human IMU subscriber
     auto_ptr<message_filters::Subscriber<sensor_msgs::Imu> > humanIMUSub;
 
+    //! Human fall subscriber
+    std::auto_ptr<message_filters::Subscriber<std_msgs::Header> > humanFallSub;
+
     //! On ground publisher
     ros::Publisher pub;
 
@@ -37,6 +40,10 @@ public:
         // Don't subscribe until the fall starts
         humanIMUSub.reset(new message_filters::Subscriber<sensor_msgs::Imu>(nh, "/in", 1));
         humanIMUSub->registerCallback(boost::bind(&OnGroundDetector::update, this, _1));
+        humanIMUSub->unsubscribe();
+
+        humanFallSub.reset(new message_filters::Subscriber<std_msgs::Header>(nh, "/human/fall", 1));
+        humanFallSub->registerCallback(boost::bind(&OnGroundDetector::fallDetected, this, _1));
 
         pub = nh.advertise<std_msgs::Header>("/human/on_ground", 1, true);
 
@@ -45,7 +52,14 @@ public:
 
 private:
 
+    void fallDetected(const std_msgs::HeaderConstPtr& fallingMsg)
+    {
+        ROS_INFO("Human fall detected at @ %f. Beginning on ground detection.", fallingMsg->stamp.toSec());
+        humanIMUSub->subscribe();
+    }
+
     bool isOnGround(const geometry_msgs::Quaternion& orientation) {
+
         // Rotate the quaternion to compensate for the initial rotation of the pole
         tf::Quaternion correctedOrientation = orientPose(orientation);
 
@@ -58,7 +72,8 @@ private:
         ground.normalized();
 
         tfScalar angle = poseVector.angle(ground);
-        return angle < EPSILON;
+
+        return fabs(angle) < EPSILON || fabs(angle - PI) < EPSILON;
     }
 
     // Compensate for the model being initial aligned to the x axis and oriented
@@ -80,6 +95,14 @@ private:
             std_msgs::Header header;
             header.stamp = ros::Time::now();
             pub.publish(header);
+            tf::Quaternion q;
+            tf::quaternionMsgToTF(imuData->orientation, q);
+            tf::Matrix3x3 m(q);
+            double roll, pitch, yaw;
+            m.getRPY(roll, pitch, yaw);
+            ROS_INFO("On ground detector has detected ground from Roll, Pitch, Yaw [%f] [%f] [%f]", roll, pitch, yaw);
+
+            humanIMUSub->unsubscribe();
         }
     }
 };
