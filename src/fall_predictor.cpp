@@ -342,9 +342,6 @@ public:
         pnh.param("humanoid_radius", humanoidRadius, RADIUS_DEFAULT);
         pnh.param("humanoid_mass", humanoidMass, MASS_DEFAULT);
 
-        pnh.param("base_x", base.x, BASE_X_DEFAULT);
-        pnh.param("base_y", base.y, BASE_Y_DEFAULT);
-        pnh.param("base_z", base.z, BASE_Z_DEFAULT);
         pnh.param("inflation_factor", inflationFactor, 0.0);
 
         fallVizPub = nh.advertise<visualization_msgs::Marker>(
@@ -667,6 +664,12 @@ private:
     {
         ROS_INFO("Predicting fall in frame %s for %lu end effector links and %lu collision links",
                  req.header.frame_id.c_str(), req.end_effectors.size(), req.links.size());
+
+        nh.param("/fall_predictor/base_x", base.x, BASE_X_DEFAULT);
+        nh.param("/fall_predictor/base_y", base.y, BASE_Y_DEFAULT);
+        nh.param("/fall_predictor/base_z", base.z, BASE_Z_DEFAULT);
+
+        ROS_DEBUG("base x: %f, base y: %f, base z: %f", base.x, base.y, base.z);
 
         res.header = req.header;
 
