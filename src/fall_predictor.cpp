@@ -22,10 +22,6 @@ static const double RADIUS_DEFAULT = 0.03175;
 static const int MAX_CONTACTS = 6;
 static const unsigned int MAX_CORRECTIONS = 100;
 
-static const double BASE_X_DEFAULT = 0.4;
-static const double BASE_Y_DEFAULT = 0;
-static const double BASE_Z_DEFAULT = 0;
-
 // Deflate the end effector to fix interpenetration
 static const double DEFLATION_FACTOR = 0.01;
 
@@ -665,9 +661,9 @@ private:
         ROS_INFO("Predicting fall in frame %s for %lu end effector links and %lu collision links",
                  req.header.frame_id.c_str(), req.end_effectors.size(), req.links.size());
 
-        nh.param("/fall_predictor/base_x", base.x, BASE_X_DEFAULT);
-        nh.param("/fall_predictor/base_y", base.y, BASE_Y_DEFAULT);
-        nh.param("/fall_predictor/base_z", base.z, BASE_Z_DEFAULT);
+        nh.param("base_x", base.x, 0.4);
+        nh.param("base_y", base.y, 0.0);
+        nh.param("base_z", base.z, 0.0);
 
         ROS_DEBUG("base x: %f, base y: %f, base z: %f", base.x, base.y, base.z);
 
