@@ -48,9 +48,9 @@ private:
     void visualizePose(const Header& header, const Quaternion& orientation) {
         PoseStamped poseStamped;
         poseStamped.pose.orientation = orientation;
-        poseStamped.pose.position.x = BASE_X_DEFAULT;
-        poseStamped.pose.position.y = BASE_Y_DEFAULT;
-        poseStamped.pose.position.z = BASE_Z_DEFAULT;
+        nh.param("base_x", poseStamped.pose.position.x, BASE_X_DEFAULT);
+        nh.param("base_y", poseStamped.pose.position.y, BASE_Y_DEFAULT);
+        nh.param("base_z", poseStamped.pose.position.z, BASE_Z_DEFAULT);
         poseStamped.header = header;
         poseVizPub.publish(poseStamped);
     }

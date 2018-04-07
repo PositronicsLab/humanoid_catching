@@ -88,9 +88,7 @@ private:
 
       ROS_INFO("****Calculating torques for arm %s****", req.name.c_str());
 
-      const int num_joints = req.torque_limits.size();
-
-      const int num_effective_joints = num_joints;
+      const int num_effective_joints = req.torque_limits.size();
 
       // x_pole
       // linear velocity of body
@@ -160,7 +158,7 @@ private:
 
       // M_robot
       ROS_DEBUG("Calculating M_robot");
-      MatrixNd M_robot_base(num_joints, num_joints, &req.robot_inertia_matrix[0]);
+      MatrixNd M_robot_base(num_effective_joints, num_effective_joints, &req.robot_inertia_matrix[0]);
       MatrixNd M_robot;
       M_robot_base.get_sub_mat(0, num_effective_joints, 0, num_effective_joints, M_robot);
       ROS_DEBUG_STREAM("M_robot: " << endl << M_robot);
@@ -178,7 +176,7 @@ private:
       // J_robot
       // Robot end effector jacobian matrix
       ROS_DEBUG("Calculating J_robot");
-      MatrixNd J_robot_base = MatrixNd(6, num_joints, &req.jacobian_matrix[0]);
+      MatrixNd J_robot_base = MatrixNd(6, num_effective_joints, &req.jacobian_matrix[0]);
       MatrixNd J_robot;
       J_robot_base.get_sub_mat(0, 6, 0, num_effective_joints, J_robot);
       ROS_DEBUG_STREAM("J_robot: " << endl << J_robot);
@@ -715,7 +713,7 @@ private:
       ROS_INFO_STREAM("vt_d: " << sum);
       */
 
-      res.torques.resize(num_joints);
+      res.torques.resize(num_effective_joints);
       for (unsigned int i = torque_idx, j = 0; i < torque_idx + num_effective_joints; ++i, ++j) {
         res.torques[j] = z[i];
       }

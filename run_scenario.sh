@@ -15,7 +15,7 @@ echo "Creating folder for control results: $RESULTS_FOLDER"
 mkdir -p $RESULTS_FOLDER
 export RESULTS_FOLDER=$RESULTS_FOLDER
 
-for i in `seq 1 100`;
+for i in `seq 1 1000`;
 do
   echo "Executing scenario: $i"
   export i=$i
@@ -44,4 +44,5 @@ do
     sleep 1;
     echo "Waiting...";
   done
+  rosclean purge -y
 done
