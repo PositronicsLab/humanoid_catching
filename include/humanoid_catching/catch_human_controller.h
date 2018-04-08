@@ -179,6 +179,9 @@ public:
     ~CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
+    unsigned int countJointsAboveInChain(const robot_model::LinkModel* link) const;
+    const robot_model::LinkModel* findParentLinkInJointModelGroup(const robot_model::LinkModel* link) const;
+    const robot_model::JointModel* findParentActiveJoint(const robot_model::LinkModel* start) const;
     bool noop(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
     void publishIkCache();
 

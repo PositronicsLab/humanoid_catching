@@ -12,6 +12,8 @@ humanoid_catching/Limit[] velocity_limits
 float64[] jacobian_matrix
 float64[] joint_velocity
 string name
+uint16 num_effective_joints
+
 ---
 Header header
 float64[] torques

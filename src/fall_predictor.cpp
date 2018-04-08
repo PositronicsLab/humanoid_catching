@@ -242,9 +242,9 @@ struct SimulationState {
                     assert(firstObj == humanoid.geom && secondObj == endEffectors[which].geom
                            && firstObj == contact[i].geom.g1 && secondObj == contact[i].geom.g2);
 
-                    // Only save one contact per end effector
+                    // Only save one contact per arm
                     eeContacts[which] = contact[i].geom;
-                    ROS_DEBUG("Contact between human and %s", endEffectors[i].name.c_str());
+                    ROS_INFO("Contact between human and %s", endEffectors[which].name.c_str());
                 }
             }
         }
@@ -698,6 +698,7 @@ private:
 
         state.initGroundJoint(base);
 
+        state.endEffectors.reserve(req.end_effectors.size());
         for (unsigned int i = 0; i < req.end_effectors.size(); ++i)
         {
             Model ee = state.initLink(req.end_effectors[i].pose.pose, req.end_effectors[i].velocity, inflationFactor, req.end_effectors[i].shape.dimensions);
@@ -706,6 +707,7 @@ private:
             state.endEffectors.push_back(ee);
         }
 
+        state.links.reserve(req.links.size());
         for (unsigned int i = 0; i < req.links.size(); ++i)
         {
             Model link = state.initLink(req.links[i].pose.pose, req.links[i].velocity, inflationFactor, req.links[i].shape.dimensions);
@@ -713,13 +715,16 @@ private:
             state.links.push_back(link);
         }
 
+        state.eeContacts.resize(req.end_effectors.size());
+
         // Execute the simulation loop up to MAX_DURATION seconds
         ros::Duration lastTime;
         for (double t = 0; t <= req.max_time.toSec() && !state.isInContact; t += req.step_size.toSec())
         {
             // Clear end effector contacts
-            state.eeContacts.clear();
-            state.eeContacts.resize(req.end_effectors.size());
+            for (unsigned int i = 0; i < state.eeContacts.size(); ++i) {
+                state.eeContacts[i] = boost::optional<dContactGeom>();
+            }
 
             // Step forward
             state.simLoop(req.step_size.toSec());
@@ -754,6 +759,8 @@ private:
                 {
                     curr.contacts[i].position = arrayToPoint(state.eeContacts[i]->pos);
                     curr.contacts[i].normal = arrayToVector(state.eeContacts[i]->normal);
+                    curr.contacts[i].link = req.end_effectors[i];
+                    ROS_DEBUG("Setting contact link to %s", req.end_effectors[i].name.c_str());
                 }
             }
 

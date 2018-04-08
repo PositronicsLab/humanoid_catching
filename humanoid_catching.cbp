@@ -60,6 +60,7 @@
 		<Unit filename="maps/map.pgm" />
 		<Unit filename="maps/map.yaml" />
 		<Unit filename="models/human.model" />
+		<Unit filename="models/human_massive.model" />
 		<Unit filename="models/intertia_matrix.ods" />
 		<Unit filename="models/pr2.urdf" />
 		<Unit filename="msg/Contact.msg" />
@@ -68,6 +69,7 @@
 		<Unit filename="msg/Link.msg" />
 		<Unit filename="msg/Shape.msg" />
 		<Unit filename="package.xml" />
+		<Unit filename="run_one_scenario.sh" />
 		<Unit filename="run_scenario.sh" />
 		<Unit filename="rviz/display.rviz" />
 		<Unit filename="src/balancer.cpp" />

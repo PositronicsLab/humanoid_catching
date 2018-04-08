@@ -88,7 +88,7 @@ private:
 
       ROS_INFO("****Calculating torques for arm %s****", req.name.c_str());
 
-      const int num_effective_joints = req.torque_limits.size();
+      const int num_effective_joints = req.num_effective_joints;
 
       // x_pole
       // linear velocity of body
@@ -715,6 +715,14 @@ private:
 
       res.torques.resize(num_effective_joints);
       for (unsigned int i = torque_idx, j = 0; i < torque_idx + num_effective_joints; ++i, ++j) {
+        if(z[i] + EPSILON <= req.torque_limits[j].minimum) {
+            ROS_WARN("Torque violates minimum constraint");
+            return false;
+        }
+        if(z[i] - EPSILON >= req.torque_limits[j].maximum) {
+            ROS_WARN("Torque violates maximum constraint");
+            return false;
+        }
         res.torques[j] = z[i];
       }
 
