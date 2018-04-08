@@ -1091,7 +1091,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             jacobian = currentRobotState.getJacobian(jointModelGroup, contactLink->getName());
 #else
             // TODO: The position is innaccurate
-            currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(contactLink->getName(), Eigen::Vector3d(0, 0, 0), jacobian);
+            if (!currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(contactLink->getName(), Eigen::Vector3d(0, 0, 0), jacobian)) {
+                ROS_ERROR("Failed to  get jacobian for link [%s]", contactLink->getName().c_str());
+                return;
+            }
 #endif
         }
 
