@@ -153,7 +153,7 @@ target_link_libraries(catch_human_controller
 add_executable(fall_predictor src/fall_predictor.cpp)
 add_dependencies(fall_predictor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(fall_predictor
-   ${catkin_LIBRARIES} ${ODE_LIBRARY}
+   ${catkin_LIBRARIES} ${ODE_LIBRARY} ${GPERFTOOLS_TCMALLOC_AND_PROFILER}
 )
 
 add_executable(imu_visualizer src/imu_visualizer.cpp)

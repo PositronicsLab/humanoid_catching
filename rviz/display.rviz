@@ -6,18 +6,9 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /Predicted Path Right1
+        - /IMU1
         - /Goal Trials1
-        - /Initial Pose1
-        - /Initial Velocity1
-        - /Effort1
-        - /EE Velocity1
-        - /Goal Left1
-        - /Goal Right1
-        - /Target Velocity Left1
-        - /Target Pose Left1
-        - /Target Pose Right1
-        - /Goal Point Left1
-        - /Goal Point Right1
       Splitter Ratio: 0.5
     Tree Height: 407
   - Class: rviz/Selection
@@ -61,13 +52,15 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: true
     - Class: rviz/Marker
-      Enabled: false
+      Enabled: true
       Marker Topic: /fall_predictor_right/projected_path
       Name: Predicted Path Right
       Namespaces:
-        {}
+        end_effectors: true
+        end_effectors_text: true
+        pole: true
       Queue Size: 1000
-      Value: false
+      Value: true
     - Class: rviz/Marker
       Enabled: false
       Marker Topic: /kinematics_cache/known_ik_positions_perm
@@ -573,17 +566,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 3.97529
+      Distance: 4.38821
       Focal Point:
         X: -0.143902
         Y: 0.129822
         Z: 0.302503
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.819796
+      Pitch: 0.729797
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 6.25419
+      Yaw: 0.21601
     Saved: ~
 Window Geometry:
   Displays:

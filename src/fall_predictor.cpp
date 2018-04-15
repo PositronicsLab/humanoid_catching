@@ -9,6 +9,12 @@
 #include <boost/math/constants/constants.hpp>
 #include <tf/tf.h>
 
+#define PROFILE 0
+
+#if(PROFILE)
+#include <google/profiler.h>
+#endif
+
 namespace
 {
 using namespace std;
@@ -242,7 +248,6 @@ struct SimulationState {
                     assert(firstObj == humanoid.geom && secondObj == endEffectors[which].geom
                            && firstObj == contact[i].geom.g1 && secondObj == contact[i].geom.g2);
 
-                    // Only save one contact per arm
                     eeContacts[which] = contact[i].geom;
                     ROS_INFO("Contact between human and %s", endEffectors[which].name.c_str());
                 }
@@ -330,6 +335,12 @@ private:
 
     //! Position of base
     geometry_msgs::Point base;
+
+    #if(PROFILE)
+    //! Gprofile name
+    string profileName;
+    #endif
+
 public:
     FallPredictor(const string& name) :
         pnh("~")
@@ -356,9 +367,17 @@ public:
                                 &FallPredictor::predict, this);
 
         initODE();
+
+        #if(PROFILE)
+        profileName = "/tmp/" + ros::this_node::getName() + ".prof";
+        ProfilerStart(profileName.c_str());
+        #endif
     }
 
     ~FallPredictor() {
+        #if(PROFILE)
+        ProfilerStop();
+        #endif
         // Clean up
         destroyODE();
     }

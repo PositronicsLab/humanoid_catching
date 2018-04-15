@@ -275,11 +275,11 @@ CatchHumanController::CatchHumanController() :
         if (ujoint != NULL && ujoint->limits)
         {
             max_velocity = ujoint->limits->velocity;
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
         }
         else
         {
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_VELOCITY);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_VELOCITY);
             max_velocity = MAX_VELOCITY;
         }
 
@@ -289,11 +289,11 @@ CatchHumanController::CatchHumanController() :
         {
             // max accelerations are very conservative and not consistent with in-situ observations
             max_acc *= 2.0;
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
         }
         else
         {
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_ACCELERATION);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_ACCELERATION);
             max_acc = MAX_ACCELERATION;
         }
 
@@ -302,11 +302,11 @@ CatchHumanController::CatchHumanController() :
         if (ujoint != NULL && ujoint->limits)
         {
             max_effort = ujoint->limits->effort;
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointModelNames[i].c_str());
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to %f for %s", max_effort, jointModelNames[i].c_str());
         }
         else
         {
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
             max_effort = MAX_EFFORT;
         }
         jointLimits[jointModelNames[i]] = Limits(max_velocity, max_acc, max_effort);
@@ -332,7 +332,7 @@ CatchHumanController::CatchHumanController() :
     jointStateMessagesSpinner->start();
 
     // Spin until the joint states are set.
-    ROS_INFO("Waiting for joint states to be received");
+    ROS_DEBUG("Waiting for joint states to be received");
     while(true) {
         ros::Duration().fromNSec(1000000 /* 1ms */).sleep();
 
@@ -343,7 +343,7 @@ CatchHumanController::CatchHumanController() :
         }
     }
 
-    ROS_INFO("Joint states ready");
+    ROS_DEBUG("Joint states ready");
 
     readyService = nh.advertiseService("/humanoid_catching/catch_human_controller", &CatchHumanController::noop, this);
 
@@ -615,8 +615,6 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     // Take the read lock
     boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
     assert(solution.size() == jointNames.size());
-    assert(solution.size() == jointLimits.size());
-    assert(solution.size() == jointStates.size());
 
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
@@ -984,14 +982,14 @@ unsigned int CatchHumanController::countJointsAboveInChain(const robot_model::Li
 
 void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 {
-    ROS_DEBUG("Catch procedure initiated");
+    ROS_INFO("Catch procedure initiated");
     assert(imuData->header.frame_id == globalFrame);
 
     ros::WallTime startWallTime = ros::WallTime::now();
     ros::Time startRosTime = ros::Time::now();
     ROS_DEBUG("Planning scene is from %f", planningScene->getLastUpdateTime().toSec());
 
-    ROS_DEBUG("Predicting fall for arm %s", arm.c_str());
+    ROS_INFO("Predicting fall for arm %s", arm.c_str());
 
     humanoid_catching::PredictFall predictFallObj;
     if (!predictFall(imuData, predictFallObj, MAX_DURATION))
@@ -999,7 +997,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
         return;
     }
-    ROS_DEBUG("Fall predicted successfully for arm %s", arm.c_str());
+    ROS_INFO("Fall predicted successfully for arm %s", arm.c_str());
 
     ROS_DEBUG("Estimated position: %f %f %f", predictFallObj.response.points[0].pose.position.x, predictFallObj.response.points[0].pose.position.y,  predictFallObj.response.points[0].pose.position.z);
     ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
@@ -1149,6 +1147,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     }
     else
     {
+        ROS_INFO("Beginning search for solutions");
         ros::Time start = ros::Time::now();
 
         vector<Solution> solutions;
@@ -1202,6 +1201,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             // Increment the number of quadrants
             ++level;
         }
+
+        ROS_INFO("Ending search for solutions");
 
         // Iterate over all possible solutions and select the most feasible. Use a progressive relaxation of the time
         // constraint.
