@@ -38,11 +38,11 @@ static const double MAX_ACCELERATION = 100;
 static const double MAX_EFFORT = 100;
 
 //! Tolerance of time to be considered in contact
-static const double CONTACT_TIME_TOLERANCE_DEFAULT = 0.1;
+static const double CONTACT_TIME_TOLERANCE_DEFAULT = 0.01;
 static const ros::Duration MAX_DURATION = ros::Duration(1.5);
-static const ros::Duration STEP_SIZE = ros::Duration(0.001);
-
-static const ros::Duration SEARCH_RESOLUTION(0.025);
+static const ros::Duration STEP_SIZE = ros::Duration(0.01);
+static const ros::Duration MAX_GRID_SEARCH_DURATION = ros::Duration(0.004);
+static const ros::Duration SEARCH_RESOLUTION(0.03);
 static const double pi = boost::math::constants::pi<double>();
 
 #define ENABLE_EXECUTION_TIME_DEBUGGING 0
@@ -237,17 +237,18 @@ CatchHumanController::CatchHumanController() :
     }
 
     body = boost::shared_ptr<Ravelin::RCArticulatedBodyd>(new Ravelin::RCArticulatedBodyd());
-    body->set_links_and_joints(links, joints);
     body->set_floating_base(false);
+    body->set_links_and_joints(links, joints);
 
     // Determine the indexes for the arms within the body joints in Ravelin
-    int curr = 0;
-    for (int l = 0; l < joints.size(); ++l)
+    unsigned int curr = 0;
+    for (unsigned int l = 0; l < joints.size(); ++l)
     {
         // Only record joints that represent generalized coordinates
         if (joints[l]->num_dof() > 0)
         {
             jointIndices[joints[l]->joint_id] = curr;
+            ROS_DEBUG("Adding joint index [%u] for joint [%s]", curr, joints[l]->joint_id.c_str());
         }
         curr += joints[l]->num_dof();
     }
@@ -279,7 +280,7 @@ CatchHumanController::CatchHumanController() :
         }
         else
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_VELOCITY);
+            ROS_WARN_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_VELOCITY);
             max_velocity = MAX_VELOCITY;
         }
 
@@ -288,12 +289,13 @@ CatchHumanController::CatchHumanController() :
         if (nh.getParam(prefix + "has_acceleration_limits", has_acc_limits) && has_acc_limits && nh.getParam(prefix + "max_acceleration", max_acc))
         {
             // max accelerations are very conservative and not consistent with in-situ observations
+            // TODO: Reassess this
             max_acc *= 2.0;
             ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
         }
         else
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_ACCELERATION);
+            ROS_WARN_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to default [%f]", jointModelNames[i].c_str(), MAX_ACCELERATION);
             max_acc = MAX_ACCELERATION;
         }
 
@@ -306,7 +308,7 @@ CatchHumanController::CatchHumanController() :
         }
         else
         {
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
+            ROS_WARN_NAMED("catch_human_action_server", "Setting max effort to default for %s", jointModelNames[i].c_str());
             max_effort = MAX_EFFORT;
         }
         jointLimits[jointModelNames[i]] = Limits(max_velocity, max_acc, max_effort);
@@ -358,6 +360,7 @@ vector<string> CatchHumanController::getActiveJointModelNames(const robot_model:
     vector<string> activeJointModels;
     for (unsigned int i = 0; i < jointModelGroup->getJointModels().size(); ++i)
     {
+        ROS_DEBUG("Evaluating joint [%s]", jointModelGroup->getJointModels()[i]->getName().c_str());
         if (jointModelGroup->getJointModels()[i]->getMimic() != NULL)
         {
             ROS_WARN("Passive joint model found");
@@ -375,6 +378,7 @@ CatchHumanController::~CatchHumanController()
 }
 
 bool CatchHumanController::noop(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res) {
+    return true;
 }
 
 void CatchHumanController::publishIkCache()
@@ -616,6 +620,7 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
     assert(solution.size() == jointNames.size());
 
+    // TODO: Do we care about the last 2 joints here?
     for(unsigned int i = 0; i < solution.size(); ++i)
     {
         const string& jointName = jointNames.at(i);
@@ -638,12 +643,15 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     return ros::Duration(longestTime);
 }
 
+// TODO: Find the outermost contact on the chain
 const vector<FallPoint>::const_iterator CatchHumanController::findContact(const humanoid_catching::PredictFall::Response& fall) const
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
         if (i->time > contactTimeTolerance)
         {
+            ROS_INFO("Exiting search for contact at time [%f] with tolerance [%f]",
+                     i->time.toSec(), contactTimeTolerance.toSec());
             break;
         }
 
@@ -755,7 +763,7 @@ void CatchHumanController::calcArmLinks()
     set<const robot_model::LinkModel*> uniqueLinks;
 
     for (unsigned int i = 0; i < kinematicModel->getJointModelGroup(arm)->getLinkModels().size(); ++i) {
-        ROS_DEBUG("Adding parent link %s", kinematicModel->getJointModelGroup(arm)->getLinkModels()[i]->getName().c_str());
+        ROS_DEBUG("Adding arm link %s", kinematicModel->getJointModelGroup(arm)->getLinkModels()[i]->getName().c_str());
         searchLinks.push(kinematicModel->getJointModelGroup(arm)->getLinkModels()[i]);
     }
 
@@ -949,6 +957,7 @@ const robot_model::JointModel* CatchHumanController::findParentActiveJoint(const
 }
 
 unsigned int CatchHumanController::countJointsAboveInChain(const robot_model::LinkModel* contactLink) const {
+
     const robot_model::LinkModel* root = kinematicModel->getJointModelGroup(arm)->getLinkModels().front()->getParentJointModel()->getParentLinkModel();
     ROS_DEBUG("Searching from contact link [%s] to root link [%s]", contactLink->getName().c_str(), root->getName().c_str());
 
@@ -1006,11 +1015,10 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     // Determine whether to execute balancing.
     const vector<FallPoint>::const_iterator fallPoint = findContact(predictFallObj.response);
 
-
     // Determine if the robot is currently in contact
     if (fallPoint != predictFallObj.response.points.end())
     {
-        ROS_INFO("Robot is in contact. Executing balancing for arm %s", arm.c_str());
+        ROS_INFO("Robot is in contact at projected time [%f]. Executing balancing for arm %s", fallPoint->time.toSec(), arm.c_str());
 
         humanoid_catching::CalculateTorques calcTorques;
         calcTorques.request.name = arm;
@@ -1021,21 +1029,13 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         calcTorques.request.body_com = fallPoint->pose;
 
         // Search for the last contact in the kinematic chain
-        bool contactFound = false;
         const robot_model::LinkModel* contactLink = NULL;
+        calcTorques.request.num_effective_joints = 0;
 
         for (unsigned int i = 0; i < fallPoint->contacts.size(); ++i)
         {
             if (fallPoint->contacts[i].is_in_contact)
             {
-                ROS_INFO("Contact is with link %s at position: [%f %f %f] and normal: [%f %f %f]",
-                         fallPoint->contacts[i].link.name.c_str(), fallPoint->contacts[i].position.x,
-                         fallPoint->contacts[i].position.y,
-                         fallPoint->contacts[i].position.z,
-                         fallPoint->contacts[i].normal.x,
-                         fallPoint->contacts[i].normal.y,
-                         fallPoint->contacts[i].normal.z);
-
                 // Locate the joint
                 vector<const robot_model::LinkModel*>::const_iterator found = find_if(allArmLinks.begin(), allArmLinks.end(), ModelNamesMatch(fallPoint->contacts[i].link.name));
                 assert(found != allArmLinks.end() && "Could not locate arm link in allArmLinks");
@@ -1047,13 +1047,23 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
                 // Find the parent link that is part of the joint model
                 contactLink = findParentLinkInJointModelGroup(actualContactLink);
 
+                ROS_INFO("Contact is with link [%s] (using parent link [%s]) at position: [%f %f %f] and normal: [%f %f %f]. Will use [%u] active joints.",
+                         fallPoint->contacts[i].link.name.c_str(),
+                         contactLink->getName().c_str(),
+                         fallPoint->contacts[i].position.x,
+                         fallPoint->contacts[i].position.y,
+                         fallPoint->contacts[i].position.z,
+                         fallPoint->contacts[i].normal.x,
+                         fallPoint->contacts[i].normal.y,
+                         fallPoint->contacts[i].normal.z,
+                         calcTorques.request.num_effective_joints);
+
                 calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
-                contactFound = true;
                 break;
             }
         }
 
-        assert(contactFound && "Contact not found!");
+        assert(contactLink && "Contact not found!");
 
         calcTorques.request.ground_contact = fallPoint->ground_contact;
 
@@ -1066,17 +1076,23 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         // Get the inertia matrix
         Ravelin::MatrixNd robotInertiaMatrix;
         body->get_generalized_inertia(robotInertiaMatrix);
+        ROS_DEBUG_STREAM("robot intertia matrix: " << endl << robotInertiaMatrix);
         Ravelin::MatrixNd armMatrix;
 
         const robot_model::JointModel* parentActiveJoint = findParentActiveJoint(contactLink);
-        ROS_DEBUG("Extracting the intertia matrix for [%s] from [%s](%u) to [%s](%u)", contactLink->getName().c_str(), jointNames[0].c_str(),
-                 jointIndices[jointNames[0]], parentActiveJoint->getName().c_str(), jointIndices[parentActiveJoint->getName()] + 1);
+        const unsigned int startIndex = jointIndices[jointNames[0]];
+        const unsigned int endIndex = jointIndices[parentActiveJoint->getName()];
 
-        robotInertiaMatrix.get_sub_mat(jointIndices[jointNames[0]], jointIndices[parentActiveJoint->getName()] + 1,
-                                       jointIndices[jointNames[0]], jointIndices[parentActiveJoint->getName()] + 1, armMatrix);
+        ROS_DEBUG("Extracting the intertia matrix for [%s] from [%s](%u) to [%s](%u)", contactLink->getName().c_str(), jointNames[0].c_str(),
+                 startIndex, parentActiveJoint->getName().c_str(), endIndex);
+
+        robotInertiaMatrix.get_sub_mat(startIndex, endIndex + 1,
+                                       startIndex, endIndex + 1,
+                                       armMatrix);
 
         calcTorques.request.robot_inertia_matrix = vector<double>(armMatrix.data(), armMatrix.data() + armMatrix.size());
         ROS_DEBUG("Completed extracting the inertia matrix");
+        ROS_DEBUG_STREAM("robot arm intertia matrix (" << armMatrix.size() << "): " << endl << armMatrix);
 
         // Get the jacobian
         Eigen::MatrixXd jacobian;
@@ -1097,11 +1113,11 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         }
 
         // Set current velocities
-        calcTorques.request.joint_velocity.resize(jointNames.size());
+        calcTorques.request.joint_velocity.resize(calcTorques.request.num_effective_joints);
         // Lock scope
         {
             boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
-            for (unsigned int j = 0; j < jointNames.size(); ++j)
+            for (unsigned int j = 0; j < calcTorques.request.num_effective_joints; ++j)
             {
                 calcTorques.request.joint_velocity[j] = jointStates[jointNames[j]].velocity;
             }
@@ -1112,9 +1128,9 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         Eigen::Map<Eigen::MatrixXd>(&calcTorques.request.jacobian_matrix[0], jacobian.rows(), jacobian.cols()) = jacobian;
 
         // Set the joint limits
-        calcTorques.request.torque_limits.resize(jointNames.size());
-        calcTorques.request.velocity_limits.resize(jointNames.size());
-        for (unsigned int j = 0; j < jointNames.size(); ++j)
+        calcTorques.request.torque_limits.resize(calcTorques.request.num_effective_joints);
+        calcTorques.request.velocity_limits.resize(calcTorques.request.num_effective_joints);
+        for (unsigned int j = 0; j < calcTorques.request.num_effective_joints; ++j)
         {
             double maxEffort = jointLimits[jointNames[j]].effort;
             calcTorques.request.torque_limits[j].minimum = -maxEffort;
@@ -1147,18 +1163,18 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     }
     else
     {
-        ROS_INFO("Beginning search for solutions");
+        ROS_INFO("Robot is not in contact. Beginning search for intercept solutions");
         ros::Time start = ros::Time::now();
 
         vector<Solution> solutions;
         // We now have a projected time/position path. Search the path for acceptable times.
         // Search for a fixed duration of time
         unsigned int level = 0;
-        while (ros::Time::now() - start < ros::Duration(0.020)) {
+        while (ros::Time::now() - start < MAX_GRID_SEARCH_DURATION) {
 
             unsigned int quadrants = pow(2, level);
 
-            for (unsigned int q = 0; q < quadrants && ros::Time::now() - start < ros::Duration(0.020); ++q) {
+            for (unsigned int q = 0; q < quadrants && ros::Time::now() - start < MAX_GRID_SEARCH_DURATION; ++q) {
 
                 // Determine the size of each quadrant
                 unsigned int pointQuadrantSize = min(ceil(1 / double(quadrants) * predictFallObj.response.points.size()), double(predictFallObj.response.points.size()));
@@ -1202,7 +1218,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             ++level;
         }
 
-        ROS_INFO("Ending search for solutions");
+        ROS_INFO("Ending search for solutions. Searched [%u] levels", level);
 
         // Iterate over all possible solutions and select the most feasible. Use a progressive relaxation of the time
         // constraint.
@@ -1221,10 +1237,11 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
                     }
                 }
                 if (!bestSolution) {
-                    ROS_DEBUG("Relaxing constraint. New value is %f", durationLimit.toSec());
+                    // TODO: Assess if this value should be lower
                     durationLimit -= ros::Duration(0.1);
                 }
             }
+            ROS_INFO("Relaxed constraint to [%f] to find solution", durationLimit.toSec());
         }
 
         if (!bestSolution)

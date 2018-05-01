@@ -65,4 +65,5 @@
   <run_depend>orocos_kdl</run_depend>
   <run_depend>operational_space_controllers_msgs</run_depend>
   <run_depend>octomap</run_depend>
+  <run_depend>gazebo</run_depend>
 </package>

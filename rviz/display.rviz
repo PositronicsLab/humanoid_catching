@@ -6,9 +6,6 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Predicted Path Right1
-        - /IMU1
-        - /Goal Trials1
       Splitter Ratio: 0.5
     Tree Height: 407
   - Class: rviz/Selection
@@ -60,6 +57,16 @@ Visualization Manager:
         end_effectors_text: true
         pole: true
       Queue Size: 1000
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /fall_predictor_left/projected_path
+      Name: Predicted Path Left
+      Namespaces:
+        end_effectors: true
+        end_effectors_text: true
+        pole: true
+      Queue Size: 100
       Value: true
     - Class: rviz/Marker
       Enabled: false
@@ -573,10 +580,10 @@ Visualization Manager:
         Z: 0.302503
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.729797
+      Pitch: 0.334798
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.21601
+      Yaw: 5.87922
     Saved: ~
 Window Geometry:
   Displays:

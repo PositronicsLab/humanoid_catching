@@ -86,7 +86,7 @@ private:
     bool calculateTorques(humanoid_catching::CalculateTorques::Request& req,
                           humanoid_catching::CalculateTorques::Response& res) {
 
-      ROS_INFO("****Calculating torques for arm %s****", req.name.c_str());
+      ROS_INFO("****Calculating torques for arm %s**** and [%u] effective joints", req.name.c_str(), req.num_effective_joints);
 
       const int num_effective_joints = req.num_effective_joints;
 
@@ -159,6 +159,7 @@ private:
       // M_robot
       ROS_DEBUG("Calculating M_robot");
       MatrixNd M_robot_base(num_effective_joints, num_effective_joints, &req.robot_inertia_matrix[0]);
+      ROS_DEBUG_STREAM("M_robot_base: " << endl << M_robot_base);
       MatrixNd M_robot;
       M_robot_base.get_sub_mat(0, num_effective_joints, 0, num_effective_joints, M_robot);
       ROS_DEBUG_STREAM("M_robot: " << endl << M_robot);
@@ -292,9 +293,11 @@ private:
       Q.set_sub_vec(0, q_hat);
       Q.set_sub_vec(3, -r.cross(q_hat, temp_vector));
 
+      ROS_DEBUG("Calculating J transpose");
       MatrixNd J_robot_transpose = J_robot;
       J_robot_transpose.transpose();
 
+      ROS_DEBUG("Calculating Q");
       VectorNd q_hat_extended(6);
       q_hat_extended.set_zero();
       q_hat_extended.set_sub_vec(0, -q_hat);
@@ -570,7 +573,7 @@ private:
       // Manipulated to fit constraint form
       // -v_robot_t - delta_t * M_inv * Q_t * f_robot = M_inv * delta_t * P_t * torque + -I * v_robot(t + t_delta)
 
-      ROS_DEBUG_STREAM("Inverting M");
+      ROS_DEBUG_STREAM("Inverting M_robot");
       M_inverse = M_robot;
       linAlgd.invert(M_inverse);
       ROS_DEBUG_STREAM("M_inverse: " << endl << M_inverse);

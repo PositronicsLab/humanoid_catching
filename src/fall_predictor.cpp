@@ -194,7 +194,7 @@ struct SimulationState {
         return object;
     }
 
-    void collisionCallback(dGeomID o1, dGeomID o2)
+    void nearCollisionCallback(dGeomID o1, dGeomID o2)
     {
         // Ignore ground contacts
         if (o1 == ground || o2 == ground)
@@ -203,19 +203,16 @@ struct SimulationState {
             return;
         }
 
-        dContact contact[MAX_CONTACTS];
-
         dBodyID b1 = dGeomGetBody(o1);
         dBodyID b2 = dGeomGetBody(o2);
 
-        if (b1 == humanoid.body || b2 == humanoid.body) {
-            isInContact = true;
-            int link = whichLink(b1, b2);
-            if (link != -1) {
-                ROS_DEBUG("Contact between human and link %s", links[link].name.c_str());
-            }
+        // Check if either contact is the humanoid
+        if (b1 != humanoid.body && b2 != humanoid.body) {
+            ROS_DEBUG("Skipping non-humanoid contact");
+            return;
         }
 
+        dContact contact[MAX_CONTACTS];
         for (int i = 0; i < MAX_CONTACTS; i++)
         {
             contact[i].surface.mode = dContactSoftCFM;
@@ -236,20 +233,22 @@ struct SimulationState {
                 dJointID c = dJointCreateContact(world, contactgroup, &contact[i]);
                 dJointAttach(c, b1, b2);
 
-                // Check if either contact is the humanoid
-                if (b1 != humanoid.body && b2 != humanoid.body) {
-                    continue;
-                }
+                // Set that the human is in contact
+                isInContact = true;
+                int whichEE = whichEndEffector(b1, b2);
+                int link = whichLink(b1, b2);
 
                 // Determine if this contact should be saved
-                int which = whichEndEffector(b1, b2);
-                if (which != -1)
-                {
-                    assert(firstObj == humanoid.geom && secondObj == endEffectors[which].geom
+                if (whichEE != -1) {
+                    ROS_INFO("Contact between human and end-effector [%s]", endEffectors[whichEE].name.c_str());
+                    assert(firstObj == humanoid.geom && secondObj == endEffectors[whichEE].geom
                            && firstObj == contact[i].geom.g1 && secondObj == contact[i].geom.g2);
-
-                    eeContacts[which] = contact[i].geom;
-                    ROS_INFO("Contact between human and %s", endEffectors[which].name.c_str());
+                    eeContacts[whichEE] = contact[i].geom;
+                } else if (link != -1) {
+                    ROS_INFO("Contact between human and link %s", links[link].name.c_str());
+                }
+                else {
+                    ROS_WARN("Contact with unknown link");
                 }
             }
         }
@@ -258,7 +257,7 @@ struct SimulationState {
     static void staticNearCallback(void* data, dGeomID o1, dGeomID o2)
     {
         SimulationState* self = static_cast<SimulationState*>(data);
-        self->collisionCallback(o1, o2);
+        self->nearCollisionCallback(o1, o2);
     }
 
     void simLoop(double stepSize)
@@ -736,9 +735,14 @@ private:
 
         state.eeContacts.resize(req.end_effectors.size());
 
+        // Preallocate space for the results
+        res.points.reserve(req.max_time.toSec() / req.step_size.toSec());
+
         // Execute the simulation loop up to MAX_DURATION seconds
-        ros::Duration lastTime;
-        for (double t = 0; t <= req.max_time.toSec() && !state.isInContact; t += req.step_size.toSec())
+        bool isOnGround = false;
+        ros::Duration lastTime = ros::Duration(0);
+        double t;
+        for (t = req.step_size.toSec(); t <= req.max_time.toSec() && !state.isInContact && !isOnGround; t += req.step_size.toSec())
         {
             // Clear end effector contacts
             for (unsigned int i = 0; i < state.eeContacts.size(); ++i) {
@@ -750,13 +754,21 @@ private:
 
             geometry_msgs::Pose bodyPose = getBodyPose(state.humanoid.body);
 
+            // Determine if the pole is on the ground and end the simulation
+            // Check if COM is at a position with height approximately equal to the radius
+            if (bodyPose.position.z <= humanoidRadius * (1 + 0.05))
+            {
+                ROS_INFO("Humanoid is on the ground. Ending simulation @ [%f]s.", t);
+                isOnGround = true;
+            }
+
             // Only record results for requested steps
-            if (t != 0 && ros::Duration(t) - lastTime < req.result_step_size)
+            if (!isOnGround && !state.isInContact && lastTime != ros::Duration(0) && ros::Duration(t) - lastTime < req.result_step_size)
             {
                 continue;
             }
-
             lastTime = ros::Duration(t);
+
             FallPoint curr;
 
             // Get the location of the body for the current iteration
@@ -766,7 +778,7 @@ private:
             curr.velocity = getBodyTwist(state.humanoid.body);
             curr.time = ros::Duration(t);
 
-            ROS_DEBUG("Pose @ time %f position (%f %f %f) orientation (%f %f %f %f)",
+            ROS_DEBUG("Recording pose @ time %f position (%f %f %f) orientation (%f %f %f %f)",
                       curr.time.toSec(), curr.pose.position.x, curr.pose.position.y, curr.pose.position.z,
                       curr.pose.orientation.x, curr.pose.orientation.y, curr.pose.orientation.z, curr.pose.orientation.w);
 
@@ -784,14 +796,6 @@ private:
             }
 
             res.points.push_back(curr);
-
-            // Determine if the pole is on the ground and end the simulation
-            // Check if COM is at a position with height approximately equal to the radius
-            if (bodyPose.position.z <= humanoidRadius * (1 + 0.05))
-            {
-                ROS_INFO("Humanoid is on the ground. Ending simulation @ [%f]s.", t);
-                break;
-            }
         }
 
         // Set the mass and inertia matrix
@@ -803,7 +807,7 @@ private:
         // Publish the path
         if (fallVizPub.getNumSubscribers() > 0)
         {
-            ROS_INFO("Publishing path visualization");
+            ROS_DEBUG("Publishing path visualization");
             vector<geometry_msgs::Pose> points;
             for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i)
             {
@@ -814,7 +818,7 @@ private:
 
         if (contactVizPub.getNumSubscribers() > 0)
         {
-            ROS_INFO("Publishing contact visualization");
+            ROS_DEBUG("Publishing contact visualization");
             for (vector<FallPoint>::const_iterator i = res.points.begin(); i != res.points.end(); ++i)
             {
                 publishContacts(i->contacts, res.header.frame_id);
@@ -822,7 +826,7 @@ private:
         }
 
         if (fallVizPub.getNumSubscribers() > 0){
-            ROS_INFO("Publishing link visualization");
+            ROS_DEBUG("Publishing link visualization");
             vector<geometry_msgs::Pose> eePoses;
             vector<vector<double> > eeSizes;
             vector<bool> isEE;
@@ -848,7 +852,7 @@ private:
 
         state.destroyWorld();
 
-        ROS_INFO("Completed fall prediction");
+        ROS_INFO("Completed fall prediction. Predicted for [%f]s. Recorded [%lu] events. Ended in contact [%u]", t, res.points.size(), state.isInContact);
         return true;
     }
 };

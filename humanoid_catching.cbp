@@ -44,6 +44,7 @@
 		<Unit filename="bags/fall2.bag" />
 		<Unit filename="bags/fall3.bag" />
 		<Unit filename="bags/stable.bag" />
+		<Unit filename="cleanup.sh" />
 		<Unit filename="humanoid_catching.layout" />
 		<Unit filename="include/humanoid_catching/catch_human_controller.h" />
 		<Unit filename="launch/activate_force_controllers.launch" />
