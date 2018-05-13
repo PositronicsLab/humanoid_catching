@@ -6,6 +6,7 @@ humanoid_catching/Link[] end_effectors
 humanoid_catching/Link[] links
 
 duration max_time
+duration contact_time
 duration step_size
 duration result_step_size
 

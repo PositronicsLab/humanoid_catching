@@ -38,8 +38,8 @@ static const double MAX_ACCELERATION = 100;
 static const double MAX_EFFORT = 100;
 
 //! Tolerance of time to be considered in contact
-static const double CONTACT_TIME_TOLERANCE_DEFAULT = 0.01;
-static const ros::Duration MAX_DURATION = ros::Duration(1.5);
+static const ros::Duration CONTACT_TIME_TOLERANCE_DEFAULT = ros::Duration(0.01);
+static const ros::Duration MAX_DURATION = ros::Duration(1.0);
 static const ros::Duration STEP_SIZE = ros::Duration(0.01);
 static const ros::Duration MAX_GRID_SEARCH_DURATION = ros::Duration(0.004);
 static const ros::Duration SEARCH_RESOLUTION(0.03);
@@ -156,7 +156,7 @@ CatchHumanController::CatchHumanController() :
 
     {
         double contactTimeToleranceDouble;
-        pnh.param("contact_time_tolerance", contactTimeToleranceDouble, CONTACT_TIME_TOLERANCE_DEFAULT);
+        pnh.param("contact_time_tolerance", contactTimeToleranceDouble, CONTACT_TIME_TOLERANCE_DEFAULT.toSec());
         contactTimeTolerance = ros::Duration(contactTimeToleranceDouble);
     }
 
@@ -643,15 +643,14 @@ ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solu
     return ros::Duration(longestTime);
 }
 
-// TODO: Find the outermost contact on the chain
 const vector<FallPoint>::const_iterator CatchHumanController::findContact(const humanoid_catching::PredictFall::Response& fall) const
 {
     for (vector<FallPoint>::const_iterator i = fall.points.begin(); i != fall.points.end(); ++i)
     {
         if (i->time > contactTimeTolerance)
         {
-            ROS_INFO("Exiting search for contact at time [%f] with tolerance [%f]",
-                     i->time.toSec(), contactTimeTolerance.toSec());
+            ROS_DEBUG("Exiting search for contact at time [%f] with tolerance [%f]",
+                      i->time.toSec(), contactTimeTolerance.toSec());
             break;
         }
 
@@ -678,7 +677,7 @@ bool CatchHumanController::linkPosition(const string& link, geometry_msgs::PoseS
         return false;
     }
 
-    const Eigen::Affine3d eigenPose = linkState->getGlobalLinkTransform ();
+    const Eigen::Affine3d& eigenPose = linkState->getGlobalLinkTransform();
     tf::poseEigenToMsg(eigenPose, pose.pose);
 
     ROS_DEBUG("%s position in global frame (%f %f %f)", link.c_str(), pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
@@ -816,6 +815,7 @@ private:
 
 bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration)
 {
+    ROS_DEBUG("Preparing to call fall prediction");
     predictFall.request.header = imuData->header;
     predictFall.request.orientation = imuData->orientation;
     predictFall.request.velocity.angular = imuData->angular_velocity;
@@ -823,6 +823,7 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.max_time = duration;
     predictFall.request.step_size = STEP_SIZE;
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
+    predictFall.request.contact_time = contactTimeTolerance;
 
     // Lock scope
     {
@@ -836,7 +837,7 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
         for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i)
         {
             Link link;
-            const Eigen::Affine3d eigenPose = (*i)->getGlobalLinkTransform();
+            const Eigen::Affine3d& eigenPose = (*i)->getGlobalLinkTransform();
 
             tf::poseEigenToMsg(eigenPose, link.pose.pose);
 
@@ -867,6 +868,7 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
         }
     }
 
+    ROS_DEBUG("Invoking predict fall service");
     if (!fallPredictor.call(predictFall))
     {
         return false;
@@ -1006,7 +1008,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         ROS_WARN("Fall prediction failed for arm %s", arm.c_str());
         return;
     }
-    ROS_INFO("Fall predicted successfully for arm %s", arm.c_str());
+    ROS_INFO("Fall predicted successfully for arm %s. Predicted [%lu] steps.", arm.c_str(), predictFallObj.response.points.size());
 
     ROS_DEBUG("Estimated position: %f %f %f", predictFallObj.response.points[0].pose.position.x, predictFallObj.response.points[0].pose.position.y,  predictFallObj.response.points[0].pose.position.z);
     ROS_DEBUG("Estimated angular velocity: %f %f %f", predictFallObj.response.points[0].velocity.angular.x, predictFallObj.response.points[0].velocity.angular.y,  predictFallObj.response.points[0].velocity.angular.z);
@@ -1031,6 +1033,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         // Search for the last contact in the kinematic chain
         const robot_model::LinkModel* contactLink = NULL;
         calcTorques.request.num_effective_joints = 0;
+        geometry_msgs::Point contactPosition;
 
         for (unsigned int i = 0; i < fallPoint->contacts.size(); ++i)
         {
@@ -1041,25 +1044,29 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
                 assert(found != allArmLinks.end() && "Could not locate arm link in allArmLinks");
                 const robot_model::LinkModel* actualContactLink = *found;
 
-                // Now determine how many joints are active above it
-                calcTorques.request.num_effective_joints = countJointsAboveInChain(actualContactLink);
+                unsigned int numEffectiveJoints = countJointsAboveInChain(actualContactLink);
 
-                // Find the parent link that is part of the joint model
-                contactLink = findParentLinkInJointModelGroup(actualContactLink);
+                if (numEffectiveJoints > calcTorques.request.num_effective_joints) {
+                    // Now determine how many joints are active above it
+                    calcTorques.request.num_effective_joints = numEffectiveJoints;
 
-                ROS_INFO("Contact is with link [%s] (using parent link [%s]) at position: [%f %f %f] and normal: [%f %f %f]. Will use [%u] active joints.",
-                         fallPoint->contacts[i].link.name.c_str(),
-                         contactLink->getName().c_str(),
-                         fallPoint->contacts[i].position.x,
-                         fallPoint->contacts[i].position.y,
-                         fallPoint->contacts[i].position.z,
-                         fallPoint->contacts[i].normal.x,
-                         fallPoint->contacts[i].normal.y,
-                         fallPoint->contacts[i].normal.z,
-                         calcTorques.request.num_effective_joints);
+                    // Find the parent link that is part of the joint model
+                    contactLink = findParentLinkInJointModelGroup(actualContactLink);
 
-                calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
-                break;
+                    ROS_INFO("Contact is with link [%s] (using parent link [%s]) at position: [%f %f %f] and normal: [%f %f %f]. Will use [%u] active joints.",
+                            fallPoint->contacts[i].link.name.c_str(),
+                            contactLink->getName().c_str(),
+                            fallPoint->contacts[i].position.x,
+                            fallPoint->contacts[i].position.y,
+                            fallPoint->contacts[i].position.z,
+                            fallPoint->contacts[i].normal.x,
+                            fallPoint->contacts[i].normal.y,
+                            fallPoint->contacts[i].normal.z,
+                            calcTorques.request.num_effective_joints);
+
+                    calcTorques.request.contact_normal = fallPoint->contacts[i].normal;
+                    contactPosition = fallPoint->contacts[i].position;
+                }
             }
         }
 
@@ -1104,8 +1111,11 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 #if ROS_VERSION_MINIMUM(1, 10, 12)
             jacobian = currentRobotState.getJacobian(jointModelGroup, contactLink->getName());
 #else
-            // TODO: The position is innaccurate
-            if (!currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(contactLink->getName(), Eigen::Vector3d(0, 0, 0), jacobian)) {
+            const Eigen::Affine3d& linkCOM = currentRobotState.getLinkState(contactLink->getName())->getGlobalLinkTransform();
+            ROS_DEBUG("Link COM position [%f, %f, %f] and contact position [%f, %f, %f]", linkCOM.translation()[0], linkCOM.translation()[1], linkCOM.translation()[2], contactPosition.x, contactPosition.y, contactPosition.z);
+            const Eigen::Vector3d contactPositionOnLink = Eigen::Vector3d(contactPosition.x, contactPosition.y, contactPosition.z) - linkCOM.translation();
+            ROS_DEBUG("Contact position on link: [%f, %f, %f]", contactPositionOnLink.x(), contactPositionOnLink.y(), contactPositionOnLink.z());
+            if (!currentRobotState.getJointStateGroup(jointModelGroup->getName())->getJacobian(contactLink->getName(), contactPositionOnLink, jacobian)) {
                 ROS_ERROR("Failed to  get jacobian for link [%s]", contactLink->getName().c_str());
                 return;
             }
@@ -1218,11 +1228,11 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             ++level;
         }
 
-        ROS_INFO("Ending search for solutions. Searched [%u] levels", level);
+        ROS_INFO("Ending search for solutions. Searched [%u] levels and found [%lu] possible solutions", level, solutions.size());
 
         // Iterate over all possible solutions and select the most feasible. Use a progressive relaxation of the time
         // constraint.
-        boost::optional<Solution> bestSolution;
+        const Solution* bestSolution = NULL;
 
         if (solutions.empty())
         {
@@ -1233,7 +1243,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             while (!bestSolution) {
                 for (vector<Solution>::const_iterator possible = solutions.begin(); possible != solutions.end(); ++possible) {
                     if (possible->delta >= durationLimit && (!bestSolution || bestSolution->height < possible->height)) {
-                        bestSolution = *possible;
+                        bestSolution = &*possible;
                     }
                 }
                 if (!bestSolution) {

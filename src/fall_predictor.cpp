@@ -41,8 +41,17 @@ struct Model
 };
 
 struct SimulationState {
+    //! Simulation time
+    double t;
+
+    //! Steps
+    unsigned int steps;
+
     //! Is in contact
     bool isInContact;
+
+    //! Is in contact with end effector
+    bool isInContactWithEndEffector;
 
     //! Ground plane
     dGeomID ground;
@@ -79,6 +88,9 @@ struct SimulationState {
 
     SimulationState() {
         isInContact = false;
+        isInContactWithEndEffector = false;
+        t = 0.0;
+        steps = 0;
     }
 
     int whichEndEffector(const dBodyID b1, const dBodyID b2) const
@@ -212,6 +224,9 @@ struct SimulationState {
             return;
         }
 
+        ROS_DEBUG("Possible contact detected at time [%f]", t);
+        isInContact = true;
+
         dContact contact[MAX_CONTACTS];
         for (int i = 0; i < MAX_CONTACTS; i++)
         {
@@ -234,21 +249,21 @@ struct SimulationState {
                 dJointAttach(c, b1, b2);
 
                 // Set that the human is in contact
-                isInContact = true;
                 int whichEE = whichEndEffector(b1, b2);
                 int link = whichLink(b1, b2);
 
                 // Determine if this contact should be saved
                 if (whichEE != -1) {
-                    ROS_INFO("Contact between human and end-effector [%s]", endEffectors[whichEE].name.c_str());
+                    ROS_INFO("Contact between human and end-effector [%s] at time [%f]", endEffectors[whichEE].name.c_str(), t);
                     assert(firstObj == humanoid.geom && secondObj == endEffectors[whichEE].geom
                            && firstObj == contact[i].geom.g1 && secondObj == contact[i].geom.g2);
                     eeContacts[whichEE] = contact[i].geom;
+                    isInContactWithEndEffector = true;
                 } else if (link != -1) {
-                    ROS_INFO("Contact between human and link %s", links[link].name.c_str());
+                    ROS_INFO("Contact between human and link [%s] at time [%f]", links[link].name.c_str(), t);
                 }
                 else {
-                    ROS_WARN("Contact with unknown link");
+                    ROS_WARN("Contact with unknown link at time [%f]", t);
                 }
             }
         }
@@ -741,8 +756,7 @@ private:
         // Execute the simulation loop up to MAX_DURATION seconds
         bool isOnGround = false;
         ros::Duration lastTime = ros::Duration(0);
-        double t;
-        for (t = req.step_size.toSec(); t <= req.max_time.toSec() && !state.isInContact && !isOnGround; t += req.step_size.toSec())
+        for (state.t = req.step_size.toSec(); state.t <= req.max_time.toSec() && (!state.isInContact || state.t <= req.contact_time.toSec()) && !isOnGround; state.t += req.step_size.toSec())
         {
             // Clear end effector contacts
             for (unsigned int i = 0; i < state.eeContacts.size(); ++i) {
@@ -751,23 +765,25 @@ private:
 
             // Step forward
             state.simLoop(req.step_size.toSec());
+            state.steps++;
 
             geometry_msgs::Pose bodyPose = getBodyPose(state.humanoid.body);
+            ROS_DEBUG("Computed CoM position of (%f %f %f)", bodyPose.position.x, bodyPose.position.y, bodyPose.position.z);
 
             // Determine if the pole is on the ground and end the simulation
             // Check if COM is at a position with height approximately equal to the radius
             if (bodyPose.position.z <= humanoidRadius * (1 + 0.05))
             {
-                ROS_INFO("Humanoid is on the ground. Ending simulation @ [%f]s.", t);
+                ROS_INFO("Humanoid is on the ground. Ending simulation @ [%f]s.", state.t);
                 isOnGround = true;
             }
 
             // Only record results for requested steps
-            if (!isOnGround && !state.isInContact && lastTime != ros::Duration(0) && ros::Duration(t) - lastTime < req.result_step_size)
+            if (!isOnGround && !state.isInContact && lastTime != ros::Duration(0) && ros::Duration(state.t) - lastTime < req.result_step_size)
             {
                 continue;
             }
-            lastTime = ros::Duration(t);
+            lastTime = ros::Duration(state.t);
 
             FallPoint curr;
 
@@ -776,7 +792,7 @@ private:
             curr.pose.orientation = orientPose(curr.pose.orientation, true);
             curr.ground_contact = arrayToPoint(dBodyGetPosition(state.groundLink));
             curr.velocity = getBodyTwist(state.humanoid.body);
-            curr.time = ros::Duration(t);
+            curr.time = ros::Duration(state.t);
 
             ROS_DEBUG("Recording pose @ time %f position (%f %f %f) orientation (%f %f %f %f)",
                       curr.time.toSec(), curr.pose.position.x, curr.pose.position.y, curr.pose.position.z,
@@ -852,7 +868,7 @@ private:
 
         state.destroyWorld();
 
-        ROS_INFO("Completed fall prediction. Predicted for [%f]s. Recorded [%lu] events. Ended in contact [%u]", t, res.points.size(), state.isInContact);
+        ROS_INFO("Completed fall prediction after [%u] steps. Predicted for [%f]s. Recorded [%lu] events. Ended in contact [%u]. Ended in contact with end-effector [%u]", state.steps, state.t - req.step_size.toSec(), res.points.size(), state.isInContact, state.isInContactWithEndEffector);
         return true;
     }
 };
