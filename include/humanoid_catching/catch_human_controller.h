@@ -76,6 +76,9 @@ private:
     //! Whether the controller is active
     bool active;
 
+    //! Cached create mesh cache client
+    ros::ServiceClient createMeshCache;
+
     //! Cached fall prediction client
     ros::ServiceClient fallPredictor;
 
@@ -174,6 +177,9 @@ private:
 
     //! All arm links
     std::vector<const robot_model::LinkModel*> allArmLinks;
+
+    //! URDF Model
+    boost::shared_ptr<const urdf::ModelInterface> urdfModel;
 public:
     CatchHumanController();
     ~CatchHumanController();
@@ -217,6 +223,8 @@ private:
 
     bool predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall,
                      ros::Duration duration);
+
+    bool initMeshCache();
 
     void execute(const sensor_msgs::ImuConstPtr imuData);
 

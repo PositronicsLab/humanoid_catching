@@ -7,6 +7,7 @@
     <param name="cache_data_name" value="$(find kinematics_cache)/octree/left_arm.added.cleaned.ot" />
     <param name="arm" value="left_arm" />
     <param name="fall_predictor" value="/fall_predictor_left/predict_fall" />
+    <param name="create_mesh_cache" value="/fall_predictor_left/create_mesh_cache" />
     <param name="balancer" value="/balancer_left/torques" />
     <param name="command_topic" value="l_arm_force_controller/command" />
     <remap to="/human/imu" from="/in" />
@@ -20,6 +21,7 @@
     <param name="arm" value="right_arm" />
     <param name="command_topic" value="r_arm_force_controller/command" />
     <param name="fall_predictor" value="/fall_predictor_right/predict_fall" />
+    <param name="create_mesh_cache" value="/fall_predictor_right/create_mesh_cache" />
     <param name="balancer" value="/balancer_right/torques" />
     <remap to="/human/imu" from="/in" />
     <remap to="/human/on_ground" from="/catching_controller/reset"/>

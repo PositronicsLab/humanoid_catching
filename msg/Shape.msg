@@ -28,5 +28,7 @@ float64[] dimensions
 
 # list of triangles; triangle k is defined by tre vertices located
 # at indices triangles[3k], triangles[3k+1], triangles[3k+2]
-int32[] triangles
-geometry_msgs/Point[] vertices
+uint32[] triangles
+float64[] vertices
+string meshResource
+geometry_msgs/Vector3 meshScale

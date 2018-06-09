@@ -3,6 +3,7 @@
 #include <humanoid_catching/CatchHumanAction.h>
 #include <kinematics_cache/IKQueryv2.h>
 #include <humanoid_catching/PredictFall.h>
+#include <humanoid_catching/CreateMeshCache.h>
 #include <humanoid_catching/catch_human_controller.h>
 #include <actionlib/client/simple_action_client.h>
 #include <humanoid_catching/CalculateTorques.h>
@@ -29,6 +30,8 @@
 #include <kinematics_cache/kinematics_cache.h>
 #include <ros/spinner.h>
 #include <eigen_conversions/eigen_msg.h>
+#include <geometric_shapes/shape_operations.h>
+#include <shape_msgs/SolidPrimitive.h>
 
 using namespace std;
 using namespace humanoid_catching;
@@ -40,7 +43,7 @@ static const double MAX_EFFORT = 100;
 //! Tolerance of time to be considered in contact
 static const ros::Duration CONTACT_TIME_TOLERANCE_DEFAULT = ros::Duration(0.01);
 static const ros::Duration MAX_DURATION = ros::Duration(1.0);
-static const ros::Duration STEP_SIZE = ros::Duration(0.01);
+static const ros::Duration STEP_SIZE = ros::Duration(0.001);
 static const ros::Duration MAX_GRID_SEARCH_DURATION = ros::Duration(0.004);
 static const ros::Duration SEARCH_RESOLUTION(0.03);
 static const double pi = boost::math::constants::pi<double>();
@@ -151,6 +154,16 @@ CatchHumanController::CatchHumanController() :
     ros::service::waitForService(fallPredictorService);
     fallPredictor = nh.serviceClient<humanoid_catching::PredictFall>(fallPredictorService, true /* persistent */);
 
+    // Configure the mesh creation service
+    string createMeshCacheService;
+    if (!pnh.getParam("create_mesh_cache", createMeshCacheService))
+    {
+        ROS_ERROR("create_mesh_cache must be specified");
+    }
+    ROS_DEBUG("Waiting for %s service", createMeshCacheService.c_str());
+    ros::service::waitForService(createMeshCacheService);
+    createMeshCache = nh.serviceClient<humanoid_catching::CreateMeshCache>(createMeshCacheService, true /* persistent */);
+
     double maxDistance;
     pnh.param("max_distance", maxDistance, 0.821000);
 
@@ -219,8 +232,8 @@ CatchHumanController::CatchHumanController() :
     ikCachePub = pnh.advertise<visualization_msgs::MarkerArray>("ik_cache", 1, connectCB);
 
     rdf_loader::RDFLoader rdfLoader;
-    const boost::shared_ptr<srdf::Model> &srdf = rdfLoader.getSRDF();
-    const boost::shared_ptr<urdf::ModelInterface>& urdfModel = rdfLoader.getURDF();
+    const boost::shared_ptr<const srdf::Model> srdf = rdfLoader.getSRDF();
+    urdfModel = rdfLoader.getURDF();
 
     kinematicModel.reset(new robot_model::RobotModel(urdfModel, srdf));
     ROS_DEBUG("Robot model initialized successfully");
@@ -253,7 +266,7 @@ CatchHumanController::CatchHumanController() :
         curr += joints[l]->num_dof();
     }
 
-    assert(curr == body->num_generalized_coordinates(Ravelin::DynamicBodyd::eEuler));
+    // assert(curr == body->num_generalized_coordinates(Ravelin::DynamicBodyd::eEuler));
 
     ROS_DEBUG("Loading joint limits for arm %s", arm.c_str());
     const robot_model::JointModelGroup* jointModelGroup =  kinematicModel->getJointModelGroup(arm);
@@ -346,6 +359,8 @@ CatchHumanController::CatchHumanController() :
     }
 
     ROS_DEBUG("Joint states ready");
+
+    initMeshCache();
 
     readyService = nh.advertiseService("/humanoid_catching/catch_human_controller", &CatchHumanController::noop, this);
 
@@ -827,6 +842,7 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
 
     // Lock scope
     {
+        ROS_DEBUG("Sending model");
         planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
         const vector<robot_state::LinkState*>& linkStates = planningSceneLock->getCurrentState().getLinkStateVector();
 
@@ -846,13 +862,44 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
             link.pose.header.stamp = imuData->header.stamp;
             link.pose.header.frame_id = globalFrame;
 
-            link.shape.type = Shape::BOX;
-            const Eigen::Vector3d& extents = (*i)->getLinkModel()->getShapeExtentsAtOrigin();
+            if ((*i)->getLinkModel()->getShape().get() == NULL) {
+                ROS_DEBUG("Null shape for link [%s]", (*i)->getLinkModel()->getName().c_str());
+                continue;
+            }
 
-            link.shape.dimensions.resize(3);
-            link.shape.dimensions[0] = extents.x();
-            link.shape.dimensions[1] = extents.y();
-            link.shape.dimensions[2] = extents.z();
+            const shapes::Shape* shape = (*i)->getLinkModel()->getShape().get();
+            if (shape->type == shapes::SPHERE) {
+                link.shape.type = Shape::SPHERE;
+                link.shape.dimensions.resize(1);
+                link.shape.dimensions[0] = dynamic_cast<const shapes::Sphere*>(shape)->radius;
+            }
+            else if (shape->type == shapes::BOX) {
+                link.shape.type = Shape::BOX;
+                link.shape.dimensions.assign(dynamic_cast<const shapes::Box*>(shape)->size, dynamic_cast<const shapes::Box*>(shape)->size + 3);
+            }
+            else if (shape->type == shapes::CYLINDER) {
+                link.shape.type = Shape::CYLINDER;
+                const shapes::Cylinder* cylinder = dynamic_cast<const shapes::Cylinder*>(shape);
+                link.shape.dimensions.resize(2);
+                link.shape.dimensions[0] = cylinder->radius;
+                link.shape.dimensions[1] = cylinder->length;
+            }
+            else if (shape->type == shapes::MESH) {
+                link.shape.type = Shape::MESH;
+                //const shapes::Mesh* mesh = dynamic_cast<const shapes::Mesh*>(shape);
+                //link.shape.triangles.assign(mesh->triangles, mesh->triangles + mesh->triangle_count * 3);
+                // link.shape.vertices.assign(mesh->vertices, mesh->vertices + mesh->vertex_count * 3);
+                const urdf::Mesh* meshResource = dynamic_cast<const urdf::Mesh*>(urdfModel->getLink((*i)->getLinkModel()->getName())->collision->geometry.get());
+                link.shape.meshResource = meshResource->filename;
+                link.shape.meshScale.x = meshResource->scale.x;
+                link.shape.meshScale.y = meshResource->scale.y;
+                link.shape.meshScale.z = meshResource->scale.z;
+
+            }
+            else {
+                ROS_ERROR("Unexpected shape type: [%u]", shape->type);
+            }
+
             link.name = (*i)->getLinkModel()->getName();
 
             // Decide whether to add it to end effectors or collisions
@@ -868,9 +915,51 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
         }
     }
 
-    ROS_DEBUG("Invoking predict fall service");
+    ROS_DEBUG("Model constructed");
     if (!fallPredictor.call(predictFall))
     {
+        ROS_ERROR("Failed to call fall predictor");
+        return false;
+    }
+    return true;
+}
+
+
+bool CatchHumanController::initMeshCache()
+{
+    ROS_DEBUG("Preparing to call fall create mesh cache");
+    CreateMeshCache request;
+    request.request.header.stamp = ros::Time::now();
+
+    // Lock scope
+    {
+        planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
+        const vector<robot_state::LinkState*>& linkStates = planningSceneLock->getCurrentState().getLinkStateVector();
+        for (vector<robot_state::LinkState*>::const_iterator i = linkStates.begin(); i != linkStates.end(); ++i)
+        {
+            if ((*i)->getLinkModel()->getShape().get() == NULL) {
+                ROS_DEBUG("Null shape for link [%s]", (*i)->getLinkModel()->getName().c_str());
+                continue;
+            }
+
+            const shapes::Shape* rawShape = (*i)->getLinkModel()->getShape().get();
+            humanoid_catching::Shape shape;
+            if (rawShape->type != shapes::MESH) {
+                continue;
+            }
+
+            shape.type = Shape::MESH;
+            const shapes::Mesh* mesh = dynamic_cast<const shapes::Mesh*>(rawShape);
+            shape.triangles.assign(mesh->triangles, mesh->triangles + mesh->triangle_count * 3);
+            shape.vertices.assign(mesh->vertices, mesh->vertices + mesh->vertex_count * 3);
+            request.request.shapes.push_back(shape);
+            request.request.names.push_back((*i)->getLinkModel()->getName());
+        }
+    }
+
+    if (!createMeshCache.call(request))
+    {
+        ROS_ERROR("Failed to call create mesh cache");
         return false;
     }
     return true;
