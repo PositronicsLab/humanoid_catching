@@ -224,18 +224,18 @@ Visualization Manager:
     - Alpha: 1
       Class: rviz/PointStamped
       Color: 204; 41; 204
-      Enabled: false
+      Enabled: true
       History Length: 1
       Name: Goal Point Right
       Radius: 0.2
       Topic: /catch_human_controller_right/movement_goal_point
-      Value: false
+      Value: true
     - Class: rviz/MarkerArray
       Enabled: true
       Marker Topic: /fall_predictor_left/contacts
       Name: Contact Left
       Namespaces:
-        contacts: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -290,17 +290,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 2.50638
+      Distance: 3.52128
       Focal Point:
         X: -0.143902
         Y: 0.129822
         Z: 0.302503
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.389802
+      Pitch: 0.384803
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.0110776
+      Yaw: 5.54926
     Saved: ~
 Window Geometry:
   Displays:

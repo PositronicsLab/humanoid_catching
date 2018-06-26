@@ -943,27 +943,6 @@ private:
         }
     }
 
-    /**
-     * Check that the anchor has not seperated
-     */
-     void checkAnchor(const dJointID& groundJoint) const {
-        #if 0
-        // Check how far the joint has drifted
-        dVector3 anchor1, anchor2;
-        dJointGetHinge2Anchor(groundJoint, anchor1);
-        dJointGetHinge2Anchor2(groundJoint, anchor2);
-
-        if (!floatEquals(anchor1[0], base.x) || !floatEquals(anchor1[1], base.y) || !floatEquals(anchor1[2], base.z) ||
-            !floatEquals(anchor2[0], base.x) || !floatEquals(anchor2[1], base.y) || !floatEquals(anchor2[2], base.z)) {
-                ROS_WARN("Anchors have separated. Base: [%f %f %f], Anchor1: [%f %f %f], Anchor2: [%f %f %f]",
-                          base.x, base.y, base.z,
-                          anchor1[0], anchor1[1], anchor1[2],
-                          anchor2[0], anchor2[1], anchor2[2]);
-        }
-        #endif
-    }
-
-
     bool predict(humanoid_catching::PredictFall::Request& req,
                  humanoid_catching::PredictFall::Response& res)
     {
@@ -1044,13 +1023,11 @@ private:
             // Step forward
             state.simLoop(req.step_size.toSec());
             state.steps++;
-#if 0
-            checkAnchor(state.groundJoint);
-#endif
+
             geometry_msgs::Pose bodyPose = getBodyPose(state.humanoid.body);
-#if 0
+
             checkCOM(bodyPose.position);
-#endif
+
             ROS_DEBUG("Computed CoM position of (%f %f %f)", bodyPose.position.x, bodyPose.position.y, bodyPose.position.z);
 
             // Determine if the pole is on the ground and end the simulation

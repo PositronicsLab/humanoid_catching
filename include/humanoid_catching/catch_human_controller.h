@@ -118,6 +118,18 @@ private:
     //! Visualization of target velocity
     ros::Publisher targetVelocityPub;
 
+    //! Publisher of reaction time
+    ros::Publisher reactionTimePub;
+
+    //! Publisher of reaction time
+    ros::Publisher interceptTimePub;
+
+    //! Publisher of fall prediction time
+    ros::Publisher fallPredictionTimePub;
+
+    //! Publisher of fall prediction time
+    ros::Publisher balancingTimePub;
+
     //! Empty service to indicate the node is ready
     ros::ServiceServer readyService;
 
