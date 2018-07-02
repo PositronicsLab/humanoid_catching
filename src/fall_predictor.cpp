@@ -185,7 +185,7 @@ struct SimulationState {
     }
 
     void initHumanoid(const geometry_msgs::Pose& pose, const geometry_msgs::Twist& velocity,
-                      const geometry_msgs::Twist& acceleration, double humanoidMass, double humanoidRadius, double humanoidHeight)
+                      double humanoidMass, double humanoidRadius, double humanoidHeight)
     {
 
         // Create the object
@@ -946,10 +946,10 @@ private:
     bool predict(humanoid_catching::PredictFall::Request& req,
                  humanoid_catching::PredictFall::Response& res)
     {
-        ROS_INFO("Predicting fall in frame %s for %lu end effector links and %lu collision links",
-                 req.header.frame_id.c_str(), req.end_effectors.size(), req.links.size());
+        ROS_INFO("Predicting fall in frame %s for %lu end effector links and %lu collision links. Max time [%i], Contact time [%i], Step size [%i], Result Step size [%i]",
+                 req.header.frame_id.c_str(), req.end_effectors.size(), req.links.size(), req.max_time.nsec, req.contact_time.nsec, req.step_size.nsec, req.result_step_size.nsec);
 
-        nh.param("base_x", base.x, 0.4);
+        nh.param("base_x", base.x, 0.5);
         nh.param("base_y", base.y, 0.0);
         nh.param("base_z", base.z, 0.0);
 
@@ -960,15 +960,13 @@ private:
         SimulationState state;
         state.initWorld();
 
-        ROS_DEBUG("Initializing humanoid with orientation: (%f %f %f %f) and velocity: (%f %f %f)",
+        ROS_INFO("Initializing humanoid with orientation: (%f %f %f %f) and velocity: (%f %f %f)",
                  req.orientation.x, req.orientation.y, req.orientation.z, req.orientation.w,
                  req.velocity.angular.x, req.velocity.angular.y, req.velocity.angular.z);
 
         geometry_msgs::Pose humanoidPose;
         humanoidPose.position = computeCOMPosition(req.orientation);
         checkCOM(humanoidPose.position);
-
-        res.base = base;
 
         ROS_DEBUG("Computed CoM position of (%f %f %f)", humanoidPose.position.x, humanoidPose.position.y, humanoidPose.position.z);
 
@@ -977,15 +975,12 @@ private:
         req.velocity.linear = computeLinearVelocity(req.orientation, req.velocity.angular);
 
         humanoidPose.orientation = orientPose(req.orientation, false);
-        res.initial.position = humanoidPose.position;
-        res.initial.orientation = orientPose(humanoidPose.orientation, true);
 
-        state.initHumanoid(humanoidPose, req.velocity, req.accel, humanoidMass, humanoidRadius, humanoidHeight);
+        state.initHumanoid(humanoidPose, req.velocity, humanoidMass, humanoidRadius, humanoidHeight);
         publishPoseAndVelocity(req.header, humanoidPose, req.velocity);
 
         ROS_DEBUG("Recalculated humanoid linear velocity: (%f %f %f)",
                  req.velocity.linear.x, req.velocity.linear.y, req.velocity.linear.z);
-        res.initial_velocity = req.velocity;
 
         state.initGroundJoint(base);
 
@@ -1005,6 +1000,7 @@ private:
 
         state.eeContacts.resize(req.end_effectors.size());
         state.eeContactCount.resize(req.end_effectors.size());
+        res.ground_contact = arrayToPoint(dBodyGetPosition(state.groundLink));
 
         // Preallocate space for the results
         res.points.reserve(req.max_time.toSec() / req.step_size.toSec());
@@ -1050,7 +1046,6 @@ private:
             // Get the location of the body for the current iteration
             curr.pose.position = bodyPose.position;
             curr.pose.orientation = orientPose(bodyPose.orientation, true);
-            curr.ground_contact = arrayToPoint(dBodyGetPosition(state.groundLink));
             curr.velocity = getBodyTwist(state.humanoid.body);
             curr.time = ros::Duration(state.t);
 

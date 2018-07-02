@@ -1,7 +1,6 @@
 Header header
 geometry_msgs/Quaternion orientation
 geometry_msgs/Twist velocity
-geometry_msgs/Twist accel
 humanoid_catching/Link[] end_effectors
 humanoid_catching/Link[] links
 
@@ -12,12 +11,9 @@ duration result_step_size
 
 ---
 Header header
-geometry_msgs/Pose initial
-geometry_msgs/Twist initial_velocity
-geometry_msgs/Point base
 humanoid_catching/FallPoint[] points
 float64[] inertia_matrix
 float64 body_mass
 float64 radius
 float64 height
-
+geometry_msgs/Point ground_contact

@@ -66,6 +66,7 @@
 		<Unit filename="models/pr2.urdf" />
 		<Unit filename="msg/Contact.msg" />
 		<Unit filename="msg/FallPoint.msg" />
+		<Unit filename="msg/IKMetric.msg" />
 		<Unit filename="msg/Limit.msg" />
 		<Unit filename="msg/Link.msg" />
 		<Unit filename="msg/Shape.msg" />
@@ -83,9 +84,11 @@
 		<Unit filename="src/imu_filter.cpp" />
 		<Unit filename="src/imu_gaussian_noise.cpp" />
 		<Unit filename="src/imu_visualizer.cpp" />
+		<Unit filename="src/metrics_recorder.cpp" />
 		<Unit filename="src/on_ground_detector.cpp" />
 		<Unit filename="src/ros_bag_recorder.cpp" />
 		<Unit filename="srv/CalculateTorques.srv" />
+		<Unit filename="srv/CreateMeshCache.srv" />
 		<Unit filename="srv/PredictFall.srv" />
 		<Unit filename="test/test_catch_human_action_server.cpp" />
 		<Unit filename="test/test_catch_human_controller.cpp" />

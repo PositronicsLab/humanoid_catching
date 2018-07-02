@@ -5,6 +5,7 @@
 #include <humanoid_catching/PredictFall.h>
 #include <actionlib/client/simple_action_client.h>
 #include <humanoid_catching/CalculateTorques.h>
+#include <humanoid_catching/IKMetric.h>
 #include <tf/transform_listener.h>
 #include <boost/timer.hpp>
 #include <boost/math/constants/constants.hpp>
@@ -61,6 +62,7 @@ struct Solution
     ros::Duration time;
     ros::Duration estimate;
     double height;
+    double distance;
 };
 
 class CatchHumanController
@@ -130,6 +132,9 @@ private:
     //! Publisher of fall prediction time
     ros::Publisher balancingTimePub;
 
+    //! Publisher of IK metrics
+    ros::Publisher ikMetricsPub;
+
     //! Empty service to indicate the node is ready
     ros::ServiceServer readyService;
 
@@ -197,6 +202,7 @@ public:
     ~CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
+    double calcExecutionDistance(const std::vector<double>& solution) const;
     unsigned int countJointsAboveInChain(const robot_model::LinkModel* link) const;
     const robot_model::LinkModel* findParentLinkInJointModelGroup(const robot_model::LinkModel* link) const;
     const robot_model::JointModel* findParentActiveJoint(const robot_model::LinkModel* start) const;

@@ -74,6 +74,7 @@ add_message_files(
    Limit.msg
    Shape.msg
    Link.msg
+   IKMetric.msg
 )
 
 ## Generate services in the 'srv' folder

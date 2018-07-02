@@ -234,6 +234,7 @@ CatchHumanController::CatchHumanController() :
     balancingTimePub = nh.advertise<std_msgs::Duration>("balance_calc_time", 1, true);
     interceptTimePub = nh.advertise<std_msgs::Duration>("intercept_calc_time", 1, true);
     fallPredictionTimePub = nh.advertise<std_msgs::Duration>("fall_predict_time", 1, true);
+    ikMetricsPub = nh.advertise<humanoid_catching::IKMetric>("ik_metric", 1, true);
 
     ros::SubscriberStatusCallback connectCB = boost::bind(&CatchHumanController::publishIkCache, this);
     ikCachePub = pnh.advertise<visualization_msgs::MarkerArray>("ik_cache", 1, connectCB);
@@ -296,7 +297,7 @@ CatchHumanController::CatchHumanController() :
         if (ujoint != NULL && ujoint->limits)
         {
             max_velocity = ujoint->limits->velocity;
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
         }
         else
         {
@@ -311,7 +312,7 @@ CatchHumanController::CatchHumanController() :
             // max accelerations are very conservative and not consistent with in-situ observations
             // TODO: Reassess this
             max_acc *= 2.0;
-            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
+            ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
         }
         else
         {
@@ -633,6 +634,24 @@ double CatchHumanController::calcJointExecutionTime(const Limits& limits, const 
     return t;
 }
 
+double CatchHumanController::calcExecutionDistance(const vector<double>& solution) const
+{
+    // Take the read lock
+    boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+    assert(solution.size() == jointNames.size());
+
+    double total = 0;
+    for(unsigned int i = 0; i < solution.size() - 2; ++i)
+    {
+        const string& jointName = jointNames.at(i);
+        const Limits& limits = jointLimits.at(jointName);
+
+        const State& state = jointStates.at(jointName);
+        total += pow(state.position - solution[i], 2);
+    }
+    return sqrt(total);
+}
+
 ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution) const
 {
     ROS_DEBUG("Calculating execution time for %lu joints", solution.size());
@@ -843,7 +862,6 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     predictFall.request.header = imuData->header;
     predictFall.request.orientation = imuData->orientation;
     predictFall.request.velocity.angular = imuData->angular_velocity;
-    predictFall.request.accel.linear = imuData->linear_acceleration;
     predictFall.request.max_time = duration;
     predictFall.request.step_size = STEP_SIZE;
     predictFall.request.result_step_size = SEARCH_RESOLUTION;
@@ -980,6 +998,7 @@ bool CatchHumanController::initMeshCache()
 
 bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution& possibleSolution, const std_msgs::Header& fallPointHeader) const
 {
+    ros::Time start = ros::Time::now();
     bool success = false;
     possibleSolution.time = fallPoint.time;
 
@@ -1010,25 +1029,38 @@ bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution
     point.header = transformedPose.header;
 
     IKList results;
+    bool queryFailed = false;
     if (!ik->query(point, results))
     {
         ROS_DEBUG("Failed to find IK solution for arm [%s]", arm.c_str());
-        return success;
+        queryFailed = true;
+    }
+    else {
+        ROS_DEBUG("Received %lu results from IK query", results.size());
+        for (IKList::iterator j = results.begin(); j != results.end(); ++j)
+        {
+            // We want to search for the fastest arm movement
+            ros::Duration estimate = calcExecutionTime(j->positions);
+            ros::Duration executionTimeDelta = ros::Duration(fallPoint.time) - estimate;
+            if (executionTimeDelta < possibleSolution.delta)
+            {
+                continue;
+            }
+            success = true;
+            possibleSolution.estimate = estimate;
+            possibleSolution.delta = executionTimeDelta;
+            possibleSolution.distance = calcExecutionDistance(j->positions);
+        }
     }
 
-    ROS_DEBUG("Received %lu results from IK query", results.size());
-    for (IKList::iterator j = results.begin(); j != results.end(); ++j)
-    {
-        // We want to search for the fastest arm movement
-        ros::Duration estimate = calcExecutionTime(j->positions);
-        ros::Duration executionTimeDelta = ros::Duration(fallPoint.time) - estimate;
-        if (executionTimeDelta < possibleSolution.delta)
-        {
-            continue;
-        }
-        success = true;
-        possibleSolution.estimate = estimate;
-        possibleSolution.delta = executionTimeDelta;
+    // Other than exceptional cases, query failures indicate the target point is beyond the maximum
+    // distance of the arm
+    if (!queryFailed && ikMetricsPub.getNumSubscribers() > 0) {
+        IKMetric msg;
+        msg.time = ros::Time::now() - start;
+        msg.was_successful = success;
+        msg.distance = possibleSolution.distance;
+        ikMetricsPub.publish(msg);
     }
     return success;
 }
@@ -1174,7 +1206,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         assert(contactLink && "Contact not found!");
 
-        calcTorques.request.ground_contact = fallPoint->ground_contact;
+        calcTorques.request.ground_contact = predictFallObj.response.ground_contact;
 
         // Get the list of joints in this group
         const robot_model::JointModelGroup* jointModelGroup = kinematicModel->getJointModelGroup(arm);
@@ -1365,38 +1397,38 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             vector<double> zeroTorques;
             zeroTorques.resize(7);
             sendTorques(zeroTorques);
-            return;
         }
+        else {
+            ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f) @ time [%f] with delta [%f] and estimate [%f] and height [%f]",
+                    arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
+                    bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
+                    bestSolution->time.toSec(), bestSolution->delta.toSec(), bestSolution->estimate.toSec(), bestSolution->height);
 
-        ROS_INFO("Publishing command for arm %s. Solution selected based on target pose with position (%f %f %f) and orientation (%f %f %f %f) @ time [%f] with delta [%f] and estimate [%f] and height [%f]",
-                  arm.c_str(), bestSolution->targetPose.pose.position.x, bestSolution->targetPose.pose.position.y, bestSolution->targetPose.pose.position.z,
-                  bestSolution->targetPose.pose.orientation.x, bestSolution->targetPose.pose.orientation.y, bestSolution->targetPose.pose.orientation.z, bestSolution->targetPose.pose.orientation.w,
-                  bestSolution->time.toSec(), bestSolution->delta.toSec(), bestSolution->estimate.toSec(), bestSolution->height);
+            operational_space_controllers_msgs::Move command;
 
-        operational_space_controllers_msgs::Move command;
+            ROS_DEBUG("Calculating ee_pose for link %s", kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back().c_str());
+            geometry_msgs::PoseStamped eePose;
 
-        ROS_DEBUG("Calculating ee_pose for link %s", kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back().c_str());
-        geometry_msgs::PoseStamped eePose;
-
-        {
-            // lock scope
-            planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
-            if (!linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), eePose, planningSceneLock->getCurrentState()))
             {
-                ROS_WARN("Failed to find ee pose. Using default.");
+                // lock scope
+                planning_scene_monitor::LockedPlanningSceneRO planningSceneLock(planningScene);
+                if (!linkPosition(kinematicModel->getJointModelGroup(arm)->getLinkModelNames().back(), eePose, planningSceneLock->getCurrentState()))
+                {
+                    ROS_WARN("Failed to find ee pose. Using default.");
+                }
             }
+
+            // Convert to baseFrame
+            eePose = transformGoalToBase(eePose);
+
+            command.header = bestSolution->position.header;
+            command.target.position = bestSolution->position.point;
+            command.target.orientation = computeOrientation(*bestSolution, eePose);
+            command.point_at_target = false;
+            visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallObj.response.radius,
+                        predictFallObj.response.height);
+            armCommandPub.publish(command);
         }
-
-        // Convert to baseFrame
-        eePose = transformGoalToBase(eePose);
-
-        command.header = bestSolution->position.header;
-        command.target.position = bestSolution->position.point;
-        command.target.orientation = computeOrientation(*bestSolution, eePose);
-        command.point_at_target = false;
-        visualizeGoal(command.target, command.header, bestSolution->targetPose, bestSolution->targetVelocity, predictFallObj.response.radius,
-                      predictFallObj.response.height);
-        armCommandPub.publish(command);
 
         std_msgs::Duration durationMsg;
         durationMsg.data = ros::Duration(ros::Time::now() - start);
