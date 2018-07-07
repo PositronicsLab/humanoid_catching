@@ -1,0 +1,17 @@
+<launch>
+  <include file="$(find pr2_moveit_config)/launch/planning_context.launch" />
+
+  <node pkg="humanoid_catching" type="ik_tester" name="ik_tester_left">
+    <param name="end_effector" value="l_wrist_roll_link" />
+    <param name="arm" value="left_arm" />
+    <param name="command_topic" value="/catch_human_controller_left/movement_goal_trials" />
+  </node>
+
+  <node pkg="humanoid_catching" type="ik_tester" name="ik_tester_right">
+    <param name="end_effector" value="r_wrist_roll_link" />
+    <param name="arm" value="right_arm" />
+    <param name="command_topic" value="/catch_human_controller_right/movement_goal_trials" />
+  </node>
+
+  <node pkg="humanoid_catching" type="metrics_recorder" name="metrics_recorder" output="screen"/>
+</launch>

@@ -946,7 +946,7 @@ private:
     bool predict(humanoid_catching::PredictFall::Request& req,
                  humanoid_catching::PredictFall::Response& res)
     {
-        ROS_INFO("Predicting fall in frame %s for %lu end effector links and %lu collision links. Max time [%i], Contact time [%i], Step size [%i], Result Step size [%i]",
+        ROS_DEBUG("Predicting fall in frame %s for %lu end effector links and %lu collision links. Max time [%i], Contact time [%i], Step size [%i], Result Step size [%i]",
                  req.header.frame_id.c_str(), req.end_effectors.size(), req.links.size(), req.max_time.nsec, req.contact_time.nsec, req.step_size.nsec, req.result_step_size.nsec);
 
         nh.param("base_x", base.x, 0.5);

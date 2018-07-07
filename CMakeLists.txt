@@ -75,6 +75,7 @@ add_message_files(
    Shape.msg
    Link.msg
    IKMetric.msg
+   DurationStamped.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -222,6 +223,12 @@ target_link_libraries(imu_gaussian_noise
 add_executable(metrics_recorder src/metrics_recorder.cpp)
 add_dependencies(metrics_recorder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(metrics_recorder
+   ${catkin_LIBRARIES}
+)
+
+add_executable(ik_tester src/ik_tester.cpp)
+add_dependencies(ik_tester ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(ik_tester
    ${catkin_LIBRARIES}
 )
 

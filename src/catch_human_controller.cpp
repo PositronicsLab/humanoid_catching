@@ -3,6 +3,7 @@
 #include <humanoid_catching/CatchHumanAction.h>
 #include <kinematics_cache/IKQueryv2.h>
 #include <humanoid_catching/PredictFall.h>
+#include <humanoid_catching/DurationStamped.h>
 #include <humanoid_catching/CreateMeshCache.h>
 #include <humanoid_catching/catch_human_controller.h>
 #include <actionlib/client/simple_action_client.h>
@@ -230,10 +231,10 @@ CatchHumanController::CatchHumanController() :
     eeVelocityVizPub = pnh.advertise<geometry_msgs::WrenchStamped>("ee_velocity", 1);
 
     // Metrics publishers
-    reactionTimePub = nh.advertise<std_msgs::Duration>("reaction_time", 1, true);
-    balancingTimePub = nh.advertise<std_msgs::Duration>("balance_calc_time", 1, true);
-    interceptTimePub = nh.advertise<std_msgs::Duration>("intercept_calc_time", 1, true);
-    fallPredictionTimePub = nh.advertise<std_msgs::Duration>("fall_predict_time", 1, true);
+    reactionTimePub = pnh.advertise<humanoid_catching::DurationStamped>("reaction_time", 1, true);
+    balancingTimePub = pnh.advertise<humanoid_catching::DurationStamped>("balance_calc_time", 1, true);
+    interceptTimePub = pnh.advertise<humanoid_catching::DurationStamped>("intercept_calc_time", 1, true);
+    fallPredictionTimePub = pnh.advertise<humanoid_catching::DurationStamped>("fall_predict_time", 1, true);
     ikMetricsPub = nh.advertise<humanoid_catching::IKMetric>("ik_metric", 1, true);
 
     ros::SubscriberStatusCallback connectCB = boost::bind(&CatchHumanController::publishIkCache, this);
@@ -297,7 +298,7 @@ CatchHumanController::CatchHumanController() :
         if (ujoint != NULL && ujoint->limits)
         {
             max_velocity = ujoint->limits->velocity;
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max velocity for joint [%s] to [%f]", jointModelNames[i].c_str(), max_velocity);
         }
         else
         {
@@ -312,7 +313,7 @@ CatchHumanController::CatchHumanController() :
             // max accelerations are very conservative and not consistent with in-situ observations
             // TODO: Reassess this
             max_acc *= 2.0;
-            ROS_INFO_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
+            ROS_DEBUG_NAMED("catch_human_action_server", "Setting max acceleration for joint [%s] to [%f]", jointModelNames[i].c_str(), max_acc);
         }
         else
         {
@@ -949,8 +950,9 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
         return false;
     }
 
-    std_msgs::Duration durationMsg;
-    durationMsg.data = ros::Duration(ros::Time::now() - start);
+    humanoid_catching::DurationStamped durationMsg;
+    durationMsg.duration = ros::Duration(ros::Time::now() - start);
+    durationMsg.header = imuData->header;
     fallPredictionTimePub.publish(durationMsg);
     return true;
 }
@@ -1303,8 +1305,9 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             }
         }
         ROS_INFO("Torques [%s]", os.str().c_str());
-        std_msgs::Duration durationMsg;
-        durationMsg.data = ros::Duration(ros::Time::now() - balancingTimeStart);
+        humanoid_catching::DurationStamped durationMsg;
+        durationMsg.duration = ros::Duration(ros::Time::now() - balancingTimeStart);
+        durationMsg.header = imuData->header;
         balancingTimePub.publish(durationMsg);
         sendTorques(calcTorques.response.torques);
     }
@@ -1430,15 +1433,17 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
             armCommandPub.publish(command);
         }
 
-        std_msgs::Duration durationMsg;
-        durationMsg.data = ros::Duration(ros::Time::now() - start);
+        humanoid_catching::DurationStamped durationMsg;
+        durationMsg.duration = ros::Duration(ros::Time::now() - start);
+        durationMsg.header = imuData->header;
         interceptTimePub.publish(durationMsg);
     }
 
     ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
              ros::Time::now().toSec() - startRosTime.toSec());
-    std_msgs::Duration durationMsg;
-    durationMsg.data = ros::Duration(ros::Time::now().toSec() - startRosTime.toSec());
+    humanoid_catching::DurationStamped durationMsg;
+    durationMsg.duration = ros::Duration(ros::Time::now().toSec() - startRosTime.toSec());
+    durationMsg.header = imuData->header;
     reactionTimePub.publish(durationMsg);
 }
 
