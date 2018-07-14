@@ -27,8 +27,8 @@
     <remap to="/human/on_ground" from="/catching_controller/reset"/>
   </node>
 
-  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_left"/>
-  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_right"/>
+  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_left" respawn="true"/>
+  <node pkg="humanoid_catching" type="fall_predictor" name="fall_predictor_right" respawn="true"/>
 
   <node pkg="humanoid_catching" type="balancer" name="balancer_left"/>
   <node pkg="humanoid_catching" type="balancer" name="balancer_right"/>

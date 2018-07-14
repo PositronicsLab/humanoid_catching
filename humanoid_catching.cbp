@@ -51,6 +51,7 @@
 		<Unit filename="launch/human_catching.launch" />
 		<Unit filename="launch/human_catching_robot.launch" />
 		<Unit filename="launch/human_catching_simulated.launch" />
+		<Unit filename="launch/ik_tester.launch" />
 		<Unit filename="launch/imu.launch" />
 		<Unit filename="launch/no_catching_simulated.launch" />
 		<Unit filename="launch/reset_arms.launch" />
@@ -65,6 +66,7 @@
 		<Unit filename="models/intertia_matrix.ods" />
 		<Unit filename="models/pr2.urdf" />
 		<Unit filename="msg/Contact.msg" />
+		<Unit filename="msg/DurationStamped.msg" />
 		<Unit filename="msg/FallPoint.msg" />
 		<Unit filename="msg/IKMetric.msg" />
 		<Unit filename="msg/Limit.msg" />
@@ -81,6 +83,7 @@
 		<Unit filename="src/fall_readiness.cpp" />
 		<Unit filename="src/fall_starter.cpp" />
 		<Unit filename="src/fall_stats_recorder.cpp" />
+		<Unit filename="src/ik_tester.cpp" />
 		<Unit filename="src/imu_filter.cpp" />
 		<Unit filename="src/imu_gaussian_noise.cpp" />
 		<Unit filename="src/imu_visualizer.cpp" />

@@ -12,6 +12,4 @@
     <param name="arm" value="right_arm" />
     <param name="command_topic" value="/catch_human_controller_right/movement_goal_trials" />
   </node>
-
-  <node pkg="humanoid_catching" type="metrics_recorder" name="metrics_recorder" output="screen"/>
 </launch>

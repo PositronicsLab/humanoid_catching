@@ -76,6 +76,7 @@ add_message_files(
    Link.msg
    IKMetric.msg
    DurationStamped.msg
+   MovementGoal.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -229,6 +230,12 @@ target_link_libraries(metrics_recorder
 add_executable(ik_tester src/ik_tester.cpp)
 add_dependencies(ik_tester ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ik_tester
+   ${catkin_LIBRARIES}
+)
+
+add_executable(arm_controller_tester src/arm_controller_tester.cpp)
+add_dependencies(arm_controller_tester ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(arm_controller_tester
    ${catkin_LIBRARIES}
 )
 

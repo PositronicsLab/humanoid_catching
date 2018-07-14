@@ -105,6 +105,9 @@ private:
     //! Visualization of goals
     ros::Publisher goalPub;
 
+    //! Record goals
+    ros::Publisher movementGoalPub;
+
     //! Visualization of goals as points
     ros::Publisher goalPointPub;
 
@@ -202,7 +205,6 @@ public:
     ~CatchHumanController();
     static double calcJointExecutionTime(const Limits& limits, const double signed_d, double v0);
 private:
-    double calcExecutionDistance(const std::vector<double>& solution) const;
     unsigned int countJointsAboveInChain(const robot_model::LinkModel* link) const;
     const robot_model::LinkModel* findParentLinkInJointModelGroup(const robot_model::LinkModel* link) const;
     const robot_model::JointModel* findParentActiveJoint(const robot_model::LinkModel* start) const;

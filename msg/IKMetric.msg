@@ -1,3 +1,4 @@
 bool was_successful
 duration time
-float64 distance
+int32 count
+string arm

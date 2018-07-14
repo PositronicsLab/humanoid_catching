@@ -1,10 +1,11 @@
 #include <ros/ros.h>
 #include <message_filters/subscriber.h>
-#include <std_msgs/Duration.h>
+#include <humanoid_catching/DurationStamped.h>
 #include <iostream>
 #include <fstream>
 #include <boost/filesystem.hpp>
 #include <humanoid_catching/IKMetric.h>
+#include <map>
 
 using namespace std;
 
@@ -26,27 +27,51 @@ private:
     double meanBalanceCalcTime;
     double meanSquaredBalanceCalcTime;
     unsigned int nBC;
+    unsigned int nBCStarts;
+
+    ros::Time balancingStart;
+    ros::Duration maxBalancingTime;
+    double meanBalancingTime;
+    double meanSquaredBalancingTime;
 
     double meanInterceptCalcTime;
     double meanSquaredInterceptCalcTime;
     unsigned int nIC;
+    unsigned int nICStarts;
 
     double meanFallPredictTime;
     double meanSquaredFallPredictTime;
     unsigned int nFP;
 
+    double meanMovementPlanTime;
+    double meanSquaredMovementPlanTime;
+    unsigned int nMP;
+
+    double meanMovementExecutionTime;
+    double meanSquaredMovementExecutionTime;
+    unsigned int nME;
+
     double meanIKTime;
     double meanSquaredIKTime;
-    double meanIKDistance;
-    double meanSquaredIKDistance;
+    double meanIKCount;
+    double meanSquaredIKCount;
     unsigned int nIK;
     unsigned int nSuccessfulIK;
 
-    auto_ptr<message_filters::Subscriber<std_msgs::Duration> > reactionTimeSub;
-    auto_ptr<message_filters::Subscriber<std_msgs::Duration> > balanceCalcTimeSub;
-    auto_ptr<message_filters::Subscriber<std_msgs::Duration> > interceptCalcTimeSub;
-    auto_ptr<message_filters::Subscriber<std_msgs::Duration> > fallPredictTimeSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::DurationStamped> > reactionTimeSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::DurationStamped> > balanceCalcTimeSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::DurationStamped> > interceptCalcTimeSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::DurationStamped> > fallPredictTimeSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::DurationStamped> > movePlanTimeSub;
+    auto_ptr<message_filters::Subscriber<humanoid_catching::DurationStamped> > moveExecuteTimeSub;
     auto_ptr<message_filters::Subscriber<humanoid_catching::IKMetric> > ikMetricSub;
+
+    enum Mode {
+        Initial,
+        Intercepting,
+        Balancing
+    };
+    map<string, Mode> controllerMode;
 
 public:
     MetricsRecorder() :
@@ -58,45 +83,68 @@ public:
             meanBalanceCalcTime(0),
             meanSquaredBalanceCalcTime(0),
             nBC(0),
+            nBCStarts(0),
+            meanBalancingTime(0),
+            meanSquaredBalancingTime(0),
             meanInterceptCalcTime(0),
             meanSquaredInterceptCalcTime(0),
             nIC(0),
+            nICStarts(0),
             meanFallPredictTime(0),
             meanSquaredFallPredictTime(0),
             nFP(0),
+            meanMovementPlanTime(0),
+            meanSquaredMovementPlanTime(0),
+            nMP(0),
+            meanMovementExecutionTime(0),
+            meanSquaredMovementExecutionTime(0),
+            nME(0),
             meanIKTime(0),
             meanSquaredIKTime(0),
-            meanIKDistance(0),
-            meanSquaredIKDistance(0),
+            meanIKCount(0),
+            meanSquaredIKCount(0),
             nIK(0),
             nSuccessfulIK(0)
              {
 
         // Setup the subscribers
         reactionTimeSub.reset(
-                new message_filters::Subscriber<std_msgs::Duration>(nh,
+                new message_filters::Subscriber<humanoid_catching::DurationStamped>(nh,
                         "reaction_time", 1));
         reactionTimeSub->registerCallback(boost::bind(&MetricsRecorder::reactionTimeCallback, this, _1));
 
         balanceCalcTimeSub.reset(
-                new message_filters::Subscriber<std_msgs::Duration>(nh,
-                        "balance_calc_time", 1));
+                new message_filters::Subscriber<humanoid_catching::DurationStamped>(nh,
+                        "balance_calc_time", 50000));
         balanceCalcTimeSub->registerCallback(boost::bind(&MetricsRecorder::balanceCalcCallback, this, _1));
 
         interceptCalcTimeSub.reset(
-                new message_filters::Subscriber<std_msgs::Duration>(nh,
-                        "intercept_calc_time", 1));
+                new message_filters::Subscriber<humanoid_catching::DurationStamped>(nh,
+                        "intercept_calc_time", 50000));
         interceptCalcTimeSub->registerCallback(boost::bind(&MetricsRecorder::interceptCalcCallback, this, _1));
 
         fallPredictTimeSub.reset(
-                new message_filters::Subscriber<std_msgs::Duration>(nh,
-                        "fall_predict_time", 1));
+                new message_filters::Subscriber<humanoid_catching::DurationStamped>(nh,
+                        "fall_predict_time", 50000));
         fallPredictTimeSub->registerCallback(boost::bind(&MetricsRecorder::fallPredictCalcCallback, this, _1));
+
+        movePlanTimeSub.reset(
+                new message_filters::Subscriber<humanoid_catching::DurationStamped>(nh,
+                        "movement_plan_metric", 50000));
+        movePlanTimeSub->registerCallback(boost::bind(&MetricsRecorder::movementPlanCallback, this, _1));
+
+        moveExecuteTimeSub.reset(
+                new message_filters::Subscriber<humanoid_catching::DurationStamped>(nh,
+                        "movement_execute_metric", 50000));
+        moveExecuteTimeSub->registerCallback(boost::bind(&MetricsRecorder::movementExecuteCallback, this, _1));
 
         ikMetricSub.reset(
                 new message_filters::Subscriber<humanoid_catching::IKMetric>(nh,
-                        "ik_metric", 1));
+                        "ik_metric", 100000));
         ikMetricSub->registerCallback(boost::bind(&MetricsRecorder::ikMetricCallback, this, _1));
+
+        controllerMode["left_arm"] = Initial;
+        controllerMode["right_arm"] = Initial;
     }
 
 private:
@@ -115,74 +163,123 @@ private:
             meanIKTime += deltaP / double(nSuccessfulIK);
             meanSquaredIKTime += square(deltaP);
 
-            double ikDistance = metric->distance;
-            double deltaPD = ikDistance - meanIKDistance;
-            meanIKDistance += deltaPD / double(nSuccessfulIK);
-            meanSquaredIKDistance += square(deltaPD);
+            unsigned int ikCount = metric->count;
+            double deltaPD = ikCount - meanIKCount;
+            meanIKCount += deltaPD / double(nSuccessfulIK);
+            meanSquaredIKCount += square(deltaPD);
         }
     }
 
-    void reactionTimeCallback(const std_msgs::DurationConstPtr& duration) {
+    void reactionTimeCallback(const humanoid_catching::DurationStampedConstPtr& duration) {
 
         if (nRT == 0) {
-            initialReactionTime = duration->data.toSec();
+            initialReactionTime = duration->duration.toSec();
         }
 
         // Increase number of samples
         nRT++;
 
-        double reactionTime = duration->data.toSec();
+        double reactionTime = duration->duration.toSec();
 
         double deltaP = reactionTime - meanReactionTime;
         meanReactionTime += deltaP / double(nRT);
         meanSquaredReactionTime += square(deltaP);
     }
 
-    void balanceCalcCallback(const std_msgs::DurationConstPtr& duration) {
+    void balanceCalcCallback(const humanoid_catching::DurationStampedConstPtr& duration) {
 
         // Increase number of samples
         nBC++;
 
-        double bcTime = duration->data.toSec();
+        // If the current arm mode is intercepting, increment the number of balancing starts
+        if (controllerMode.at(duration->arm) != Balancing) {
+            nBCStarts++;
+            controllerMode[duration->arm] = Balancing;
+            balancingStart = duration->header.stamp;
+        }
+
+        double bcTime = duration->duration.toSec();
 
         double deltaP = bcTime - meanBalanceCalcTime;
         meanBalanceCalcTime += deltaP / double(nBC);
         meanSquaredBalanceCalcTime += square(deltaP);
     }
 
-    void interceptCalcCallback(const std_msgs::DurationConstPtr& duration) {
+    void interceptCalcCallback(const humanoid_catching::DurationStampedConstPtr& duration) {
 
         // Increase number of samples
         nIC++;
 
-        double icTime = duration->data.toSec();
+        // If the current arm mode is not intercepting, increment the number of intercept starts
+        if (controllerMode.at(duration->arm) != Intercepting) {
+
+            if (controllerMode.at(duration->arm) == Balancing) {
+                ros::Duration balancingTime = (duration->header.stamp - balancingStart);
+                maxBalancingTime = max(balancingTime, maxBalancingTime);
+                double deltaP = balancingTime.toSec() - meanBalancingTime;
+                meanBalancingTime += deltaP / double(nBCStarts);
+                meanSquaredBalancingTime += square(deltaP);
+            }
+
+            nICStarts++;
+            controllerMode[duration->arm] = Intercepting;
+        }
+
+        double icTime = duration->duration.toSec();
 
         double deltaP = icTime - meanInterceptCalcTime;
         meanInterceptCalcTime += deltaP / double(nIC);
         meanSquaredInterceptCalcTime += square(deltaP);
     }
 
-    void fallPredictCalcCallback(const std_msgs::DurationConstPtr& duration) {
+    void fallPredictCalcCallback(const humanoid_catching::DurationStampedConstPtr& duration) {
 
         // Increase number of samples
         nFP++;
 
-        double fpTime = duration->data.toSec();
+        double fpTime = duration->duration.toSec();
 
         double deltaP = fpTime - meanFallPredictTime;
         meanFallPredictTime += deltaP / double(nFP);
         meanSquaredFallPredictTime += square(deltaP);
     }
 
+    void movementPlanCallback(const humanoid_catching::DurationStampedConstPtr& duration) {
+
+        // Increase number of samples
+        nMP++;
+
+        double mpTime = duration->duration.toSec();
+
+        double deltaP = mpTime - meanMovementPlanTime;
+        meanMovementPlanTime += deltaP / double(nMP);
+        meanSquaredMovementPlanTime += square(deltaP);
+    }
+
+    void movementExecuteCallback(const humanoid_catching::DurationStampedConstPtr& duration) {
+
+        // Increase number of samples
+        nME++;
+
+        double meTime = duration->duration.toSec();
+
+        double deltaP = meTime - meanMovementExecutionTime;
+        meanMovementExecutionTime += deltaP / double(nME);
+        meanSquaredMovementExecutionTime += square(deltaP);
+    }
+
     void writeHeader(ofstream& outputCSV)
     {
         outputCSV << "Scenario Number, initial reaction time, mean reaction time, reaction time variance, n, "
-        << "mean balance calc time, balance calc variance, n, "
-        << "mean intercept calc time, intercept calc variance, n, "
+        << "mean balance calc time, balance calc variance, n, n-starts, "
+        << "mean balancing time, balancing time variance, maximum balancing time, "
+        << "mean intercept calc time, intercept calc variance, n, n-starts, "
         << "mean fall prediction time, fall prediction variance, n, "
+        << "mean movement planning time, movement planning variance, n, "
+        << "mean movement execution time, mean movement execution variance, n, "
         << "IK success rate, n, "
         << "mean IK time, IK time variance, n, "
-        << "mean IK distance, IK distance variance, n "
+        << "mean IK count, IK count variance, n "
         << endl;
     }
 
@@ -222,21 +319,30 @@ public:
         outputCSV << meanReactionTime << ", " << reactionTimeVariance  << ", " << nRT << ", ";
 
         double balanceCalcTimeVariance = nBC > 1 ? meanSquaredBalanceCalcTime / (nBC - 1) : 0;
-        outputCSV << meanBalanceCalcTime << ", " << balanceCalcTimeVariance  << ", " << nBC << ", ";
+        outputCSV << meanBalanceCalcTime << ", " << balanceCalcTimeVariance  << ", " << nBC << ", " << nBCStarts << ", ";
+
+        double balancingTimeVariance = nBCStarts > 1 ? meanSquaredBalancingTime / (nBCStarts - 1) : 0;
+        outputCSV << meanBalancingTime << ", " << balancingTimeVariance  << ", " << maxBalancingTime.toSec() << ", ";
 
         double interceptCalcTimeVariance = nIC > 1 ? meanSquaredInterceptCalcTime / (nIC - 1) : 0;
-        outputCSV << meanInterceptCalcTime << ", " << interceptCalcTimeVariance  << ", " << nIC << ", ";
+        outputCSV << meanInterceptCalcTime << ", " << interceptCalcTimeVariance  << ", " << nIC << ", " << nICStarts << ", ";
 
         double fallPredictTimeVariance = nFP > 1 ? meanSquaredFallPredictTime / (nFP - 1) : 0;
         outputCSV << meanFallPredictTime << ", " << fallPredictTimeVariance  << ", " << nFP << ", ";
 
+        double movementPlanTimeVariance = nMP > 1 ? meanSquaredMovementPlanTime / (nMP - 1) : 0;
+        outputCSV << meanMovementPlanTime << ", " << movementPlanTimeVariance  << ", " << nMP << ", ";
+
+        double movementExecutionTimeVariance = nME > 1 ? meanSquaredMovementExecutionTime / (nME - 1) : 0;
+        outputCSV << meanMovementExecutionTime << ", " << movementExecutionTimeVariance  << ", " << nME << ", ";
+
         outputCSV << (nIK > 0 ? nSuccessfulIK / double(nIK) : 0.0) << ", " << nIK << ", ";
 
         double ikTimeVariance = nSuccessfulIK > 1 ? meanSquaredIKTime / (nSuccessfulIK - 1) : 0;
-        outputCSV << meanIKTime << ", " << ikTimeVariance  << ", " << nSuccessfulIK << ",";
+        outputCSV << meanIKTime << ", " << ikTimeVariance  << ", " << nSuccessfulIK << ", ";
 
-        double ikDistanceVariance = nSuccessfulIK > 1 ? meanSquaredIKDistance / (nSuccessfulIK - 1) : 0;
-        outputCSV << meanIKDistance << ", " << ikDistanceVariance  << ", " << nSuccessfulIK;
+        double ikCountVariance = nSuccessfulIK > 1 ? meanSquaredIKCount / (nSuccessfulIK - 1) : 0;
+        outputCSV << meanIKCount << ", " << ikCountVariance  << ", " << nSuccessfulIK;
 
         outputCSV << endl;
         outputCSV.close();

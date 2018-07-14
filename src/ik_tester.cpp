@@ -7,6 +7,7 @@
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <tf/transform_listener.h>
 #include <pluginlib/class_loader.h>
+#include <boost/random.hpp>
 
 using namespace std;
 
@@ -26,6 +27,9 @@ private:
     robot_model::JointModelGroup* jointModelGroup;
     robot_state::RobotStatePtr kinematicState;
     boost::shared_ptr<pluginlib::ClassLoader<kinematics::KinematicsBase> > kinematicsLoader;
+
+    //! rng
+    boost::mt19937 rng;
 public:
     IKTester() :
             pnh("~")
@@ -58,15 +62,14 @@ public:
         // Setup the subscriber
         trialGoalSub.reset(
                 new message_filters::Subscriber<geometry_msgs::PointStamped>(nh,
-                        commandTopic, 10000));
+                        commandTopic, 100000));
         trialGoalSub->registerCallback(boost::bind(&IKTester::goalCallback, this, _1));
 
         // Setup the publisher
-        ikMetricsPub = nh.advertise<humanoid_catching::IKMetric>("ik_metric", 1, true);
+        ikMetricsPub = nh.advertise<humanoid_catching::IKMetric>("ik_metric", 100000, true);
 
         robot_model_loader::RobotModelLoader robotModelLoader("robot_description");
         robot_model::RobotModelPtr kinematicModel = robotModelLoader.getModel();
-        ROS_INFO("Model frame: %s", kinematicModel->getModelFrame().c_str());
 
         kinematicState.reset(new robot_state::RobotState(kinematicModel));
         kinematicState->setToDefaultValues();
@@ -81,21 +84,23 @@ public:
             throw ex;
         }
 
-        if(!kinematicsSolver->initialize("robot_description", arm, "/torso_lift_link", endEffector, 0.01)) {
+        if(!kinematicsSolver->initialize("robot_description", arm, "/torso_lift_link", endEffector, 0.02 /* max error */)) {
             ROS_ERROR("Could not initialize solver");
         }
         else {
             ROS_INFO("Initialized solver successfully");
         }
+
+        rng.seed(1000);
     }
 
 private:
 
     void goalCallback(const geometry_msgs::PointStampedConstPtr& point) {
 
-        ROS_INFO("Querying for solution");
+        ROS_DEBUG("Querying for solution");
 
-        ros::Time start = ros::Time::now();
+        ros::WallTime start = ros::WallTime::now();
 
         // Create a pose in the default orientation.
         geometry_msgs::Pose pose;
@@ -104,29 +109,33 @@ private:
         tf::quaternionTFToMsg(identity, pose.orientation);
 
         vector<double> jointValues(jointModelGroup->getJointModels().size());
-        for (unsigned int i = 0; i < jointValues.size(); ++i) {
-            jointValues[i] = (jointModelGroup->getJointModels()[i]->getVariableBounds()[0].first
-                + jointModelGroup->getJointModels()[i]->getVariableBounds()[0].second ) / 2.0;
-            ROS_DEBUG("Set initial position to [%f]", jointValues[i]);
-        }
-
         vector<double> solution(7);
         moveit_msgs::MoveItErrorCodes errorCode;
 
-        bool success = false;
-        kinematicsSolver->searchPositionIK(pose, jointValues, 0.1, solution, errorCode);
-        if(errorCode.val == moveit_msgs::MoveItErrorCodes::SUCCESS) {
-            ROS_INFO("Solution found");
-            success = true;
-        }
-        else {
-            ROS_WARN("IK failed %i", errorCode.val);
+        unsigned int count = 0;
+        for (unsigned int i = 0; i < 50; ++i) {
+            for (unsigned int i = 0; i < jointValues.size(); ++i) {
+                boost::uniform_real<double> range(jointModelGroup->getJointModels()[i]->getVariableBounds()[0].first,
+                                                jointModelGroup->getJointModels()[i]->getVariableBounds()[0].second);
+                boost::variate_generator<boost::mt19937&, boost::uniform_real<double> > getRandom(rng, range);
+                jointValues[i] = getRandom();
+                ROS_DEBUG("Set initial position to [%f]", jointValues[i]);
+            }
+
+            kinematicsSolver->searchPositionIK(pose, jointValues, 0.1 /* timeout */, solution, errorCode);
+            if(errorCode.val == moveit_msgs::MoveItErrorCodes::SUCCESS) {
+                ROS_DEBUG("Solution found");
+                count++;
+            }
+            else {
+                ROS_INFO("IK failed %i", errorCode.val);
+            }
         }
 
         humanoid_catching::IKMetric msg;
-        msg.time = ros::Time::now() - start;
-        msg.was_successful = success;
-        msg.distance = 0.0;
+        msg.time = ros::Duration((ros::WallTime::now() - start).toSec());
+        msg.was_successful = (count > 0);
+        msg.count = count;
         ikMetricsPub.publish(msg);
     }
 };

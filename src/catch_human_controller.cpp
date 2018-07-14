@@ -6,6 +6,7 @@
 #include <humanoid_catching/DurationStamped.h>
 #include <humanoid_catching/CreateMeshCache.h>
 #include <humanoid_catching/catch_human_controller.h>
+#include <humanoid_catching/MovementGoal.h>
 #include <actionlib/client/simple_action_client.h>
 #include <humanoid_catching/CalculateTorques.h>
 #include <tf/transform_listener.h>
@@ -224,6 +225,7 @@ CatchHumanController::CatchHumanController() :
 
     // Initialize visualization publishers
     goalPub = pnh.advertise<geometry_msgs::PoseStamped>("movement_goal", 10, true);
+    movementGoalPub = pnh.advertise<humanoid_catching::MovementGoal>("record_movement_goal", 100, true);
     goalPointPub = pnh.advertise<geometry_msgs::PointStamped>("movement_goal_point", 10, true);
     targetPosePub = pnh.advertise<geometry_msgs::PoseStamped>("target_pose", 1);
     targetVelocityPub = pnh.advertise<visualization_msgs::Marker>("target_velocity", 1);
@@ -231,10 +233,10 @@ CatchHumanController::CatchHumanController() :
     eeVelocityVizPub = pnh.advertise<geometry_msgs::WrenchStamped>("ee_velocity", 1);
 
     // Metrics publishers
-    reactionTimePub = pnh.advertise<humanoid_catching::DurationStamped>("reaction_time", 1, true);
-    balancingTimePub = pnh.advertise<humanoid_catching::DurationStamped>("balance_calc_time", 1, true);
-    interceptTimePub = pnh.advertise<humanoid_catching::DurationStamped>("intercept_calc_time", 1, true);
-    fallPredictionTimePub = pnh.advertise<humanoid_catching::DurationStamped>("fall_predict_time", 1, true);
+    reactionTimePub = nh.advertise<humanoid_catching::DurationStamped>("reaction_time", 1, true);
+    balancingTimePub = nh.advertise<humanoid_catching::DurationStamped>("balance_calc_time", 1, true);
+    interceptTimePub = nh.advertise<humanoid_catching::DurationStamped>("intercept_calc_time", 1, true);
+    fallPredictionTimePub = nh.advertise<humanoid_catching::DurationStamped>("fall_predict_time", 1, true);
     ikMetricsPub = nh.advertise<humanoid_catching::IKMetric>("ik_metric", 1, true);
 
     ros::SubscriberStatusCallback connectCB = boost::bind(&CatchHumanController::publishIkCache, this);
@@ -346,7 +348,6 @@ CatchHumanController::CatchHumanController() :
         ROS_ERROR("Failed to lookup transform from %s to %s", globalFrame.c_str(), baseFrame.c_str());
     }
     tf.lookupTransform(baseFrame /* target */, globalFrame /* source */, ros::Time(0), goalToBaseTransform);
-
 
     jointStatesSub.reset(new message_filters::Subscriber<sensor_msgs::JointState>(nh, "/joint_states", 1, ros::TransportHints(), &jointStateMessagesQueue));
     jointStatesSub->registerCallback(boost::bind(&CatchHumanController::jointStatesCallback, this, _1));
@@ -503,6 +504,24 @@ void CatchHumanController::visualizeGoal(const geometry_msgs::Pose& goal, const 
         goalPub.publish(pose);
     }
 
+    if (movementGoalPub.getNumSubscribers() > 0)
+    {
+        humanoid_catching::MovementGoal movementGoal;
+        movementGoal.header = header;
+        movementGoal.pose = goal;
+        movementGoal.jointAngles.resize(7);
+
+        // Get the current joint angles for the arm
+        boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
+        for(unsigned int i = 0; i < 7; ++i)
+        {
+            const State& state = jointStates.at(jointNames.at(i));
+            movementGoal.jointAngles[i] = state.position;
+        }
+
+        movementGoalPub.publish(movementGoal);
+    }
+
     if (goalPointPub.getNumSubscribers() > 0)
     {
         geometry_msgs::PointStamped point;
@@ -633,24 +652,6 @@ double CatchHumanController::calcJointExecutionTime(const Limits& limits, const 
         assert(t > max_tri_t);
     }
     return t;
-}
-
-double CatchHumanController::calcExecutionDistance(const vector<double>& solution) const
-{
-    // Take the read lock
-    boost::shared_lock<boost::shared_mutex> lock(jointStatesAccess);
-    assert(solution.size() == jointNames.size());
-
-    double total = 0;
-    for(unsigned int i = 0; i < solution.size() - 2; ++i)
-    {
-        const string& jointName = jointNames.at(i);
-        const Limits& limits = jointLimits.at(jointName);
-
-        const State& state = jointStates.at(jointName);
-        total += pow(state.position - solution[i], 2);
-    }
-    return sqrt(total);
 }
 
 ros::Duration CatchHumanController::calcExecutionTime(const vector<double>& solution) const
@@ -857,7 +858,7 @@ private:
 
 bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, humanoid_catching::PredictFall& predictFall, ros::Duration duration)
 {
-    ros::Time start = ros::Time::now();
+    ros::WallTime start = ros::WallTime::now();
 
     ROS_DEBUG("Preparing to call fall prediction");
     predictFall.request.header = imuData->header;
@@ -951,7 +952,8 @@ bool CatchHumanController::predictFall(const sensor_msgs::ImuConstPtr imuData, h
     }
 
     humanoid_catching::DurationStamped durationMsg;
-    durationMsg.duration = ros::Duration(ros::Time::now() - start);
+    durationMsg.arm = arm;
+    durationMsg.duration = ros::Duration((ros::WallTime::now() - start).toSec());
     durationMsg.header = imuData->header;
     fallPredictionTimePub.publish(durationMsg);
     return true;
@@ -1000,9 +1002,6 @@ bool CatchHumanController::initMeshCache()
 
 bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution& possibleSolution, const std_msgs::Header& fallPointHeader) const
 {
-    ros::Time start = ros::Time::now();
-    bool success = false;
-    possibleSolution.time = fallPoint.time;
 
     // Initialize to very poor value
     possibleSolution.delta = ros::Duration(-1000);
@@ -1020,10 +1019,9 @@ bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution
     possibleSolution.position.header = transformedPose.header;
     possibleSolution.position.point = transformedPose.pose.position;
 
-    if (trialGoalPub.getNumSubscribers() > 0)
-    {
-        trialGoalPub.publish(poseToPoint(transformedPose));
-    }
+    ros::WallTime start = ros::WallTime::now();
+    bool success = false;
+    possibleSolution.time = fallPoint.time;
 
     // Lookup the IK solution
     geometry_msgs::PointStamped point;
@@ -1032,12 +1030,16 @@ bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution
 
     IKList results;
     bool queryFailed = false;
+    ros::WallTime stop;
     if (!ik->query(point, results))
     {
         ROS_DEBUG("Failed to find IK solution for arm [%s]", arm.c_str());
         queryFailed = true;
+        stop = ros::WallTime::now();
     }
     else {
+        // We want to measure IK time, not distance estimation time
+        stop = ros::WallTime::now();
         ROS_DEBUG("Received %lu results from IK query", results.size());
         for (IKList::iterator j = results.begin(); j != results.end(); ++j)
         {
@@ -1051,17 +1053,21 @@ bool CatchHumanController::checkFeasibility(const FallPoint& fallPoint, Solution
             success = true;
             possibleSolution.estimate = estimate;
             possibleSolution.delta = executionTimeDelta;
-            possibleSolution.distance = calcExecutionDistance(j->positions);
         }
+    }
+
+    if (!queryFailed && trialGoalPub.getNumSubscribers() > 0) {
+        trialGoalPub.publish(poseToPoint(transformedPose));
     }
 
     // Other than exceptional cases, query failures indicate the target point is beyond the maximum
     // distance of the arm
     if (!queryFailed && ikMetricsPub.getNumSubscribers() > 0) {
         IKMetric msg;
-        msg.time = ros::Time::now() - start;
+        msg.arm = arm;
+        msg.time = ros::Duration((stop - start).toSec());
         msg.was_successful = success;
-        msg.distance = possibleSolution.distance;
+        msg.count = results.size();
         ikMetricsPub.publish(msg);
     }
     return success;
@@ -1157,7 +1163,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     if (fallPoint != predictFallObj.response.points.end())
     {
         ROS_INFO("Robot is in contact at projected time [%f]. Executing balancing for arm %s", fallPoint->time.toSec(), arm.c_str());
-        ros::Time balancingTimeStart = ros::Time::now();
+        ros::WallTime balancingTimeStart = ros::WallTime::now();
         humanoid_catching::CalculateTorques calcTorques;
         calcTorques.request.name = arm;
         calcTorques.request.body_velocity = fallPoint->velocity;
@@ -1306,7 +1312,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         }
         ROS_INFO("Torques [%s]", os.str().c_str());
         humanoid_catching::DurationStamped durationMsg;
-        durationMsg.duration = ros::Duration(ros::Time::now() - balancingTimeStart);
+        durationMsg.arm = arm;
+        durationMsg.duration = ros::Duration((ros::WallTime::now() - balancingTimeStart).toSec());
         durationMsg.header = imuData->header;
         balancingTimePub.publish(durationMsg);
         sendTorques(calcTorques.response.torques);
@@ -1315,6 +1322,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     {
         ROS_INFO("Robot is not in contact. Beginning search for intercept solutions");
         ros::Time start = ros::Time::now();
+        ros::WallTime wallStart = ros::WallTime::now();
 
         vector<Solution> solutions;
         // We now have a projected time/position path. Search the path for acceptable times.
@@ -1434,7 +1442,8 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         }
 
         humanoid_catching::DurationStamped durationMsg;
-        durationMsg.duration = ros::Duration(ros::Time::now() - start);
+        durationMsg.arm = arm;
+        durationMsg.duration = ros::Duration((ros::WallTime::now() - wallStart).toSec());
         durationMsg.header = imuData->header;
         interceptTimePub.publish(durationMsg);
     }
@@ -1442,6 +1451,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     ROS_INFO("Reaction time was %f(s) wall time and %f(s) clock time", ros::WallTime::now().toSec() - startWallTime.toSec(),
              ros::Time::now().toSec() - startRosTime.toSec());
     humanoid_catching::DurationStamped durationMsg;
+    durationMsg.arm = arm;
     durationMsg.duration = ros::Duration(ros::Time::now().toSec() - startRosTime.toSec());
     durationMsg.header = imuData->header;
     reactionTimePub.publish(durationMsg);
