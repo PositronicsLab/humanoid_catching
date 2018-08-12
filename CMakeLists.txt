@@ -239,6 +239,12 @@ target_link_libraries(arm_controller_tester
    ${catkin_LIBRARIES}
 )
 
+add_executable(arm_controller_tester_fc src/arm_controller_tester_fc.cpp)
+add_dependencies(arm_controller_tester_fc ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(arm_controller_tester_fc
+   ${catkin_LIBRARIES}
+)
+
 if(CATKIN_ENABLE_TESTING)
     catkin_add_gtest(test_catch_human_controller test/test_catch_human_controller.cpp src/catch_human_controller.cpp)
     set_target_properties(test_catch_human_controller PROPERTIES COMPILE_FLAGS -DENABLE_TESTING)

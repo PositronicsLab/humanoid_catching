@@ -32,6 +32,9 @@ private:
     //! Whether the result was written
     bool resultsWritten;
 
+    //! Write results publisher
+    ros::Publisher writeResultsPub;
+
 public:
     FallStatsRecorder() : pnh("~")
     {
@@ -45,6 +48,8 @@ public:
         // Don't subscribe until the fall starts
         humanOnGroundSub.reset(new message_filters::Subscriber<std_msgs::Header>(nh, "/human/on_ground", 1));
         humanOnGroundSub->unsubscribe();
+
+        writeResultsPub = nh.advertise<std_msgs::Header>("/write_results", 1, true);
     }
 
     ~FallStatsRecorder() {
@@ -64,6 +69,12 @@ private:
     void printResults(const ros::Duration& contactTime)
     {
         ROS_INFO("Printing results of trial");
+
+        // Notify other nodes to print results
+        std_msgs::Header header;
+        header.stamp = ros::Time::now();
+        writeResultsPub.publish(header);
+        ros::Duration(0.1).sleep();
 
         // Get the name of the folder to store the result in
         const char* resultsFolder = std::getenv("RESULTS_FOLDER");
@@ -94,6 +105,7 @@ private:
 
         outputCSV << scenarioNumberStr << ", " << contactTime.toSec() << endl;
         outputCSV.close();
+
         ROS_INFO_STREAM("Printing output file complete");
     }
 

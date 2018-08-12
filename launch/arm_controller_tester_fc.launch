@@ -1,0 +1,14 @@
+<launch>
+  <include file="$(find operational_space_controllers)/launch/l_arm_force_controller.launch" />
+  <include file="$(find operational_space_controllers)/launch/r_arm_force_controller.launch" />
+
+  <node pkg="humanoid_catching" type="arm_controller_tester_fc" name="arm_controller_tester_right">
+    <param name="end_effector" value="r_wrist_roll_link" />
+    <param name="arm" value="right_arm" />
+    <param name="command_topic" value=" /catch_human_controller_right/record_movement_goal" />
+    <param name="arm_command_topic" value="r_arm_force_controller/command" />
+  </node>
+
+  <node pkg="humanoid_catching" type="metrics_recorder" name="metrics_recorder" output="screen"/>
+
+</launch>

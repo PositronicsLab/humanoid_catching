@@ -56,4 +56,5 @@
       </visual>
     </link>
     <plugin name="ground_joint_plugin" filename="libground_joint_plugin.so" />
+    <plugin name="contact_forces" filename="libcontact_forces_plugin.so" />
 </sdf>

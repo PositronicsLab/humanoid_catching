@@ -234,8 +234,8 @@ CatchHumanController::CatchHumanController() :
 
     // Metrics publishers
     reactionTimePub = nh.advertise<humanoid_catching::DurationStamped>("reaction_time", 1, true);
-    balancingTimePub = nh.advertise<humanoid_catching::DurationStamped>("balance_calc_time", 1, true);
-    interceptTimePub = nh.advertise<humanoid_catching::DurationStamped>("intercept_calc_time", 1, true);
+    balancingTimePub = pnh.advertise<humanoid_catching::DurationStamped>("balance_calc_time", 1, true);
+    interceptTimePub = pnh.advertise<humanoid_catching::DurationStamped>("intercept_calc_time", 1, true);
     fallPredictionTimePub = nh.advertise<humanoid_catching::DurationStamped>("fall_predict_time", 1, true);
     ikMetricsPub = nh.advertise<humanoid_catching::IKMetric>("ik_metric", 1, true);
 
@@ -1163,7 +1163,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
     if (fallPoint != predictFallObj.response.points.end())
     {
         ROS_INFO("Robot is in contact at projected time [%f]. Executing balancing for arm %s", fallPoint->time.toSec(), arm.c_str());
-        ros::WallTime balancingTimeStart = ros::WallTime::now();
+        ros::Time balancingTimeStart = ros::Time::now();
         humanoid_catching::CalculateTorques calcTorques;
         calcTorques.request.name = arm;
         calcTorques.request.body_velocity = fallPoint->velocity;
@@ -1313,7 +1313,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
         ROS_INFO("Torques [%s]", os.str().c_str());
         humanoid_catching::DurationStamped durationMsg;
         durationMsg.arm = arm;
-        durationMsg.duration = ros::Duration((ros::WallTime::now() - balancingTimeStart).toSec());
+        durationMsg.duration = ros::Duration((ros::Time::now() - balancingTimeStart).toSec());
         durationMsg.header = imuData->header;
         balancingTimePub.publish(durationMsg);
         sendTorques(calcTorques.response.torques);
@@ -1443,7 +1443,7 @@ void CatchHumanController::execute(const sensor_msgs::ImuConstPtr imuData)
 
         humanoid_catching::DurationStamped durationMsg;
         durationMsg.arm = arm;
-        durationMsg.duration = ros::Duration((ros::WallTime::now() - wallStart).toSec());
+        durationMsg.duration = ros::Duration((ros::Time::now() - start).toSec());
         durationMsg.header = imuData->header;
         interceptTimePub.publish(durationMsg);
     }
